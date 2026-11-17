@@ -31,6 +31,7 @@ interface InventorCharacterProps {
   animDataRef: React.RefObject<CharacterAnimData>;
   carryAnchorRef?: React.RefObject<THREE.Group | null>;
   appearance?: CharacterAppearanceConfig;
+  firstPersonHideHead?: boolean;
 }
 
 const GEAR_ANGLES = [0, 1, 2, 3, 4, 5].map((i) => (i * Math.PI) / 3);
@@ -39,6 +40,7 @@ export function InventorCharacter({
   animDataRef,
   carryAnchorRef,
   appearance = DEFAULT_CHISPA_APPEARANCE,
+  firstPersonHideHead = false,
 }: InventorCharacterProps) {
   const rootRef = useRef<THREE.Group>(null);
   const bodyPivotRef = useRef<THREE.Group>(null);
@@ -421,6 +423,14 @@ export function InventorCharacter({
         0.14 + THREE.MathUtils.lerp(0, liftDelta * 0.35, carryBlend.current),
         handForwardPull
       );
+    }
+
+    // Toggle ONLY obstructing head/accessory geometry in first person (keep hands & carried props visible)
+    if (headRef.current) {
+      headRef.current.visible = !firstPersonHideHead;
+    }
+    if (backpackAnchorRef.current) {
+      backpackAnchorRef.current.visible = !firstPersonHideHead;
     }
 
     // 8. Expressive head look + ponytail secondary swing

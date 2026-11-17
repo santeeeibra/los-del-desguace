@@ -13,7 +13,7 @@ import {
   grabbableRegistry,
   type GrabbableKind,
 } from '../props/grabbableRegistry';
-import { gameStore } from '../state/gameStore';
+import { gameStore, useGameStore } from '../state/gameStore';
 
 interface PlayerRigProps {
   maxDustPuffs: number;
@@ -35,6 +35,7 @@ export function PlayerRig({
   const ecctrlRef = useRef<EcctrlHandle>(null);
   const carryAnchorRef = useRef<THREE.Group | null>(null);
   const dustPoolRef = useRef<DustPuffHandle>(null);
+  const cameraMode = useGameStore((s) => s.cameraMode);
   const { camera } = useThree();
   const { rapier, world } = useRapier();
 
@@ -112,7 +113,13 @@ export function PlayerRig({
       getTargetPosition(out: THREE.Vector3) {
         const ctrl = ecctrlRef.current;
         if (!ctrl) return false;
-        out.copy(ctrl.currPos);
+        const b = ctrl.body;
+        if (b) {
+          const t = b.translation();
+          out.set(t.x, t.y, t.z);
+        } else {
+          out.copy(ctrl.currPos);
+        }
         return true;
       },
       getExcludedBodyHandle() {
@@ -519,6 +526,9 @@ export function PlayerRig({
       return;
     }
 
+    const isFirstPerson = gameStore.getState().cameraMode === 'firstPerson';
+    ctrl.setLockForward(isFirstPerson);
+
     // 1. Feed unified keyboard + touch input to Ecctrl (preventing only inward carry wall penetration)
     const inputSnapshot = inputSnapshotRef.current;
     playerInput.fillMovement(inputSnapshot);
@@ -678,23 +688,84 @@ export function PlayerRig({
     animDataRef.current.accelForward = THREE.MathUtils.clamp(accelForward, -14, 14);
     animDataRef.current.turnRate = THREE.MathUtils.clamp(turnRate, -8, 8);
 
-    // 5. Find best grabbable candidate when hands are free
+    // 5. Find best grabbable candidate when hands are free (unified reach + wall line-of-sight across all views)
     scratchPlayerPos.current.copy(ctrl.currPos);
+    camera.getWorldDirection(scratchCamFwd.current);
+    if (scratchCamFwd.current.lengthSq() > 1e-6) {
+      scratchCamFwd.current.normalize();
+    } else {
+      scratchCamFwd.current.copy(scratchForward.current);
+    }
 
     let bestId: string | null = null;
     let bestKind: GrabbableKind | null = null;
     let bestScore = Infinity;
 
     if (!carriedIdRef.current) {
+      const shapesReady = ensureVolumeShapes();
+      void shapesReady;
+      const sightRay = dropRayRef.current!;
+      const originY = scratchPlayerPos.current.y + (isFirstPerson ? 0.34 : 0.28);
+
       for (const item of grabbableRegistry.getAll()) {
         if (!item.getWorldPos(scratchItemPos.current)) continue;
         scratchToItem.current.subVectors(scratchItemPos.current, scratchPlayerPos.current);
         const dist = scratchToItem.current.length();
         if (dist > 2.4) continue;
 
-        scratchRayDir.current.copy(scratchToItem.current).setY(0).normalize();
-        const facingDot = scratchForward.current.dot(scratchRayDir.current);
-        const score = dist - facingDot * 0.7;
+        scratchRayDir.current.set(
+          scratchItemPos.current.x - scratchPlayerPos.current.x,
+          scratchItemPos.current.y - originY,
+          scratchItemPos.current.z - scratchPlayerPos.current.z
+        );
+        const sightLen = scratchRayDir.current.length();
+        if (sightLen < 0.01) continue;
+        scratchRayDir.current.divideScalar(sightLen);
+
+        let lookDot = 0;
+        if (isFirstPerson) {
+          lookDot = scratchCamFwd.current.dot(scratchRayDir.current);
+          if (lookDot < 0.1) continue;
+        } else {
+          scratchCandDir.current.set(scratchToItem.current.x, 0, scratchToItem.current.z).normalize();
+          lookDot = scratchForward.current.dot(scratchCandDir.current);
+        }
+
+        // Prevent grabbing through solid walls/obstacles in any view
+        const itemBodyHandle = item.getBody()?.handle ?? null;
+        if (sightLen > 0.22) {
+          sightRay.origin = {
+            x: scratchPlayerPos.current.x,
+            y: originY,
+            z: scratchPlayerPos.current.z,
+          };
+          sightRay.dir = {
+            x: scratchRayDir.current.x,
+            y: scratchRayDir.current.y,
+            z: scratchRayDir.current.z,
+          };
+          const blocked = world.castRay(
+            sightRay,
+            sightLen - 0.14,
+            true,
+            rapier.QueryFilterFlags.EXCLUDE_SENSORS,
+            undefined,
+            undefined,
+            ctrl.body,
+            (collider) => {
+              const parent = collider.parent();
+              if (!parent) return true;
+              if (itemBodyHandle !== null && parent.handle === itemBodyHandle) return false;
+              const colItemId = (parent.userData as { grabbableId?: string } | undefined)?.grabbableId;
+              // Allow line of sight past other nearby loose grabbables (only solid walls/furniture block)
+              return !colItemId;
+            }
+          );
+          if (blocked) continue;
+        }
+
+        const weight = isFirstPerson ? 1.35 : 0.7;
+        const score = dist - lookDot * weight;
         if (score < bestScore) {
           bestScore = score;
           bestId = item.id;
@@ -994,7 +1065,13 @@ export function PlayerRig({
           }
         }}
       >
-        {enabled && <InventorCharacter animDataRef={animDataRef} carryAnchorRef={carryAnchorRef} />}
+        {enabled && (
+          <InventorCharacter
+            animDataRef={animDataRef}
+            carryAnchorRef={carryAnchorRef}
+            firstPersonHideHead={cameraMode === 'firstPerson'}
+          />
+        )}
       </Ecctrl>
 
       <DustPuffPool ref={dustPoolRef} maxCount={maxDustPuffs} />

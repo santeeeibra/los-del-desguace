@@ -5,7 +5,8 @@ import { Physics } from '@react-three/rapier';
 import * as THREE from 'three';
 import { ScrapCart } from '../cart/ScrapCart';
 import { PALETTE, QUALITY_PRESETS } from '../config/visualConfig';
-import { ThirdPersonCamera, type CameraTargetSource } from '../controls/ThirdPersonCamera';
+import { GameCameraRig } from '../controls/GameCameraRig';
+import { type CameraTargetSource } from '../controls/ThirdPersonCamera';
 import { useKeyboardInput } from '../controls/playerInput';
 import { ScrapyardWorkshop } from '../environment/ScrapyardWorkshop';
 import { TestTrackAndYard } from '../environment/TestTrackAndYard';
@@ -47,7 +48,8 @@ export function DesguaceScene() {
     <Canvas
       shadows={preset.shadows ? 'percentage' : false}
       dpr={preset.dpr}
-      camera={{ fov: 50, near: 0.15, far: 110, position: [2.2, 3.2, 9.6] }}
+      camera={{ fov: 62, near: 0.06, far: 110, position: [2.2, 3.2, 9.6] }}
+      style={{ touchAction: 'none' }}
       gl={{
         antialias: preset.antialias,
         powerPreference: 'high-performance',
@@ -120,7 +122,7 @@ export function DesguaceScene() {
             resetSignal={resetNonce}
             cameraSourceRef={cameraSourceRef}
           />
-          <ThirdPersonCamera targetSourceRef={cameraSourceRef} resetSignal={resetNonce} />
+          <GameCameraRig targetSourceRef={cameraSourceRef} resetSignal={resetNonce} />
           <SceneReadyNotifier />
         </Physics>
       </Suspense>

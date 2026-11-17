@@ -3,11 +3,13 @@ import type { QualityLevel } from '../config/visualConfig';
 import type { GrabbableKind } from '../props/grabbableRegistry';
 
 export type TouchOverlayMode = 'auto' | 'on' | 'off';
+export type CameraViewMode = 'firstPerson' | 'thirdPersonClose' | 'thirdPersonWide';
 
 export interface GameHudState {
   quality: QualityLevel;
   touchMode: TouchOverlayMode;
   isTouchDevice: boolean;
+  cameraMode: CameraViewMode;
   nearbyTargetId: string | null;
   nearbyTargetKind: GrabbableKind | null;
   carriedId: string | null;
@@ -28,6 +30,7 @@ let state: GameHudState = {
   quality: 'high',
   touchMode: 'auto',
   isTouchDevice: initialIsTouch,
+  cameraMode: 'firstPerson',
   nearbyTargetId: null,
   nearbyTargetKind: null,
   carriedId: null,
@@ -69,6 +72,11 @@ export const gameStore = {
   setTouchMode(touchMode: TouchOverlayMode) {
     if (state.touchMode === touchMode) return;
     state = { ...state, touchMode };
+    emit();
+  },
+  setCameraMode(cameraMode: CameraViewMode) {
+    if (state.cameraMode === cameraMode) return;
+    state = { ...state, cameraMode };
     emit();
   },
   setNearbyTarget(id: string | null, kind: GameHudState['nearbyTargetKind']) {

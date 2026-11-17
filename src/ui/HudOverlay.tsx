@@ -116,6 +116,7 @@ export function HudOverlay() {
   const quality = useGameStore((s) => s.quality);
   const touchMode = useGameStore((s) => s.touchMode);
   const isTouchDevice = useGameStore((s) => s.isTouchDevice);
+  const cameraMode = useGameStore((s) => s.cameraMode);
   const nearbyTargetKind = useGameStore((s) => s.nearbyTargetKind);
   const carriedKind = useGameStore((s) => s.carriedKind);
   const impactFeedback = useGameStore((s) => s.impactFeedback);
@@ -135,6 +136,33 @@ export function HudOverlay() {
 
   return (
     <div className="hud-layer" data-scene-ready={sceneReady ? 'true' : 'false'}>
+      {/* DISCREET CENTER RETICLE (First-Person primary view only, pointer-transparent) */}
+      {cameraMode === 'firstPerson' && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'fixed',
+            left: '50%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+            pointerEvents: 'none',
+            width: nearbyTargetKind && !carriedKind ? 18 : 8,
+            height: nearbyTargetKind && !carriedKind ? 18 : 8,
+            borderRadius: '50%',
+            border:
+              nearbyTargetKind && !carriedKind
+                ? '2px solid rgba(255, 224, 102, 0.92)'
+                : '1.5px solid rgba(255, 248, 232, 0.65)',
+            background:
+              nearbyTargetKind && !carriedKind
+                ? 'rgba(255, 224, 102, 0.35)'
+                : 'rgba(24, 21, 19, 0.35)',
+            boxShadow: '0 0 6px rgba(0,0,0,0.35)',
+            transition: 'width 120ms ease, height 120ms ease, border-color 120ms ease',
+          }}
+        />
+      )}
+
       {/* TOP BAR */}
       <div
         style={{
@@ -344,7 +372,7 @@ export function HudOverlay() {
             <span><strong style={{ color: '#ffe5a3' }}>Shift</strong> Correr</span>
             <span><strong style={{ color: '#ffe5a3' }}>Espacio</strong> Saltar</span>
             <span><strong style={{ color: '#ffe5a3' }}>E / F</strong> Agarrar · Soltar</span>
-            <span><strong style={{ color: '#ffe5a3' }}>Arrastrar / Rueda</strong> Cámara</span>
+            <span><strong style={{ color: '#ffe5a3' }}>Arrastrar / Q·C</strong> Mirar</span>
           </div>
         )}
 
@@ -381,18 +409,30 @@ export function HudOverlay() {
             <button
               type="button"
               onPointerDown={(e) => {
+                e.preventDefault();
                 e.stopPropagation();
+                try {
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                } catch {
+                  // Ignore capture errors on synthetic events
+                }
                 playerInput.setTouchJump(true);
               }}
               onPointerUp={(e) => {
                 e.stopPropagation();
+                try {
+                  if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                    e.currentTarget.releasePointerCapture(e.pointerId);
+                  }
+                } catch {
+                  // Ignore release errors
+                }
                 playerInput.setTouchJump(false);
               }}
               onPointerCancel={(e) => {
                 e.stopPropagation();
                 playerInput.setTouchJump(false);
               }}
-              onPointerLeave={() => playerInput.setTouchJump(false)}
               style={{
                 width: 82,
                 height: 82,
