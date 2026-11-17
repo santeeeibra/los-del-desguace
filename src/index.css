@@ -1,0 +1,59 @@
+:root {
+  color-scheme: dark;
+  font-family: 'Trebuchet MS', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --panel-bg: rgba(24, 21, 19, 0.78);
+  --panel-border: rgba(245, 190, 92, 0.35);
+  --accent-amber: #f5b942;
+  --accent-orange: #e66a2c;
+  --accent-teal: #3ea8a0;
+  --text-main: #f7f1e3;
+  --text-muted: #c8bfb0;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #231e1b;
+  color: var(--text-main);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.viewport-root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.hud-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: max(12px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right))
+    max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+  z-index: 10;
+}
+
+.hud-interactive {
+  pointer-events: auto;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
