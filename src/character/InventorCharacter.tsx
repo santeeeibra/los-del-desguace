@@ -12,6 +12,8 @@ export interface CharacterAnimData {
   isRunning: boolean;
   isCarrying: boolean;
   carriedKind: GrabbableKind | null;
+  carryDist: number;
+  carryLift: number;
   accelForward: number;
   turnRate: number;
   takeoffImpulse: number;
@@ -244,16 +246,18 @@ export function InventorCharacter({ animDataRef, carryAnchorRef }: InventorChara
       rightLegRef.current.rotation.x = THREE.MathUtils.lerp(groundLegR, airLegR, airBlend.current);
     }
 
-    // 7. Carry anchor & size-aware arm poses
+    // 7. Carry anchor & size-aware + clearance-aware arm poses
     const profile = anim.carriedKind ? CARRY_PROFILES[anim.carriedKind] : CARRY_PROFILES.crate;
+    const activeDist = anim.isCarrying ? anim.carryDist : profile.holdDistance;
+    const activeLift = anim.isCarrying ? anim.carryLift : profile.holdHeight;
     if (carryAnchorRef?.current) {
-      const carryBob = gAmp * Math.abs(c) * 0.02;
-      carryAnchorRef.current.position.set(0, profile.holdHeight + carryBob, profile.holdDistance);
+      const carryBob = gAmp * Math.abs(c) * 0.018;
+      carryAnchorRef.current.position.set(0, activeLift + carryBob, activeDist);
       carryAnchorRef.current.rotation.set(profile.tiltX, 0, 0);
     }
 
     if (leftArmRef.current && rightArmRef.current) {
-      const lerpRate = 1 - Math.exp(-15 * dt);
+      const lerpRate = 1 - Math.exp(-18 * dt);
 
       // Base idle / walk / run arm swing
       const swingAmp = (0.54 + runBlend.current * 0.26) * gAmp;
@@ -270,9 +274,12 @@ export function InventorCharacter({ animDataRef, carryAnchorRef }: InventorChara
       const freeArmZL = THREE.MathUtils.lerp(0.14, airArmZ, airBlend.current);
       const freeArmZR = THREE.MathUtils.lerp(-0.14, -airArmZ, airBlend.current);
 
-      // Carry pose tailored to object size (spread & pitch)
-      const carryArmBob = gAmp * Math.abs(c) * 0.04;
-      const carryRotX = profile.armPitch + carryArmBob;
+      // Carry pose tailored to object size AND actual clearance distance/lift
+      const carryArmBob = gAmp * Math.abs(c) * 0.035;
+      const distDelta = activeDist - profile.holdDistance; // negative when tucked close to chest
+      const liftDelta = activeLift - profile.holdHeight; // positive when raised over table/edge
+      const carryRotX =
+        profile.armPitch + carryArmBob + distDelta * -0.95 + liftDelta * -1.45;
       const inwardAngle = (0.27 - profile.armSpread) * 1.45;
       const carryRotZL = inwardAngle;
       const carryRotZR = -inwardAngle;
@@ -297,10 +304,11 @@ export function InventorCharacter({ animDataRef, carryAnchorRef }: InventorChara
         THREE.MathUtils.lerp(freeArmZR, carryRotZR, carryBlend.current),
         lerpRate
       );
-      // Adjust shoulder offset slightly outward for wide crates, inward for narrow canisters
+      // Keep shoulders/hands following the object's actual Z tuck & spread
       const shoulderOffset = THREE.MathUtils.lerp(0.25, profile.armSpread * 0.88, carryBlend.current);
-      leftArmRef.current.position.x = -shoulderOffset;
-      rightArmRef.current.position.x = shoulderOffset;
+      const handForwardPull = THREE.MathUtils.lerp(0, distDelta * 0.55, carryBlend.current);
+      leftArmRef.current.position.set(-shoulderOffset, 0.14 + THREE.MathUtils.lerp(0, liftDelta * 0.35, carryBlend.current), handForwardPull);
+      rightArmRef.current.position.set(shoulderOffset, 0.14 + THREE.MathUtils.lerp(0, liftDelta * 0.35, carryBlend.current), handForwardPull);
     }
 
     // 8. Expressive head look + blink

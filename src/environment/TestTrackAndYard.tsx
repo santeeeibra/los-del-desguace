@@ -129,21 +129,21 @@ export function TestTrackAndYard({ extraProps }: { extraProps: boolean }) {
 
         {/* Plataforma baja de carga + rampa corta para apilar cajas y rodar ruedas */}
         <CuboidCollider args={[1.6, 0.25, 1.4]} position={[-16.8, 0.25, -2.5]} />
-        <CuboidCollider args={[0.9, 0.1, 1.3]} position={[-14.2, 0.22, -2.5]} rotation={[0, 0, 0.24]} />
+        <CuboidCollider args={[0.95, 0.1, 1.2]} position={[-14.2, 0.22, -2.5]} rotation={[0, 0, -0.24]} />
         <mesh castShadow receiveShadow material={materials.wood} position={[-16.8, 0.25, -2.5]}>
           <boxGeometry args={[3.2, 0.5, 2.8]} />
         </mesh>
-        <mesh castShadow receiveShadow material={materials.wood} position={[-14.2, 0.22, -2.5]} rotation={[0, 0, 0.24]}>
+        <mesh castShadow receiveShadow material={materials.wood} position={[-14.2, 0.22, -2.5]} rotation={[0, 0, -0.24]}>
           <boxGeometry args={[1.9, 0.16, 2.4]} />
         </mesh>
 
         {/* Terreno irregular suave (lomas anchas de poca pendiente para probar suspensión) */}
-        <CuboidCollider args={[2.2, 0.16, 2.4]} position={[-14.5, 0.06, 9.5]} rotation={[0.14, 0, 0]} />
-        <CuboidCollider args={[2.2, 0.16, 2.4]} position={[-14.5, 0.06, 13.8]} rotation={[-0.14, 0, 0]} />
-        <mesh castShadow receiveShadow material={materials.dirtMound} position={[-14.5, 0.06, 9.5]} rotation={[0.14, 0, 0]}>
+        <CuboidCollider args={[2.2, 0.16, 2.4]} position={[-14.5, 0.06, 9.5]} rotation={[-0.14, 0, 0]} />
+        <CuboidCollider args={[2.2, 0.16, 2.4]} position={[-14.5, 0.06, 13.8]} rotation={[0.14, 0, 0]} />
+        <mesh castShadow receiveShadow material={materials.dirtMound} position={[-14.5, 0.06, 9.5]} rotation={[-0.14, 0, 0]}>
           <boxGeometry args={[4.4, 0.32, 4.8]} />
         </mesh>
-        <mesh castShadow receiveShadow material={materials.dirtMound} position={[-14.5, 0.06, 13.8]} rotation={[-0.14, 0, 0]}>
+        <mesh castShadow receiveShadow material={materials.dirtMound} position={[-14.5, 0.06, 13.8]} rotation={[0.14, 0, 0]}>
           <boxGeometry args={[4.4, 0.32, 4.8]} />
         </mesh>
 
