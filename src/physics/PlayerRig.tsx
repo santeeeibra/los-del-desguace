@@ -77,8 +77,6 @@ export function PlayerRig({
   const scratchForward = useRef(new THREE.Vector3());
   const scratchItemPos = useRef(new THREE.Vector3());
   const scratchToItem = useRef(new THREE.Vector3());
-  const scratchCarryWorldPos = useRef(new THREE.Vector3());
-  const scratchCarryWorldQuat = useRef(new THREE.Quaternion());
   const scratchRayDir = useRef(new THREE.Vector3());
   const dropBallRef = useRef<InstanceType<typeof rapier.Ball> | null>(null);
 
@@ -120,7 +118,9 @@ export function PlayerRig({
       const body = entry?.getBody();
       const col = entry?.getCollider();
       if (body && col) {
+        col.setSensor(false);
         col.setEnabled(true);
+        body.setEnabled(true);
         body.setBodyType(rapier.RigidBodyType.Dynamic, true);
       }
       carriedIdRef.current = null;
@@ -199,9 +199,13 @@ export function PlayerRig({
         (needLiftAboveCapsule ? 0.85 : profile.dropHeightOffset);
       const dropZ = scratchPlayerPos.current.z + scratchForward.current.z * dropDist;
 
-      // Move body BEFORE re-enabling collider so it never overlaps the player capsule
+      // Move body BEFORE re-enabling collider & physics body so it never overlaps the player capsule
       body.setTranslation({ x: dropX, y: dropY, z: dropZ }, true);
+      body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      col.setSensor(false);
       col.setEnabled(true);
+      body.setEnabled(true);
       body.setBodyType(rapier.RigidBodyType.Dynamic, true);
 
       if (withToss && !blockedByWall) {
@@ -324,6 +328,33 @@ export function PlayerRig({
     animDataRef.current.accelForward = THREE.MathUtils.clamp(accelForward, -14, 14);
     animDataRef.current.turnRate = THREE.MathUtils.clamp(turnRate, -8, 8);
 
+    // Diagnostic telemetry for automated QA assertions
+    if (typeof window !== 'undefined') {
+      const carriedEntry = carriedIdRef.current ? grabbableRegistry.getById(carriedIdRef.current) : null;
+      const carriedBody = carriedEntry?.getBody();
+      const carriedCol = carriedEntry?.getCollider();
+      const cPos = carriedBody?.translation();
+      (window as unknown as Record<string, unknown>).__desguaceTelemetry = {
+        px: Number(ctrl.currPos.x.toFixed(3)),
+        py: Number(ctrl.currPos.y.toFixed(3)),
+        pz: Number(ctrl.currPos.z.toFixed(3)),
+        vx: Number(ctrl.currLinVel.x.toFixed(3)),
+        vy: Number(ctrl.currLinVel.y.toFixed(3)),
+        vz: Number(ctrl.currLinVel.z.toFixed(3)),
+        fx: Number(ctrl.bodyZAxis.x.toFixed(3)),
+        fz: Number(ctrl.bodyZAxis.z.toFixed(3)),
+        uy: Number(ctrl.bodyYAxis.y.toFixed(3)),
+        isOnGround: onGround,
+        carriedId: carriedIdRef.current,
+        carriedKind: carriedKindRef.current,
+        carriedBodyEnabled: carriedBody?.isEnabled() ?? null,
+        carriedColEnabled: carriedCol?.isEnabled() ?? null,
+        cx: cPos ? Number(cPos.x.toFixed(3)) : null,
+        cy: cPos ? Number(cPos.y.toFixed(3)) : null,
+        cz: cPos ? Number(cPos.z.toFixed(3)) : null,
+      };
+    }
+
     // 5. Find best grabbable candidate when hands are free
     scratchPlayerPos.current.copy(ctrl.currPos);
 
@@ -361,9 +392,11 @@ export function PlayerRig({
         const body = entry?.getBody();
         const col = entry?.getCollider();
         if (entry && body && col) {
-          // Disable collider BEFORE switching to kinematic so it never shoves the player backward
+          // Completely disable the physics body & collider while carried so Rapier NEVER generates
+          // contacts, ShapeCast hits, or kinematic depenetration forces against the player.
+          col.setSensor(true);
           col.setEnabled(false);
-          body.setBodyType(rapier.RigidBodyType.KinematicPositionBased, true);
+          body.setEnabled(false);
           body.setLinvel({ x: 0, y: 0, z: 0 }, true);
           body.setAngvel({ x: 0, y: 0, z: 0 }, true);
           carriedIdRef.current = bestId;
@@ -372,10 +405,8 @@ export function PlayerRig({
           grabbableRegistry.highlightedId = null;
           gameStore.setCarried(bestId, entry.kind);
           if (carryAnchorRef.current) {
-            carryAnchorRef.current.getWorldPosition(scratchCarryWorldPos.current);
-            carryAnchorRef.current.getWorldQuaternion(scratchCarryWorldQuat.current);
-            body.setTranslation(scratchCarryWorldPos.current, true);
-            body.setRotation(scratchCarryWorldQuat.current, true);
+            carryAnchorRef.current.getWorldPosition(grabbableRegistry.carriedVisualPos);
+            carryAnchorRef.current.getWorldQuaternion(grabbableRegistry.carriedVisualQuat);
           }
           dustPoolRef.current?.spawnBurst(
             scratchPlayerPos.current.x,
@@ -387,25 +418,10 @@ export function PlayerRig({
       }
     }
 
-    // 7. Keep carried object anchored cleanly to Chispa's gloved hands
+    // 7. Keep carried visual pose anchored cleanly to Chispa's gloved hands (zero physics body overlap)
     if (carriedIdRef.current && carryAnchorRef.current) {
-      const entry = grabbableRegistry.getById(carriedIdRef.current);
-      const body = entry?.getBody();
-      if (body) {
-        carryAnchorRef.current.getWorldPosition(scratchCarryWorldPos.current);
-        carryAnchorRef.current.getWorldQuaternion(scratchCarryWorldQuat.current);
-        body.setNextKinematicTranslation({
-          x: scratchCarryWorldPos.current.x,
-          y: scratchCarryWorldPos.current.y,
-          z: scratchCarryWorldPos.current.z,
-        });
-        body.setNextKinematicRotation({
-          x: scratchCarryWorldQuat.current.x,
-          y: scratchCarryWorldQuat.current.y,
-          z: scratchCarryWorldQuat.current.z,
-          w: scratchCarryWorldQuat.current.w,
-        });
-      }
+      carryAnchorRef.current.getWorldPosition(grabbableRegistry.carriedVisualPos);
+      carryAnchorRef.current.getWorldQuaternion(grabbableRegistry.carriedVisualQuat);
     }
   });
 
@@ -414,6 +430,7 @@ export function PlayerRig({
       <Ecctrl
         ref={ecctrlRef}
         enable={enabled}
+        enabledRotations={[false, true, false]}
         position={SPAWN_POS}
         capsuleHalfHeight={CHARACTER_DIMENSIONS.capsuleHalfHeight}
         capsuleRadius={CHARACTER_DIMENSIONS.capsuleRadius}
@@ -426,10 +443,11 @@ export function PlayerRig({
         enableToggleRun={false}
         springK={85}
         dampingC={7}
-        autoBalance
-        autoBalanceSpringOnY={0.16}
-        autoBalanceDampingOnY={0.012}
-        moveImpulsePointOffset={0.15}
+        autoBalance={false}
+        autoBalanceSpringOnY={0.14}
+        autoBalanceDampingOnY={0.032}
+        angularDamping={3.5}
+        moveImpulsePointOffset={0}
         onCollisionEnter={({ other }) => {
           const ctrl = ecctrlRef.current;
           if (!ctrl || !enabled || bumpCooldown.current > 0) return;

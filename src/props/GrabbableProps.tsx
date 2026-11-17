@@ -113,6 +113,7 @@ function GrabbableItem({
 }: SingleGrabbableProps) {
   const bodyRef = useRef<RapierRigidBody>(null);
   const colliderRef = useRef<RapierCollider>(null);
+  const visualGroupRef = useRef<THREE.Group>(null);
   const highlightGroupRef = useRef<THREE.Group>(null);
   const beaconHolderRef = useRef<THREE.Group>(null);
   const textures = useMemo(() => getSharedTextures(), []);
@@ -216,6 +217,7 @@ function GrabbableItem({
     const c = colliderRef.current;
     if (!b) return;
     const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(...rotation));
+    b.setEnabled(true);
     b.setTranslation({ x: position[0], y: position[1], z: position[2] }, true);
     b.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true);
     b.setLinvel({ x: 0, y: 0, z: 0 }, true);
@@ -224,10 +226,27 @@ function GrabbableItem({
       c.setSensor(false);
       c.setEnabled(true);
     }
+    if (visualGroupRef.current) {
+      visualGroupRef.current.position.set(position[0], position[1], position[2]);
+      visualGroupRef.current.quaternion.copy(q);
+    }
   }, [resetSignal, position, rotation]);
 
   useFrame((state) => {
+    const isCarried = grabbableRegistry.carriedId === id;
     const isTarget = grabbableRegistry.highlightedId === id && grabbableRegistry.carriedId === null;
+
+    if (visualGroupRef.current) {
+      if (isCarried) {
+        visualGroupRef.current.position.copy(grabbableRegistry.carriedVisualPos);
+        visualGroupRef.current.quaternion.copy(grabbableRegistry.carriedVisualQuat);
+      } else if (bodyRef.current) {
+        const t = bodyRef.current.translation();
+        const r = bodyRef.current.rotation();
+        visualGroupRef.current.position.set(t.x, t.y, t.z);
+        visualGroupRef.current.quaternion.set(r.x, r.y, r.z, r.w);
+      }
+    }
 
     if (beaconHolderRef.current && bodyRef.current) {
       const t = bodyRef.current.translation();
@@ -262,118 +281,110 @@ function GrabbableItem({
         userData={{ ecctrl: { excludeRay: true }, grabbableId: id }}
         name={`grabbable-${id}`}
       >
-        {/* CAJA APILABLE: cuerpo plano estable + refuerzos de madera y esquineros */}
-        {kind === 'crate' && (
-          <>
-            <CuboidCollider ref={colliderRef} args={[0.32, 0.3, 0.32]} />
-            <group>
-              <mesh castShadow receiveShadow material={materials.crateWood}>
-                <boxGeometry args={[0.62, 0.58, 0.62]} />
-              </mesh>
-              <mesh castShadow material={materials.woodTrim} position={[0, 0.27, 0]}>
-                <boxGeometry args={[0.65, 0.06, 0.65]} />
-              </mesh>
-              <mesh castShadow material={materials.woodTrim} position={[0, -0.27, 0]}>
-                <boxGeometry args={[0.65, 0.06, 0.65]} />
-              </mesh>
-              {/* Metal corner straps */}
-              <mesh castShadow material={materials.bracket} position={[0.305, 0, 0.305]}>
-                <boxGeometry args={[0.04, 0.6, 0.04]} />
-              </mesh>
-              <mesh castShadow material={materials.bracket} position={[-0.305, 0, 0.305]}>
-                <boxGeometry args={[0.04, 0.6, 0.04]} />
-              </mesh>
-              <mesh castShadow material={materials.bracket} position={[0.305, 0, -0.305]}>
-                <boxGeometry args={[0.04, 0.6, 0.04]} />
-              </mesh>
-              <mesh castShadow material={materials.bracket} position={[-0.305, 0, -0.305]}>
-                <boxGeometry args={[0.04, 0.6, 0.04]} />
-              </mesh>
-            </group>
-          </>
-        )}
-
-        {/* RUEDA QUE RUEDA: cilindro apoyado sobre su banda de rodamiento (eje X) */}
+        {kind === 'crate' && <CuboidCollider ref={colliderRef} args={[0.32, 0.3, 0.32]} />}
         {kind === 'wheel' && (
-          <>
-            <CylinderCollider ref={colliderRef} args={[0.14, 0.38]} rotation={[0, 0, Math.PI / 2]} />
-            <group>
-              <mesh castShadow receiveShadow material={materials.rubber} rotation={[0, 0, Math.PI / 2]}>
-                <cylinderGeometry args={[0.38, 0.38, 0.26, 20]} />
-              </mesh>
-              {/* Tread ribs for visible rolling spin */}
-              {[0, 1, 2, 3, 4, 5].map((idx) => {
-                const a = (idx / 6) * Math.PI * 2;
-                return (
-                  <mesh
-                    key={idx}
-                    material={materials.rubber}
-                    position={[0, Math.cos(a) * 0.37, Math.sin(a) * 0.37]}
-                    rotation={[a, 0, 0]}
-                  >
-                    <boxGeometry args={[0.27, 0.04, 0.07]} />
-                  </mesh>
-                );
-              })}
-              <mesh castShadow material={materials.rimYellow} rotation={[0, 0, Math.PI / 2]}>
-                <cylinderGeometry args={[0.21, 0.21, 0.28, 14]} />
-              </mesh>
-              <mesh castShadow material={materials.steel} rotation={[0, 0, Math.PI / 2]}>
-                <cylinderGeometry args={[0.075, 0.075, 0.31, 10]} />
-              </mesh>
-            </group>
-          </>
+          <CylinderCollider ref={colliderRef} args={[0.14, 0.38]} rotation={[0, 0, Math.PI / 2]} />
+        )}
+        {kind === 'canister' && <CylinderCollider ref={colliderRef} args={[0.38, 0.22]} />}
+        {kind === 'part' && <CuboidCollider ref={colliderRef} args={[0.27, 0.23, 0.23]} />}
+      </RigidBody>
+
+      {/* Decoupled visual mesh: syncs to Rapier body when free, and directly to carryAnchor when carried */}
+      <group ref={visualGroupRef} position={position} rotation={rotation}>
+        {kind === 'crate' && (
+          <group>
+            <mesh castShadow receiveShadow material={materials.crateWood}>
+              <boxGeometry args={[0.62, 0.58, 0.62]} />
+            </mesh>
+            <mesh castShadow material={materials.woodTrim} position={[0, 0.27, 0]}>
+              <boxGeometry args={[0.65, 0.06, 0.65]} />
+            </mesh>
+            <mesh castShadow material={materials.woodTrim} position={[0, -0.27, 0]}>
+              <boxGeometry args={[0.65, 0.06, 0.65]} />
+            </mesh>
+            <mesh castShadow material={materials.bracket} position={[0.305, 0, 0.305]}>
+              <boxGeometry args={[0.04, 0.6, 0.04]} />
+            </mesh>
+            <mesh castShadow material={materials.bracket} position={[-0.305, 0, 0.305]}>
+              <boxGeometry args={[0.04, 0.6, 0.04]} />
+            </mesh>
+            <mesh castShadow material={materials.bracket} position={[0.305, 0, -0.305]}>
+              <boxGeometry args={[0.04, 0.6, 0.04]} />
+            </mesh>
+            <mesh castShadow material={materials.bracket} position={[-0.305, 0, -0.305]}>
+              <boxGeometry args={[0.04, 0.6, 0.04]} />
+            </mesh>
+          </group>
         )}
 
-        {/* BIDÓN TUMBABLE: más esbelto y fácil de volcar y rodar de costado */}
+        {kind === 'wheel' && (
+          <group>
+            <mesh castShadow receiveShadow material={materials.rubber} rotation={[0, 0, Math.PI / 2]}>
+              <cylinderGeometry args={[0.38, 0.38, 0.26, 20]} />
+            </mesh>
+            {[0, 1, 2, 3, 4, 5].map((idx) => {
+              const a = (idx / 6) * Math.PI * 2;
+              return (
+                <mesh
+                  key={idx}
+                  material={materials.rubber}
+                  position={[0, Math.cos(a) * 0.37, Math.sin(a) * 0.37]}
+                  rotation={[a, 0, 0]}
+                >
+                  <boxGeometry args={[0.27, 0.04, 0.07]} />
+                </mesh>
+              );
+            })}
+            <mesh castShadow material={materials.rimYellow} rotation={[0, 0, Math.PI / 2]}>
+              <cylinderGeometry args={[0.21, 0.21, 0.28, 14]} />
+            </mesh>
+            <mesh castShadow material={materials.steel} rotation={[0, 0, Math.PI / 2]}>
+              <cylinderGeometry args={[0.075, 0.075, 0.31, 10]} />
+            </mesh>
+          </group>
+        )}
+
         {kind === 'canister' && (
-          <>
-            <CylinderCollider ref={colliderRef} args={[0.38, 0.22]} />
-            <group>
-              <mesh castShadow receiveShadow material={materials.canisterTeal}>
-                <cylinderGeometry args={[0.22, 0.22, 0.74, 16]} />
-              </mesh>
-              <mesh material={materials.hazard} position={[0, 0.08, 0]}>
-                <cylinderGeometry args={[0.226, 0.226, 0.16, 16]} />
-              </mesh>
-              <mesh castShadow material={materials.bracket} position={[0, 0.26, 0]}>
-                <cylinderGeometry args={[0.232, 0.232, 0.04, 16]} />
-              </mesh>
-              <mesh castShadow material={materials.bracket} position={[0, -0.26, 0]}>
-                <cylinderGeometry args={[0.232, 0.232, 0.04, 16]} />
-              </mesh>
-              <mesh castShadow material={materials.brass} position={[0.08, 0.4, 0]}>
-                <cylinderGeometry args={[0.045, 0.045, 0.06, 10]} />
-              </mesh>
-              <mesh castShadow material={materials.redPaint} position={[-0.06, 0.4, 0]}>
-                <boxGeometry args={[0.14, 0.06, 0.05]} />
-              </mesh>
-            </group>
-          </>
+          <group>
+            <mesh castShadow receiveShadow material={materials.canisterTeal}>
+              <cylinderGeometry args={[0.22, 0.22, 0.74, 16]} />
+            </mesh>
+            <mesh material={materials.hazard} position={[0, 0.08, 0]}>
+              <cylinderGeometry args={[0.226, 0.226, 0.16, 16]} />
+            </mesh>
+            <mesh castShadow material={materials.bracket} position={[0, 0.26, 0]}>
+              <cylinderGeometry args={[0.232, 0.232, 0.04, 16]} />
+            </mesh>
+            <mesh castShadow material={materials.bracket} position={[0, -0.26, 0]}>
+              <cylinderGeometry args={[0.232, 0.232, 0.04, 16]} />
+            </mesh>
+            <mesh castShadow material={materials.brass} position={[0.08, 0.4, 0]}>
+              <cylinderGeometry args={[0.045, 0.045, 0.06, 10]} />
+            </mesh>
+            <mesh castShadow material={materials.redPaint} position={[-0.06, 0.4, 0]}>
+              <boxGeometry args={[0.14, 0.06, 0.05]} />
+            </mesh>
+          </group>
         )}
 
-        {/* PIEZA DE REPUESTO TRANSPORTABLE (Módulo de bobina/batería) */}
         {kind === 'part' && (
-          <>
-            <CuboidCollider ref={colliderRef} args={[0.27, 0.23, 0.23]} />
-            <group>
-              <mesh castShadow receiveShadow material={materials.redPaint}>
-                <boxGeometry args={[0.52, 0.42, 0.44]} />
-              </mesh>
-              <mesh castShadow material={materials.bracket} position={[0, 0.22, 0]}>
-                <boxGeometry args={[0.54, 0.06, 0.46]} />
-              </mesh>
-              <mesh castShadow material={materials.copper} position={[-0.12, 0.28, 0]}>
-                <cylinderGeometry args={[0.08, 0.08, 0.12, 12]} />
-              </mesh>
-              <mesh castShadow material={materials.brass} position={[0.14, 0.28, 0]}>
-                <cylinderGeometry args={[0.06, 0.06, 0.1, 10]} />
-              </mesh>
-              <mesh castShadow material={materials.steel} position={[0, 0, 0.23]}>
-                <boxGeometry args={[0.36, 0.2, 0.04]} />
-              </mesh>
-            </group>
-          </>
+          <group>
+            <mesh castShadow receiveShadow material={materials.redPaint}>
+              <boxGeometry args={[0.52, 0.42, 0.44]} />
+            </mesh>
+            <mesh castShadow material={materials.bracket} position={[0, 0.22, 0]}>
+              <boxGeometry args={[0.54, 0.06, 0.46]} />
+            </mesh>
+            <mesh castShadow material={materials.copper} position={[-0.12, 0.28, 0]}>
+              <cylinderGeometry args={[0.08, 0.08, 0.12, 12]} />
+            </mesh>
+            <mesh castShadow material={materials.brass} position={[0.14, 0.28, 0]}>
+              <cylinderGeometry args={[0.06, 0.06, 0.1, 10]} />
+            </mesh>
+            <mesh castShadow material={materials.steel} position={[0, 0, 0.23]}>
+              <boxGeometry args={[0.36, 0.2, 0.04]} />
+            </mesh>
+          </group>
         )}
 
         <group ref={highlightGroupRef} visible={false} position={[0, -0.28, 0]}>
@@ -381,7 +392,7 @@ function GrabbableItem({
             <ringGeometry args={[0.42, 0.5, 24]} />
           </mesh>
         </group>
-      </RigidBody>
+      </group>
 
       <group ref={beaconHolderRef} visible={false}>
         <GrabBeacon visible />
