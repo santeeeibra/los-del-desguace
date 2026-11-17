@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { Suspense, useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   CuboidCollider,
@@ -10,6 +10,8 @@ import {
 import * as THREE from 'three';
 import { getSharedTextures, PALETTE } from '../config/visualConfig';
 import { grabbableRegistry, type GrabbableKind } from './grabbableRegistry';
+import { PropModel } from './PropModels';
+import { PROP_MODEL_URLS, USE_LEGACY_PROP_VISUALS } from './propModelConfig';
 
 interface SingleGrabbableProps {
   id: string;
@@ -266,6 +268,56 @@ function GrabbableItem({
 
   const phys = PHYSICS_PROPS[kind];
 
+  // Primitivas originales: fallback mientras carga el GLB y modo comparación (?props=legacy)
+  const legacyCrate = (
+    <group>
+      <mesh castShadow receiveShadow material={materials.crateWood}>
+        <boxGeometry args={[0.62, 0.58, 0.62]} />
+      </mesh>
+      <mesh castShadow material={materials.woodTrim} position={[0, 0.27, 0]}>
+        <boxGeometry args={[0.65, 0.06, 0.65]} />
+      </mesh>
+      <mesh castShadow material={materials.woodTrim} position={[0, -0.27, 0]}>
+        <boxGeometry args={[0.65, 0.06, 0.65]} />
+      </mesh>
+      <mesh castShadow material={materials.bracket} position={[0.305, 0, 0.305]}>
+        <boxGeometry args={[0.04, 0.6, 0.04]} />
+      </mesh>
+      <mesh castShadow material={materials.bracket} position={[-0.305, 0, 0.305]}>
+        <boxGeometry args={[0.04, 0.6, 0.04]} />
+      </mesh>
+      <mesh castShadow material={materials.bracket} position={[0.305, 0, -0.305]}>
+        <boxGeometry args={[0.04, 0.6, 0.04]} />
+      </mesh>
+      <mesh castShadow material={materials.bracket} position={[-0.305, 0, -0.305]}>
+        <boxGeometry args={[0.04, 0.6, 0.04]} />
+      </mesh>
+    </group>
+  );
+
+  const legacyCanister = (
+    <group>
+      <mesh castShadow receiveShadow material={materials.canisterTeal}>
+        <cylinderGeometry args={[0.22, 0.22, 0.74, 16]} />
+      </mesh>
+      <mesh material={materials.hazard} position={[0, 0.08, 0]}>
+        <cylinderGeometry args={[0.226, 0.226, 0.16, 16]} />
+      </mesh>
+      <mesh castShadow material={materials.bracket} position={[0, 0.26, 0]}>
+        <cylinderGeometry args={[0.232, 0.232, 0.04, 16]} />
+      </mesh>
+      <mesh castShadow material={materials.bracket} position={[0, -0.26, 0]}>
+        <cylinderGeometry args={[0.232, 0.232, 0.04, 16]} />
+      </mesh>
+      <mesh castShadow material={materials.brass} position={[0.08, 0.4, 0]}>
+        <cylinderGeometry args={[0.045, 0.045, 0.06, 10]} />
+      </mesh>
+      <mesh castShadow material={materials.redPaint} position={[-0.06, 0.4, 0]}>
+        <boxGeometry args={[0.14, 0.06, 0.05]} />
+      </mesh>
+    </group>
+  );
+
   return (
     <>
       <RigidBody
@@ -292,31 +344,14 @@ function GrabbableItem({
 
       {/* Decoupled visual mesh: syncs to Rapier body when free, and directly to carryAnchor when carried */}
       <group ref={visualGroupRef} position={position} rotation={rotation}>
-        {kind === 'crate' && (
-          <group>
-            <mesh castShadow receiveShadow material={materials.crateWood}>
-              <boxGeometry args={[0.62, 0.58, 0.62]} />
-            </mesh>
-            <mesh castShadow material={materials.woodTrim} position={[0, 0.27, 0]}>
-              <boxGeometry args={[0.65, 0.06, 0.65]} />
-            </mesh>
-            <mesh castShadow material={materials.woodTrim} position={[0, -0.27, 0]}>
-              <boxGeometry args={[0.65, 0.06, 0.65]} />
-            </mesh>
-            <mesh castShadow material={materials.bracket} position={[0.305, 0, 0.305]}>
-              <boxGeometry args={[0.04, 0.6, 0.04]} />
-            </mesh>
-            <mesh castShadow material={materials.bracket} position={[-0.305, 0, 0.305]}>
-              <boxGeometry args={[0.04, 0.6, 0.04]} />
-            </mesh>
-            <mesh castShadow material={materials.bracket} position={[0.305, 0, -0.305]}>
-              <boxGeometry args={[0.04, 0.6, 0.04]} />
-            </mesh>
-            <mesh castShadow material={materials.bracket} position={[-0.305, 0, -0.305]}>
-              <boxGeometry args={[0.04, 0.6, 0.04]} />
-            </mesh>
-          </group>
-        )}
+        {kind === 'crate' &&
+          (USE_LEGACY_PROP_VISUALS ? (
+            legacyCrate
+          ) : (
+            <Suspense fallback={legacyCrate}>
+              <PropModel url={PROP_MODEL_URLS.crate} />
+            </Suspense>
+          ))}
 
         {kind === 'wheel' && (
           <group>
@@ -345,28 +380,14 @@ function GrabbableItem({
           </group>
         )}
 
-        {kind === 'canister' && (
-          <group>
-            <mesh castShadow receiveShadow material={materials.canisterTeal}>
-              <cylinderGeometry args={[0.22, 0.22, 0.74, 16]} />
-            </mesh>
-            <mesh material={materials.hazard} position={[0, 0.08, 0]}>
-              <cylinderGeometry args={[0.226, 0.226, 0.16, 16]} />
-            </mesh>
-            <mesh castShadow material={materials.bracket} position={[0, 0.26, 0]}>
-              <cylinderGeometry args={[0.232, 0.232, 0.04, 16]} />
-            </mesh>
-            <mesh castShadow material={materials.bracket} position={[0, -0.26, 0]}>
-              <cylinderGeometry args={[0.232, 0.232, 0.04, 16]} />
-            </mesh>
-            <mesh castShadow material={materials.brass} position={[0.08, 0.4, 0]}>
-              <cylinderGeometry args={[0.045, 0.045, 0.06, 10]} />
-            </mesh>
-            <mesh castShadow material={materials.redPaint} position={[-0.06, 0.4, 0]}>
-              <boxGeometry args={[0.14, 0.06, 0.05]} />
-            </mesh>
-          </group>
-        )}
+        {kind === 'canister' &&
+          (USE_LEGACY_PROP_VISUALS ? (
+            legacyCanister
+          ) : (
+            <Suspense fallback={legacyCanister}>
+              <PropModel url={PROP_MODEL_URLS.canister} />
+            </Suspense>
+          ))}
 
         {kind === 'part' && (
           <group>
