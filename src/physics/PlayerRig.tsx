@@ -33,6 +33,7 @@ export function PlayerRig({
   teleportTarget = null,
 }: PlayerRigProps) {
   const ecctrlRef = useRef<EcctrlHandle>(null);
+  const visualCenterRef = useRef<THREE.Group>(null);
   const carryAnchorRef = useRef<THREE.Group | null>(null);
   const dustPoolRef = useRef<DustPuffHandle>(null);
   const cameraMode = useGameStore((s) => s.cameraMode);
@@ -48,7 +49,7 @@ export function PlayerRig({
     isCarrying: false,
     carriedKind: null,
     carryDist: 0.72,
-    carryLift: 0.14,
+    carryLift: -0.04,
     accelForward: 0,
     turnRate: 0,
     takeoffImpulse: 0,
@@ -77,11 +78,15 @@ export function PlayerRig({
   const carriedIdRef = useRef<string | null>(null);
   const carriedKindRef = useRef<GrabbableKind | null>(null);
   const smoothCarryDistRef = useRef(0.72);
-  const smoothCarryLiftRef = useRef(0.14);
+  const smoothCarryLiftRef = useRef(-0.04);
   const lastSafeYawRef = useRef(0);
+  const resolvedDistRef = useRef(0.72);
+  const resolvedLiftRef = useRef(-0.04);
+  const safeVisualYawRef = useRef<number | null>(null);
 
   // Reusable scratch objects (zero per-frame allocations)
   const scratchPlayerPos = useRef(new THREE.Vector3());
+  const scratchVisualPos = useRef(new THREE.Vector3());
   const scratchForward = useRef(new THREE.Vector3());
   const scratchCamFwd = useRef(new THREE.Vector3());
   const scratchCamRight = useRef(new THREE.Vector3());
@@ -111,6 +116,10 @@ export function PlayerRig({
     if (!enabled) return;
     cameraSourceRef.current = {
       getTargetPosition(out: THREE.Vector3) {
+        if (visualCenterRef.current) {
+          visualCenterRef.current.getWorldPosition(out);
+          return true;
+        }
         const ctrl = ecctrlRef.current;
         if (!ctrl) return false;
         const b = ctrl.body;
@@ -815,6 +824,9 @@ export function PlayerRig({
           const initLift = clearGrab ? clearGrab.lift : prof.holdHeight;
           smoothCarryDistRef.current = initDist;
           smoothCarryLiftRef.current = initLift;
+          resolvedDistRef.current = initDist;
+          resolvedLiftRef.current = initLift;
+          safeVisualYawRef.current = null;
           lastSafeYawRef.current = grabYaw;
 
           const wx = scratchPlayerPos.current.x + Math.sin(grabYaw) * initDist;
@@ -841,9 +853,110 @@ export function PlayerRig({
         }
       }
     }
+
+    // 7. Render-frame sync: place carried prop using exact Rapier-interpolated capsule center
+    // so hands & object share the exact same render timestamp as Chispa (zero 60/120Hz jitter).
+    if (carriedIdRef.current && carriedKindRef.current) {
+      const entry = grabbableRegistry.getById(carriedIdRef.current);
+      const kind = carriedKindRef.current;
+      const prof = CARRY_PROFILES[kind];
+
+      if (visualCenterRef.current) {
+        visualCenterRef.current.getWorldPosition(scratchVisualPos.current);
+        visualCenterRef.current.getWorldQuaternion(scratchBodyQuat.current);
+      } else {
+        const bp = ctrl.body.translation();
+        const br = ctrl.body.rotation();
+        scratchVisualPos.current.set(bp.x, bp.y, bp.z);
+        scratchBodyQuat.current.set(br.x, br.y, br.z, br.w);
+      }
+
+      scratchPostFwd.current.set(0, 0, 1).applyQuaternion(scratchBodyQuat.current).setY(0);
+      if (scratchPostFwd.current.lengthSq() > 1e-6) {
+        scratchPostFwd.current.normalize();
+      } else {
+        scratchPostFwd.current.set(0, 0, 1);
+      }
+
+      const activeYaw =
+        safeVisualYawRef.current !== null
+          ? safeVisualYawRef.current
+          : Math.atan2(scratchPostFwd.current.x, scratchPostFwd.current.z);
+
+      const targetDist = resolvedDistRef.current;
+      const targetLift = resolvedLiftRef.current;
+      const distRate = targetDist < smoothCarryDistRef.current ? 45 : 14;
+      smoothCarryDistRef.current = THREE.MathUtils.lerp(
+        smoothCarryDistRef.current,
+        targetDist,
+        1 - Math.exp(-distRate * dt)
+      );
+      smoothCarryLiftRef.current = THREE.MathUtils.lerp(
+        smoothCarryLiftRef.current,
+        targetLift,
+        1 - Math.exp(-22 * dt)
+      );
+
+      const wx = scratchVisualPos.current.x + Math.sin(activeYaw) * smoothCarryDistRef.current;
+      const wy = scratchVisualPos.current.y - 0.08 + smoothCarryLiftRef.current;
+      const wz = scratchVisualPos.current.z + Math.cos(activeYaw) * smoothCarryDistRef.current;
+      scratchDropEuler.current.set(prof.tiltX, activeYaw, 0);
+      scratchDropQuat.current.setFromEuler(scratchDropEuler.current);
+
+      grabbableRegistry.carriedVisualPos.set(wx, wy, wz);
+      grabbableRegistry.carriedVisualQuat.copy(scratchDropQuat.current);
+      const vis = entry?.getVisualGroup();
+      if (vis) {
+        vis.position.set(wx, wy, wz);
+        vis.quaternion.copy(scratchDropQuat.current);
+      }
+
+      animDataRef.current.carryDist = smoothCarryDistRef.current;
+      animDataRef.current.carryLift = smoothCarryLiftRef.current;
+    }
+
+    if (typeof window !== 'undefined') {
+      const carriedEntry = carriedIdRef.current ? grabbableRegistry.getById(carriedIdRef.current) : null;
+      const carriedBody = carriedEntry?.getBody();
+      const carriedCol = carriedEntry?.getCollider();
+      const cPos = carriedBody?.translation();
+      const pTele = visualCenterRef.current ? scratchVisualPos.current : ctrl.currPos;
+      if (!carriedIdRef.current && visualCenterRef.current) {
+        visualCenterRef.current.getWorldPosition(scratchVisualPos.current);
+      }
+      (window as unknown as Record<string, unknown>).__desguaceTelemetry = {
+        px: Number(pTele.x.toFixed(3)),
+        py: Number(pTele.y.toFixed(3)),
+        pz: Number(pTele.z.toFixed(3)),
+        vx: Number(ctrl.currLinVel.x.toFixed(3)),
+        vy: Number(ctrl.currLinVel.y.toFixed(3)),
+        vz: Number(ctrl.currLinVel.z.toFixed(3)),
+        fx: Number(scratchForward.current.x.toFixed(3)),
+        fz: Number(scratchForward.current.z.toFixed(3)),
+        uy: Number(ctrl.bodyYAxis.y.toFixed(3)),
+        isOnGround: onGround,
+        standHandle: ctrl.standCollider?.handle ?? null,
+        floatY: Number(ctrl.floatingImpulse.y.toFixed(4)),
+        moveY: Number(ctrl.moveImpulse.y.toFixed(4)),
+        gravityScale: ctrl.body.gravityScale(),
+        slopeAngleDeg: Number(((ctrl.actualSlopeAngle * 180) / Math.PI).toFixed(1)),
+        carriedId: carriedIdRef.current,
+        carriedKind: carriedKindRef.current,
+        carriedBodyEnabled: carriedBody?.isEnabled() ?? null,
+        carriedColEnabled: carriedCol?.isEnabled() ?? null,
+        carriedColSensor: carriedCol?.isSensor() ?? null,
+        cx: cPos ? Number(cPos.x.toFixed(3)) : null,
+        cy: cPos ? Number(cPos.y.toFixed(3)) : null,
+        cz: cPos ? Number(cPos.z.toFixed(3)) : null,
+        vxCarry: carriedIdRef.current ? Number(grabbableRegistry.carriedVisualPos.x.toFixed(3)) : null,
+        vyCarry: carriedIdRef.current ? Number(grabbableRegistry.carriedVisualPos.y.toFixed(3)) : null,
+        vzCarry: carriedIdRef.current ? Number(grabbableRegistry.carriedVisualPos.z.toFixed(3)) : null,
+        carryDist: Number(animDataRef.current.carryDist.toFixed(3)),
+      };
+    }
   });
 
-  // 7. Post-physics-step carry wall clearance, zero-lag mesh sync & live telemetry
+  // Physics-step carry wall & rotation safety (pure Rapier constraints, separate from render interpolation)
   useAfterPhysicsStep(() => {
     const ctrl = ecctrlRef.current;
     if (!ctrl || !ctrl.body) return;
@@ -851,7 +964,6 @@ export function PlayerRig({
     const p = ctrl.body.translation();
     const r = ctrl.body.rotation();
     const v = ctrl.body.linvel();
-    const dt = Math.min(world.timestep, 0.05);
 
     scratchBodyQuat.current.set(r.x, r.y, r.z, r.w);
     scratchPostFwd.current.set(0, 0, 1).applyQuaternion(scratchBodyQuat.current).setY(0);
@@ -879,7 +991,7 @@ export function PlayerRig({
         carriedBodyHandle
       );
 
-      let activeYaw = yawNow;
+      let clampedYaw: number | null = null;
 
       if (!resolved) {
         const probe = isCarryPoseClear(
@@ -914,8 +1026,8 @@ export function PlayerRig({
           : null;
 
         if (safeTurnCheck && turningDeeperIntoWall) {
-          activeYaw = lastSafeYawRef.current;
-          scratchDropEuler.current.set(0, activeYaw, 0);
+          clampedYaw = lastSafeYawRef.current;
+          scratchDropEuler.current.set(0, clampedYaw, 0);
           scratchDropQuat.current.setFromEuler(scratchDropEuler.current);
           ctrl.body.setRotation(
             {
@@ -940,82 +1052,18 @@ export function PlayerRig({
       }
 
       const minBoundDist = Math.max(0.42, CHARACTER_DIMENSIONS.capsuleRadius + 0.1);
-      const targetDist = resolved
+      resolvedDistRef.current = resolved
         ? resolved.dist
-        : Math.min(minBoundDist, smoothCarryDistRef.current);
-      const targetLift = THREE.MathUtils.clamp(
+        : Math.min(minBoundDist, resolvedDistRef.current);
+      resolvedLiftRef.current = THREE.MathUtils.clamp(
         resolved ? resolved.lift : prof.holdHeight,
         prof.holdHeight - 0.06,
         prof.holdHeight + 0.16
       );
-
-      const distRate = targetDist < smoothCarryDistRef.current ? 45 : 12;
-      smoothCarryDistRef.current = THREE.MathUtils.lerp(
-        smoothCarryDistRef.current,
-        targetDist,
-        1 - Math.exp(-distRate * dt)
-      );
-      smoothCarryLiftRef.current = THREE.MathUtils.lerp(
-        smoothCarryLiftRef.current,
-        targetLift,
-        1 - Math.exp(-20 * dt)
-      );
-      if (resolved) {
-        lastSafeYawRef.current = activeYaw;
+      safeVisualYawRef.current = clampedYaw;
+      if (resolved && clampedYaw === null) {
+        lastSafeYawRef.current = yawNow;
       }
-
-      const wx = p.x + Math.sin(activeYaw) * smoothCarryDistRef.current;
-      const wy = p.y - 0.08 + smoothCarryLiftRef.current;
-      const wz = p.z + Math.cos(activeYaw) * smoothCarryDistRef.current;
-      scratchDropEuler.current.set(prof.tiltX, activeYaw, 0);
-      scratchDropQuat.current.setFromEuler(scratchDropEuler.current);
-
-      grabbableRegistry.carriedVisualPos.set(wx, wy, wz);
-      grabbableRegistry.carriedVisualQuat.copy(scratchDropQuat.current);
-      const vis = entry?.getVisualGroup();
-      if (vis) {
-        vis.position.set(wx, wy, wz);
-        vis.quaternion.copy(scratchDropQuat.current);
-      }
-
-      animDataRef.current.carryDist = smoothCarryDistRef.current;
-      animDataRef.current.carryLift = smoothCarryLiftRef.current;
-    }
-
-    if (typeof window !== 'undefined') {
-      const carriedEntry = carriedIdRef.current ? grabbableRegistry.getById(carriedIdRef.current) : null;
-      const carriedBody = carriedEntry?.getBody();
-      const carriedCol = carriedEntry?.getCollider();
-      const cPos = carriedBody?.translation();
-      (window as unknown as Record<string, unknown>).__desguaceTelemetry = {
-        px: Number(p.x.toFixed(3)),
-        py: Number(p.y.toFixed(3)),
-        pz: Number(p.z.toFixed(3)),
-        vx: Number(v.x.toFixed(3)),
-        vy: Number(v.y.toFixed(3)),
-        vz: Number(v.z.toFixed(3)),
-        fx: Number(scratchPostFwd.current.x.toFixed(3)),
-        fz: Number(scratchPostFwd.current.z.toFixed(3)),
-        uy: Number(ctrl.bodyYAxis.y.toFixed(3)),
-        isOnGround: ctrl.isOnGround,
-        standHandle: ctrl.standCollider?.handle ?? null,
-        floatY: Number(ctrl.floatingImpulse.y.toFixed(4)),
-        moveY: Number(ctrl.moveImpulse.y.toFixed(4)),
-        gravityScale: ctrl.body.gravityScale(),
-        slopeAngleDeg: Number(((ctrl.actualSlopeAngle * 180) / Math.PI).toFixed(1)),
-        carriedId: carriedIdRef.current,
-        carriedKind: carriedKindRef.current,
-        carriedBodyEnabled: carriedBody?.isEnabled() ?? null,
-        carriedColEnabled: carriedCol?.isEnabled() ?? null,
-        carriedColSensor: carriedCol?.isSensor() ?? null,
-        cx: cPos ? Number(cPos.x.toFixed(3)) : null,
-        cy: cPos ? Number(cPos.y.toFixed(3)) : null,
-        cz: cPos ? Number(cPos.z.toFixed(3)) : null,
-        vxCarry: carriedIdRef.current ? Number(grabbableRegistry.carriedVisualPos.x.toFixed(3)) : null,
-        vyCarry: carriedIdRef.current ? Number(grabbableRegistry.carriedVisualPos.y.toFixed(3)) : null,
-        vzCarry: carriedIdRef.current ? Number(grabbableRegistry.carriedVisualPos.z.toFixed(3)) : null,
-        carryDist: Number(animDataRef.current.carryDist.toFixed(3)),
-      };
     }
   });
 
@@ -1065,6 +1113,7 @@ export function PlayerRig({
           }
         }}
       >
+        <group ref={visualCenterRef} />
         {enabled && (
           <InventorCharacter
             animDataRef={animDataRef}

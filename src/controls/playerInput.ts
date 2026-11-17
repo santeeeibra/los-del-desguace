@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { gameStore } from '../state/gameStore';
 
 export interface PlayerInputSnapshot {
   forward: boolean;
@@ -117,6 +118,11 @@ export function useKeyboardInput() {
         case 'KeyF':
           if (!e.repeat) {
             playerInput.triggerInteract();
+          }
+          break;
+        case 'KeyV':
+          if (!e.repeat) {
+            gameStore.cycleCameraMode();
           }
           break;
       }

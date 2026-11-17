@@ -1,7 +1,12 @@
 import { memo, useRef, useState } from 'react';
 import type { QualityLevel } from '../config/visualConfig';
 import { playerInput } from '../controls/playerInput';
-import { gameStore, useGameStore, type TouchOverlayMode } from '../state/gameStore';
+import {
+  CAMERA_VIEW_LABELS,
+  gameStore,
+  useGameStore,
+  type TouchOverlayMode,
+} from '../state/gameStore';
 
 const VirtualJoystick = memo(function VirtualJoystick() {
   const baseRef = useRef<HTMLDivElement>(null);
@@ -117,6 +122,7 @@ export function HudOverlay() {
   const touchMode = useGameStore((s) => s.touchMode);
   const isTouchDevice = useGameStore((s) => s.isTouchDevice);
   const cameraMode = useGameStore((s) => s.cameraMode);
+  const cameraBanner = useGameStore((s) => s.cameraBanner);
   const nearbyTargetKind = useGameStore((s) => s.nearbyTargetKind);
   const carriedKind = useGameStore((s) => s.carriedKind);
   const impactFeedback = useGameStore((s) => s.impactFeedback);
@@ -161,6 +167,30 @@ export function HudOverlay() {
             transition: 'width 120ms ease, height 120ms ease, border-color 120ms ease',
           }}
         />
+      )}
+
+      {/* BRIEF CAMERA MODE TOAST */}
+      {cameraBanner && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 72,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            pointerEvents: 'none',
+            background: 'rgba(24, 21, 19, 0.82)',
+            border: '1px solid rgba(245, 185, 66, 0.65)',
+            color: '#ffe5a3',
+            padding: '5px 14px',
+            borderRadius: 99,
+            fontSize: 13,
+            fontWeight: 700,
+            letterSpacing: 0.3,
+            boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
+          }}
+        >
+          Vista: {cameraBanner}
+        </div>
       )}
 
       {/* TOP BAR */}
@@ -290,6 +320,26 @@ export function HudOverlay() {
 
           <button
             type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => gameStore.cycleCameraMode()}
+            title="Cambiar cámara (V)"
+            style={{
+              fontSize: 12,
+              fontWeight: 700,
+              padding: '4px 9px',
+              borderRadius: 8,
+              border: '1px solid rgba(245, 185, 66, 0.65)',
+              background: 'rgba(245, 185, 66, 0.22)',
+              color: '#ffe5a3',
+              touchAction: 'manipulation',
+            }}
+          >
+            Vista: {CAMERA_VIEW_LABELS[cameraMode].short}
+          </button>
+
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
             onClick={cycleTouchMode}
             title="Alternar controles táctiles en pantalla"
             style={{
@@ -373,6 +423,7 @@ export function HudOverlay() {
             <span><strong style={{ color: '#ffe5a3' }}>Espacio</strong> Saltar</span>
             <span><strong style={{ color: '#ffe5a3' }}>E / F</strong> Agarrar · Soltar</span>
             <span><strong style={{ color: '#ffe5a3' }}>Arrastrar / Q·C</strong> Mirar</span>
+            <span><strong style={{ color: '#ffe5a3' }}>V</strong> Cámara</span>
           </div>
         )}
 

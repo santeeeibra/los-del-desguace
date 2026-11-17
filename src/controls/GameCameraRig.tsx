@@ -1,17 +1,75 @@
 import { useEffect, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { useAfterPhysicsStep, useRapier } from '@react-three/rapier';
+import { useRapier } from '@react-three/rapier';
 import * as THREE from 'three';
 import type { CameraTargetSource } from './ThirdPersonCamera';
-import { useGameStore } from '../state/gameStore';
+import { gameStore, useGameStore, type CameraViewMode } from '../state/gameStore';
 
 interface GameCameraRigProps {
   targetSourceRef: React.RefObject<CameraTargetSource>;
   resetSignal: number;
 }
 
+interface ThirdPersonPreset {
+  fov: number;
+  near: number;
+  pivotHeight: number;
+  lookOffsetY: number;
+  defaultDist: number;
+  minDist: number;
+  maxDist: number;
+  minSafeDist: number;
+  defaultPitch: number;
+  minPitch: number;
+  maxPitch: number;
+  yawSens: number;
+  pitchSens: number;
+}
+
 const DEFAULT_YAW = 0.45;
-const DEFAULT_FP_PITCH = 0.1;
+
+const FIRST_PERSON_LIMITS = {
+  fov: 62,
+  near: 0.06,
+  defaultPitch: 0.1,
+  minPitch: -1.16,
+  maxPitch: 1.16,
+  yawSens: 0.0052,
+  pitchSens: 0.0044,
+} as const;
+
+const THIRD_PERSON_PRESETS: Record<Exclude<CameraViewMode, 'firstPerson'>, ThirdPersonPreset> = {
+  thirdPersonClose: {
+    fov: 54,
+    near: 0.1,
+    pivotHeight: 0.42,
+    lookOffsetY: 0.04,
+    defaultDist: 2.55,
+    minDist: 1.75,
+    maxDist: 3.6,
+    minSafeDist: 0.58,
+    defaultPitch: 0.18,
+    minPitch: -0.22,
+    maxPitch: 0.78,
+    yawSens: 0.0062,
+    pitchSens: 0.005,
+  },
+  thirdPersonWide: {
+    fov: 50,
+    near: 0.12,
+    pivotHeight: 0.78,
+    lookOffsetY: 0.12,
+    defaultDist: 6.2,
+    minDist: 3.6,
+    maxDist: 9.8,
+    minSafeDist: 1.1,
+    defaultPitch: 0.36,
+    minPitch: -0.06,
+    maxPitch: 1.05,
+    yawSens: 0.0065,
+    pitchSens: 0.0055,
+  },
+};
 
 export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigProps) {
   const { gl } = useThree();
@@ -19,15 +77,26 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
   const cameraMode = useGameStore((s) => s.cameraMode);
 
   const yawRef = useRef(DEFAULT_YAW);
-  const pitchRef = useRef(DEFAULT_FP_PITCH);
-  const desiredDistRef = useRef(6.2);
-  const actualDistRef = useRef(6.2);
-  const appliedModeRef = useRef<string | null>(null);
-  const cameraRef = useRef<THREE.Camera | null>(null);
+  const pitchRef = useRef(
+    cameraMode === 'firstPerson'
+      ? FIRST_PERSON_LIMITS.defaultPitch
+      : THIRD_PERSON_PRESETS[cameraMode].defaultPitch
+  );
+  const closeDistRef = useRef(THIRD_PERSON_PRESETS.thirdPersonClose.defaultDist);
+  const wideDistRef = useRef(THIRD_PERSON_PRESETS.thirdPersonWide.defaultDist);
+  const actualDistRef = useRef(
+    cameraMode === 'firstPerson'
+      ? 0.2
+      : THIRD_PERSON_PRESETS[cameraMode].defaultDist
+  );
+  const smoothEyeYRef = useRef(1.22);
+  const prevModeRef = useRef<CameraViewMode>(cameraMode);
+  const appliedModeRef = useRef<CameraViewMode | null>(null);
 
   const smoothTarget = useRef(new THREE.Vector3(0, 1.2, 4));
   const rawTarget = useRef(new THREE.Vector3());
   const rayDir = useRef(new THREE.Vector3());
+  const sideAxis = useRef(new THREE.Vector3());
   const desiredCamPos = useRef(new THREE.Vector3());
   const lookTarget = useRef(new THREE.Vector3());
 
@@ -39,17 +108,58 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
 
   useEffect(() => {
     yawRef.current = DEFAULT_YAW;
-    pitchRef.current = DEFAULT_FP_PITCH;
-    desiredDistRef.current = 6.2;
-    actualDistRef.current = 6.2;
+    const mode = gameStore.getState().cameraMode;
+    pitchRef.current =
+      mode === 'firstPerson'
+        ? FIRST_PERSON_LIMITS.defaultPitch
+        : THIRD_PERSON_PRESETS[mode].defaultPitch;
+    closeDistRef.current = THIRD_PERSON_PRESETS.thirdPersonClose.defaultDist;
+    wideDistRef.current = THIRD_PERSON_PRESETS.thirdPersonWide.defaultDist;
+    actualDistRef.current =
+      mode === 'firstPerson' ? 0.2 : THIRD_PERSON_PRESETS[mode].defaultDist;
     initialized.current = false;
   }, [resetSignal]);
+
+  // Preserve horizontal look direction & prevent stuck drag pointers when switching camera views
+  useEffect(() => {
+    if (prevModeRef.current === cameraMode) return;
+    const fromMode = prevModeRef.current;
+    prevModeRef.current = cameraMode;
+    dragPointerId.current = null;
+
+    if (cameraMode === 'firstPerson') {
+      pitchRef.current = THREE.MathUtils.clamp(
+        pitchRef.current,
+        FIRST_PERSON_LIMITS.minPitch,
+        FIRST_PERSON_LIMITS.maxPitch
+      );
+      actualDistRef.current = 0.2;
+      if (targetSourceRef.current.getTargetPosition(rawTarget.current)) {
+        smoothEyeYRef.current = rawTarget.current.y + 0.37;
+      }
+    } else {
+      const preset = THIRD_PERSON_PRESETS[cameraMode];
+      const basePitch = THREE.MathUtils.clamp(pitchRef.current, preset.minPitch, preset.maxPitch);
+      pitchRef.current =
+        fromMode === 'firstPerson' && Math.abs(basePitch) < 0.08
+          ? preset.defaultPitch
+          : basePitch;
+      actualDistRef.current =
+        cameraMode === 'thirdPersonClose' ? closeDistRef.current : wideDistRef.current;
+      if (fromMode === 'firstPerson' && targetSourceRef.current.getTargetPosition(rawTarget.current)) {
+        smoothTarget.current.set(
+          rawTarget.current.x,
+          rawTarget.current.y + preset.pivotHeight,
+          rawTarget.current.z
+        );
+      }
+    }
+  }, [cameraMode, targetSourceRef]);
 
   useEffect(() => {
     const dom = gl.domElement;
 
     const onPointerDown = (e: PointerEvent) => {
-      // Only free canvas drags rotate the camera; HUD buttons & joystick never trigger camera rotation
       if (e.target !== dom) return;
       if (e.button !== 0 && e.button !== 2 && e.pointerType === 'mouse') return;
       if (dragPointerId.current !== null) return;
@@ -70,13 +180,15 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
       lastPointer.current.x = e.clientX;
       lastPointer.current.y = e.clientY;
 
-      const yawSens = cameraMode === 'firstPerson' ? 0.0052 : 0.0065;
-      const pitchSens = cameraMode === 'firstPerson' ? 0.0044 : 0.0055;
-      const minPitch = cameraMode === 'firstPerson' ? -1.16 : -0.05;
-      const maxPitch = cameraMode === 'firstPerson' ? 1.16 : 1.05;
+      const mode = gameStore.getState().cameraMode;
+      const limits = mode === 'firstPerson' ? FIRST_PERSON_LIMITS : THIRD_PERSON_PRESETS[mode];
 
-      yawRef.current -= dx * yawSens;
-      pitchRef.current = THREE.MathUtils.clamp(pitchRef.current + dy * pitchSens, minPitch, maxPitch);
+      yawRef.current -= dx * limits.yawSens;
+      pitchRef.current = THREE.MathUtils.clamp(
+        pitchRef.current + dy * limits.pitchSens,
+        limits.minPitch,
+        limits.maxPitch
+      );
     };
 
     const releaseDrag = (e: PointerEvent) => {
@@ -93,12 +205,22 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      if (cameraMode === 'firstPerson') return;
-      desiredDistRef.current = THREE.MathUtils.clamp(
-        desiredDistRef.current + e.deltaY * 0.004,
-        2.2,
-        10.0
-      );
+      const mode = gameStore.getState().cameraMode;
+      if (mode === 'firstPerson') return;
+      const preset = THIRD_PERSON_PRESETS[mode];
+      if (mode === 'thirdPersonClose') {
+        closeDistRef.current = THREE.MathUtils.clamp(
+          closeDistRef.current + e.deltaY * 0.003,
+          preset.minDist,
+          preset.maxDist
+        );
+      } else {
+        wideDistRef.current = THREE.MathUtils.clamp(
+          wideDistRef.current + e.deltaY * 0.004,
+          preset.minDist,
+          preset.maxDist
+        );
+      }
     };
 
     const onContextMenu = (e: MouseEvent) => e.preventDefault();
@@ -138,31 +260,32 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);
     };
-  }, [gl, cameraMode]);
+  }, [gl]);
 
-  useFrame(({ camera: activeCam }, rawDelta) => {
-    cameraRef.current = activeCam;
+  // Runs every render frame AFTER Rapier FrameStepper interpolates RigidBody transforms
+  // so camera, arms, and carried props share the exact same render timestamp (zero 60/120Hz stutter).
+  useFrame(({ camera }, rawDelta) => {
     const dt = Math.min(rawDelta, 0.05);
     if (keyOrbit.current.left) yawRef.current += 1.65 * dt;
     if (keyOrbit.current.right) yawRef.current -= 1.65 * dt;
 
-    // Adjust FOV and near clip safely per camera mode without altering physics or reach
-    if (appliedModeRef.current !== cameraMode && activeCam instanceof THREE.PerspectiveCamera) {
+    if (appliedModeRef.current !== cameraMode && camera instanceof THREE.PerspectiveCamera) {
       appliedModeRef.current = cameraMode;
-      const targetFov = cameraMode === 'firstPerson' ? 62 : cameraMode === 'thirdPersonClose' ? 54 : 50;
-      const targetNear = cameraMode === 'firstPerson' ? 0.06 : 0.12;
-      if (activeCam.fov !== targetFov || activeCam.near !== targetNear) {
-        activeCam.fov = targetFov;
-        activeCam.near = targetNear;
-        activeCam.updateProjectionMatrix();
+      const targetFov =
+        cameraMode === 'firstPerson'
+          ? FIRST_PERSON_LIMITS.fov
+          : THIRD_PERSON_PRESETS[cameraMode].fov;
+      const targetNear =
+        cameraMode === 'firstPerson'
+          ? FIRST_PERSON_LIMITS.near
+          : THIRD_PERSON_PRESETS[cameraMode].near;
+      if (camera.fov !== targetFov || camera.near !== targetNear) {
+        camera.fov = targetFov;
+        camera.near = targetNear;
+        camera.updateProjectionMatrix();
       }
     }
-  });
 
-  // Update camera right after Rapier world.step() so first-person eyes stay locked to Chispa's arms & held prop
-  useAfterPhysicsStep(() => {
-    const camera = cameraRef.current;
-    if (!camera) return;
     const targetSource = targetSourceRef.current;
     if (!targetSource.getTargetPosition(rawTarget.current)) return;
 
@@ -184,6 +307,7 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
       return !(userData?.ecctrl?.excludeRay || userData?.cameraIgnore);
     };
 
+    const mode = gameStore.getState().cameraMode;
     const yaw = yawRef.current;
     const pitch = pitchRef.current;
     const cosPitch = Math.cos(pitch);
@@ -191,17 +315,29 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
     const sinYaw = Math.sin(yaw);
     const cosYaw = Math.cos(yaw);
 
-    if (cameraMode === 'firstPerson') {
-      // Eye height cleanly above shoulders/bib (0.34m above capsule center) & safely inside 0.32m capsule
-      let eyeY = rawTarget.current.y + 0.34;
+    if (mode === 'firstPerson') {
+      const rawEyeY = rawTarget.current.y + 0.37;
+      if (!initialized.current) {
+        smoothEyeYRef.current = rawEyeY;
+      } else {
+        // Filter only tiny vertical spring micro-chatter while keeping jumps/drops crisp
+        const yDelta = Math.abs(rawEyeY - smoothEyeYRef.current);
+        const yRate = yDelta > 0.03 ? 42 : 16;
+        smoothEyeYRef.current = THREE.MathUtils.lerp(
+          smoothEyeYRef.current,
+          rawEyeY,
+          1 - Math.exp(-yRate * dt)
+        );
+      }
+
+      let eyeY = smoothEyeYRef.current;
       const baseOriginY = rawTarget.current.y + 0.08;
 
-      // Prevent eye point clipping above low ceilings/under beams
       ray.origin = { x: rawTarget.current.x, y: baseOriginY, z: rawTarget.current.z };
       ray.dir = { x: 0, y: 1, z: 0 };
       const ceilingHit = world.castRay(
         ray,
-        0.42,
+        0.44,
         true,
         rapier.QueryFilterFlags.EXCLUDE_SENSORS,
         undefined,
@@ -213,14 +349,13 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
         eyeY = Math.min(eyeY, baseOriginY + Math.max(0.14, ceilingHit.timeOfImpact - 0.14));
       }
 
-      // Clamp small forward eye nudge strictly clear of walls
       const fwdX = -sinYaw;
       const fwdZ = -cosYaw;
       ray.origin = { x: rawTarget.current.x, y: eyeY, z: rawTarget.current.z };
       ray.dir = { x: fwdX, y: 0, z: fwdZ };
       const wallHit = world.castRay(
         ray,
-        0.24,
+        0.26,
         true,
         rapier.QueryFilterFlags.EXCLUDE_SENSORS,
         undefined,
@@ -228,7 +363,7 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
         undefined,
         rayFilter
       );
-      let forwardOffset = 0.04;
+      let forwardOffset = 0.06;
       if (wallHit && wallHit.timeOfImpact > 0.01) {
         forwardOffset = Math.min(forwardOffset, Math.max(0, wallHit.timeOfImpact - 0.18));
       }
@@ -239,10 +374,9 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
         rawTarget.current.z + fwdZ * forwardOffset
       );
 
-      // Gentle vertical tap only on heavy landing/bump (no forced head-bob or horizon roll)
       const shake = targetSource.getShakeIntensity();
       if (shake > 0.01) {
-        desiredCamPos.current.y -= Math.min(0.025, shake * 0.03);
+        desiredCamPos.current.y -= Math.min(0.018, shake * 0.02);
       }
 
       rayDir.current.set(-cosPitch * sinYaw, -sinPitch, -cosPitch * cosYaw).normalize();
@@ -255,27 +389,72 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
       return;
     }
 
-    // Fallback wide third-person mode (expanded with close shoulder preset & toggle in next step)
-    const dt = Math.min(world.timestep, 0.05);
-    rawTarget.current.y += 0.78;
+    // Third-person views (close shoulder & wide elevated) with multi-probe wall + ceiling protection
+    const preset = THIRD_PERSON_PRESETS[mode];
+    const desiredDist = mode === 'thirdPersonClose' ? closeDistRef.current : wideDistRef.current;
+
+    rawTarget.current.y += preset.pivotHeight;
     if (!initialized.current) {
       smoothTarget.current.copy(rawTarget.current);
       initialized.current = true;
     } else {
-      smoothTarget.current.lerp(rawTarget.current, 1 - Math.exp(-14 * dt));
+      smoothTarget.current.lerp(rawTarget.current, 1 - Math.exp(-18 * dt));
     }
 
     rayDir.current.set(cosPitch * sinYaw, sinPitch, cosPitch * cosYaw).normalize();
-    let safeDist = desiredDistRef.current;
-    ray.origin = {
-      x: smoothTarget.current.x,
-      y: smoothTarget.current.y,
-      z: smoothTarget.current.z,
-    };
+    sideAxis.current.set(cosYaw, 0, -sinYaw);
+
+    let safeDist = desiredDist;
+    const castLen = desiredDist + 0.35;
+    const probeOffsets: readonly [number, number][] = [
+      [0, 0],
+      [0.2, 0.05],
+      [-0.2, 0.05],
+      [0, 0.22],
+    ];
+
     ray.dir = { x: rayDir.current.x, y: rayDir.current.y, z: rayDir.current.z };
-    const hit = world.castRay(
+    for (const [lat, up] of probeOffsets) {
+      ray.origin = {
+        x: smoothTarget.current.x + sideAxis.current.x * lat,
+        y: smoothTarget.current.y + up,
+        z: smoothTarget.current.z + sideAxis.current.z * lat,
+      };
+      const hit = world.castRay(
+        ray,
+        castLen,
+        true,
+        rapier.QueryFilterFlags.EXCLUDE_SENSORS,
+        undefined,
+        undefined,
+        undefined,
+        rayFilter
+      );
+      if (hit && hit.timeOfImpact > 0.05) {
+        safeDist = Math.min(safeDist, Math.max(preset.minSafeDist, hit.timeOfImpact - 0.32));
+      }
+    }
+
+    const distRate = safeDist < actualDistRef.current ? 24 : 7;
+    actualDistRef.current = THREE.MathUtils.lerp(
+      actualDistRef.current,
+      safeDist,
+      1 - Math.exp(-distRate * dt)
+    );
+
+    desiredCamPos.current
+      .copy(smoothTarget.current)
+      .addScaledVector(rayDir.current, actualDistRef.current);
+
+    ray.origin = {
+      x: desiredCamPos.current.x,
+      y: Math.min(desiredCamPos.current.y, smoothTarget.current.y + 0.35),
+      z: desiredCamPos.current.z,
+    };
+    ray.dir = { x: 0, y: 1, z: 0 };
+    const roofHit = world.castRay(
       ray,
-      desiredDistRef.current + 0.35,
+      Math.max(0.25, desiredCamPos.current.y - ray.origin.y + 0.25),
       true,
       rapier.QueryFilterFlags.EXCLUDE_SENSORS,
       undefined,
@@ -283,24 +462,17 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
       undefined,
       rayFilter
     );
-    if (hit && hit.timeOfImpact > 0.05) {
-      safeDist = Math.max(1.15, Math.min(desiredDistRef.current, hit.timeOfImpact - 0.32));
+    if (roofHit && roofHit.timeOfImpact > 0.05) {
+      const maxSafeY = ray.origin.y + roofHit.timeOfImpact - 0.16;
+      if (desiredCamPos.current.y > maxSafeY) {
+        desiredCamPos.current.y = maxSafeY;
+      }
     }
-
-    const distRate = safeDist < actualDistRef.current ? 22 : 6;
-    actualDistRef.current = THREE.MathUtils.lerp(
-      actualDistRef.current,
-      safeDist,
-      1 - Math.exp(-distRate * dt)
-    );
-    desiredCamPos.current
-      .copy(smoothTarget.current)
-      .addScaledVector(rayDir.current, actualDistRef.current);
 
     camera.up.set(0, 1, 0);
     camera.position.copy(desiredCamPos.current);
     lookTarget.current.copy(smoothTarget.current);
-    lookTarget.current.y += 0.12;
+    lookTarget.current.y += preset.lookOffsetY;
     camera.lookAt(lookTarget.current);
   });
 

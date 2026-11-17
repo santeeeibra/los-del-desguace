@@ -68,6 +68,9 @@ export function InventorCharacter({
   // Limbs
   const leftArmRef = useRef<THREE.Group>(null);
   const rightArmRef = useRef<THREE.Group>(null);
+  const leftShoulderRef = useRef<THREE.Group>(null);
+  const rightShoulderRef = useRef<THREE.Group>(null);
+  const torsoBodyRef = useRef<THREE.Group>(null);
   const leftLegRef = useRef<THREE.Group>(null);
   const rightLegRef = useRef<THREE.Group>(null);
 
@@ -326,17 +329,24 @@ export function InventorCharacter({
     const landingDip = Math.min(0, squashY.current - 1) * 0.24;
 
     if (bodyPivotRef.current) {
-      bodyPivotRef.current.scale.set(invScaleXZ, finalScaleY, invScaleXZ);
-      const stepBob = Math.abs(c) * (0.036 + runBlend.current * 0.022) * gAmp;
-      const idleBreath = Math.sin(t * 2.1) * 0.008 * (1 - gAmp);
-      bodyPivotRef.current.position.y = stepBob + idleBreath + landingDip;
+      if (firstPersonHideHead) {
+        // Keep the first-person anchor completely free of bob/squash so camera & carried pose never vibrate
+        bodyPivotRef.current.scale.set(1, 1, 1);
+        bodyPivotRef.current.position.set(0, 0, 0);
+        bodyPivotRef.current.rotation.set(0, 0, 0);
+      } else {
+        bodyPivotRef.current.scale.set(invScaleXZ, finalScaleY, invScaleXZ);
+        const stepBob = Math.abs(c) * (0.036 + runBlend.current * 0.022) * gAmp;
+        const idleBreath = Math.sin(t * 2.1) * 0.008 * (1 - gAmp);
+        bodyPivotRef.current.position.y = stepBob + idleBreath + landingDip;
 
-      const carryBackLean = carryBlend.current * -0.07;
-      const runFwdLean = (0.05 + runBlend.current * 0.08) * gAmp;
-      bodyPivotRef.current.rotation.x =
-        carryBackLean + runFwdLean + smoothPitch.current - wobbleAngle.current * 0.65;
-      bodyPivotRef.current.rotation.z =
-        s * 0.042 * gAmp + smoothLean.current + wobbleAngle.current * 0.4;
+        const carryBackLean = carryBlend.current * -0.07;
+        const runFwdLean = (0.05 + runBlend.current * 0.08) * gAmp;
+        bodyPivotRef.current.rotation.x =
+          carryBackLean + runFwdLean + smoothPitch.current - wobbleAngle.current * 0.65;
+        bodyPivotRef.current.rotation.z =
+          s * 0.042 * gAmp + smoothLean.current + wobbleAngle.current * 0.4;
+      }
     }
 
     // 6. Legs stride, jump tuck ("en el aire"), and landing crouch
@@ -358,7 +368,7 @@ export function InventorCharacter({
     const activeDist = anim.isCarrying ? anim.carryDist : profile.holdDistance;
     const activeLift = anim.isCarrying ? anim.carryLift : profile.holdHeight;
     if (carryAnchorRef?.current) {
-      const carryBob = gAmp * Math.abs(c) * 0.018;
+      const carryBob = firstPersonHideHead ? 0 : gAmp * Math.abs(c) * 0.018;
       carryAnchorRef.current.position.set(0, activeLift + carryBob, activeDist);
       carryAnchorRef.current.rotation.set(profile.tiltX, 0, 0);
     }
@@ -366,22 +376,31 @@ export function InventorCharacter({
     if (leftArmRef.current && rightArmRef.current) {
       const lerpRate = 1 - Math.exp(-18 * dt);
 
-      const swingAmp = (0.54 + runBlend.current * 0.26) * gAmp;
-      const idleArm = Math.sin(t * 2.1) * 0.025 * (1 - gAmp);
-      const walkRotXL = -s * swingAmp + idleArm;
-      const walkRotXR = s * swingAmp - idleArm;
+      const swingScale = firstPersonHideHead ? 0.32 : 1.0;
+      const swingAmp = (0.54 + runBlend.current * 0.26) * gAmp * swingScale;
+      const idleArm = Math.sin(t * 2.1) * 0.025 * (1 - gAmp) * swingScale;
+      const walkRotXL = -s * swingAmp + idleArm + (firstPersonHideHead ? -0.26 : 0);
+      const walkRotXR = s * swingAmp - idleArm + (firstPersonHideHead ? -0.26 : 0);
 
-      // Joyful jump arms up-and-out ("EN EL AIRE") & fall balance
-      const airArmX = anim.verticalSpeed > -0.5 ? -2.15 : -0.7 + Math.sin(t * 11) * 0.14;
-      const airArmZ = anim.verticalSpeed > -0.5 ? -0.55 : -0.48;
+      // Third-person joyful jump arms ("EN EL AIRE"); restrained lower pose in first person so gloves stay out of eyes
+      const airArmX = firstPersonHideHead
+        ? -0.42
+        : anim.verticalSpeed > -0.5
+          ? -2.15
+          : -0.7 + Math.sin(t * 11) * 0.14;
+      const airArmZ = firstPersonHideHead
+        ? -0.22
+        : anim.verticalSpeed > -0.5
+          ? -0.55
+          : -0.48;
 
       const freeArmXL = THREE.MathUtils.lerp(walkRotXL, airArmX, airBlend.current);
       const freeArmXR = THREE.MathUtils.lerp(walkRotXR, airArmX, airBlend.current);
-      const freeArmZL = THREE.MathUtils.lerp(-0.14, airArmZ, airBlend.current);
-      const freeArmZR = THREE.MathUtils.lerp(0.14, -airArmZ, airBlend.current);
+      const freeArmZL = THREE.MathUtils.lerp(firstPersonHideHead ? -0.18 : -0.14, airArmZ, airBlend.current);
+      const freeArmZR = THREE.MathUtils.lerp(firstPersonHideHead ? 0.18 : 0.14, -airArmZ, airBlend.current);
 
       // Carry pose tailored to object size & resolved clearance offset
-      const carryArmBob = gAmp * Math.abs(c) * 0.035;
+      const carryArmBob = firstPersonHideHead ? 0 : gAmp * Math.abs(c) * 0.035;
       const distDelta = activeDist - profile.holdDistance;
       const liftDelta = activeLift - profile.holdHeight;
       const carryRotX =
@@ -411,26 +430,46 @@ export function InventorCharacter({
         lerpRate
       );
 
-      const shoulderOffset = THREE.MathUtils.lerp(0.25, profile.armSpread * 0.88, carryBlend.current);
-      const handForwardPull = THREE.MathUtils.lerp(0, distDelta * 0.55, carryBlend.current);
-      leftArmRef.current.position.set(
-        -shoulderOffset,
-        0.14 + THREE.MathUtils.lerp(0, liftDelta * 0.35, carryBlend.current),
-        handForwardPull
-      );
-      rightArmRef.current.position.set(
-        shoulderOffset,
-        0.14 + THREE.MathUtils.lerp(0, liftDelta * 0.35, carryBlend.current),
-        handForwardPull
-      );
+      const fpArmScale = firstPersonHideHead ? 0.84 : 1.0;
+      leftArmRef.current.scale.setScalar(fpArmScale);
+      rightArmRef.current.scale.setScalar(fpArmScale);
+
+      const baseShoulderX = firstPersonHideHead ? 0.28 : 0.25;
+      const carryShoulderX = firstPersonHideHead
+        ? Math.max(profile.armSpread * 0.94, 0.22)
+        : profile.armSpread * 0.88;
+      const shoulderOffset = THREE.MathUtils.lerp(baseShoulderX, carryShoulderX, carryBlend.current);
+      const baseArmY = firstPersonHideHead ? 0.08 : 0.14;
+      const armPosY = baseArmY + THREE.MathUtils.lerp(0, liftDelta * 0.35, carryBlend.current);
+      const handForwardPull = firstPersonHideHead
+        ? THREE.MathUtils.lerp(0.1, 0.14 + distDelta * 0.65, carryBlend.current)
+        : THREE.MathUtils.lerp(0, distDelta * 0.55, carryBlend.current);
+      leftArmRef.current.position.set(-shoulderOffset, armPosY, handForwardPull);
+      rightArmRef.current.position.set(shoulderOffset, armPosY, handForwardPull);
     }
 
-    // Toggle ONLY obstructing head/accessory geometry in first person (keep hands & carried props visible)
+    // Toggle ONLY obstructing head/torso/upper-shoulder/leg geometry in first person (keep forearms, cuffs, gloves & cargo visible)
+    const showFullBody = !firstPersonHideHead;
     if (headRef.current) {
-      headRef.current.visible = !firstPersonHideHead;
+      headRef.current.visible = showFullBody;
     }
     if (backpackAnchorRef.current) {
-      backpackAnchorRef.current.visible = !firstPersonHideHead;
+      backpackAnchorRef.current.visible = showFullBody;
+    }
+    if (torsoBodyRef.current) {
+      torsoBodyRef.current.visible = showFullBody;
+    }
+    if (leftLegRef.current) {
+      leftLegRef.current.visible = showFullBody;
+    }
+    if (rightLegRef.current) {
+      rightLegRef.current.visible = showFullBody;
+    }
+    if (leftShoulderRef.current) {
+      leftShoulderRef.current.visible = showFullBody;
+    }
+    if (rightShoulderRef.current) {
+      rightShoulderRef.current.visible = showFullBody;
     }
 
     // 8. Expressive head look + ponytail secondary swing
@@ -579,6 +618,7 @@ export function InventorCharacter({
 
         {/* CHUNKY MECHANIC TORSO / OVERALLS */}
         <group ref={torsoRef} position={[0, 0.58, 0]}>
+          <group ref={torsoBodyRef}>
           {/* Pear-shaped overall hips + cream shirt upper torso */}
           <mesh castShadow receiveShadow material={materials.overall} position={[0, -0.04, 0]}>
             <cylinderGeometry args={[0.23, 0.265, 0.3, 16]} />
@@ -656,6 +696,7 @@ export function InventorCharacter({
               </group>
             )}
           </group>
+          </group>
 
           {/* CARRY ANCHOR dynamically positioned by PlayerRig clearance solver */}
           <group ref={carryAnchorRef} position={[0, 0.12, 0.65]} />
@@ -684,12 +725,14 @@ export function InventorCharacter({
 
           {/* LEFT ARM + ORANGE CUFF + BIG WORK GLOVE */}
           <group ref={leftArmRef} position={[-0.25, 0.14, 0]}>
-            <mesh castShadow material={materials.shirt}>
-              <sphereGeometry args={[0.088, 10, 10]} />
-            </mesh>
-            <mesh castShadow material={materials.shirt} position={[-0.022, -0.055, 0]} rotation={[0, 0, 0.15]}>
-              <cylinderGeometry args={[0.078, 0.082, 0.095, 10]} />
-            </mesh>
+            <group ref={leftShoulderRef}>
+              <mesh castShadow material={materials.shirt}>
+                <sphereGeometry args={[0.088, 10, 10]} />
+              </mesh>
+              <mesh castShadow material={materials.shirt} position={[-0.022, -0.055, 0]} rotation={[0, 0, 0.15]}>
+                <cylinderGeometry args={[0.078, 0.082, 0.095, 10]} />
+              </mesh>
+            </group>
             <mesh castShadow material={materials.skin} position={[-0.042, -0.145, 0]}>
               <capsuleGeometry args={[0.052, 0.085, 6, 10]} />
             </mesh>
@@ -712,12 +755,14 @@ export function InventorCharacter({
 
           {/* RIGHT ARM + ORANGE CUFF + BIG WORK GLOVE */}
           <group ref={rightArmRef} position={[0.25, 0.14, 0]}>
-            <mesh castShadow material={materials.shirt}>
-              <sphereGeometry args={[0.088, 10, 10]} />
-            </mesh>
-            <mesh castShadow material={materials.shirt} position={[0.022, -0.055, 0]} rotation={[0, 0, -0.15]}>
-              <cylinderGeometry args={[0.078, 0.082, 0.095, 10]} />
-            </mesh>
+            <group ref={rightShoulderRef}>
+              <mesh castShadow material={materials.shirt}>
+                <sphereGeometry args={[0.088, 10, 10]} />
+              </mesh>
+              <mesh castShadow material={materials.shirt} position={[0.022, -0.055, 0]} rotation={[0, 0, -0.15]}>
+                <cylinderGeometry args={[0.078, 0.082, 0.095, 10]} />
+              </mesh>
+            </group>
             <mesh castShadow material={materials.skin} position={[0.042, -0.145, 0]}>
               <capsuleGeometry args={[0.052, 0.085, 6, 10]} />
             </mesh>
