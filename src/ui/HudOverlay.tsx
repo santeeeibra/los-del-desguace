@@ -99,10 +99,11 @@ function VirtualJoystick() {
   );
 }
 
-const ITEM_LABELS: Record<'crate' | 'wheel' | 'canister', string> = {
-  crate: 'Caja',
-  wheel: 'Rueda',
+const ITEM_LABELS: Record<'crate' | 'wheel' | 'canister' | 'part', string> = {
+  crate: 'Caja apilable',
+  wheel: 'Rueda rodante',
   canister: 'Bidón',
+  part: 'Pieza de motor',
 };
 
 export function HudOverlay() {

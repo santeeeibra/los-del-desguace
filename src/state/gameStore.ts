@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import type { QualityLevel } from '../config/visualConfig';
+import type { GrabbableKind } from '../props/grabbableRegistry';
 
 export type TouchOverlayMode = 'auto' | 'on' | 'off';
 
@@ -8,9 +9,9 @@ export interface GameHudState {
   touchMode: TouchOverlayMode;
   isTouchDevice: boolean;
   nearbyTargetId: string | null;
-  nearbyTargetKind: 'crate' | 'wheel' | 'canister' | null;
+  nearbyTargetKind: GrabbableKind | null;
   carriedId: string | null;
-  carriedKind: 'crate' | 'wheel' | 'canister' | null;
+  carriedKind: GrabbableKind | null;
   impactFeedback: 'land' | 'bump' | null;
   impactNonce: number;
   resetNonce: number;
