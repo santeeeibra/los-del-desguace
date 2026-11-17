@@ -63,6 +63,7 @@ export interface GrabbableEntry {
   initialPos: [number, number, number];
   getBody: () => RapierRigidBody | null;
   getCollider: () => RapierCollider | null;
+  getVisualGroup: () => THREE.Group | null;
   getWorldPos: (out: THREE.Vector3) => boolean;
 }
 

@@ -198,6 +198,7 @@ function GrabbableItem({
       initialPos: position,
       getBody: () => bodyRef.current,
       getCollider: () => colliderRef.current,
+      getVisualGroup: () => visualGroupRef.current,
       getWorldPos: (out: THREE.Vector3) => {
         const b = bodyRef.current;
         if (!b) return false;
