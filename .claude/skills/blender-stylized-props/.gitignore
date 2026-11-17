@@ -1,0 +1,4 @@
+# Configuración por máquina (rutas personales de Blender)
+config.local.json
+__pycache__/
+*.pyc
