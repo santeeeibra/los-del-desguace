@@ -1,8 +1,13 @@
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { CHARACTER_DIMENSIONS, PALETTE } from '../config/visualConfig';
+import { CHARACTER_DIMENSIONS } from '../config/visualConfig';
 import { CARRY_PROFILES, type GrabbableKind } from '../props/grabbableRegistry';
+import {
+  DEFAULT_CHISPA_APPEARANCE,
+  type CharacterAppearanceConfig,
+  type CharacterExpression,
+} from './characterAppearance';
 
 export interface CharacterAnimData {
   speed: number;
@@ -19,27 +24,52 @@ export interface CharacterAnimData {
   takeoffImpulse: number;
   landImpulse: number;
   bumpImpulse: number;
+  dropBlockedImpulse?: number;
 }
 
 interface InventorCharacterProps {
   animDataRef: React.RefObject<CharacterAnimData>;
   carryAnchorRef?: React.RefObject<THREE.Group | null>;
+  appearance?: CharacterAppearanceConfig;
 }
 
-export function InventorCharacter({ animDataRef, carryAnchorRef }: InventorCharacterProps) {
+const GEAR_ANGLES = [0, 1, 2, 3, 4, 5].map((i) => (i * Math.PI) / 3);
+
+export function InventorCharacter({
+  animDataRef,
+  carryAnchorRef,
+  appearance = DEFAULT_CHISPA_APPEARANCE,
+}: InventorCharacterProps) {
   const rootRef = useRef<THREE.Group>(null);
   const bodyPivotRef = useRef<THREE.Group>(null);
   const torsoRef = useRef<THREE.Group>(null);
   const headRef = useRef<THREE.Group>(null);
-  const eyeLeftRef = useRef<THREE.Mesh>(null);
-  const eyeRightRef = useRef<THREE.Mesh>(null);
+  const ponytailRef = useRef<THREE.Group>(null);
+
+  // Decorative-only attachment anchor refs (non-colliding)
+  const headAnchorRef = useRef<THREE.Group>(null);
+  const gogglesAnchorRef = useRef<THREE.Group>(null);
+  const backpackAnchorRef = useRef<THREE.Group>(null);
+  const beltAnchorRef = useRef<THREE.Group>(null);
+  const antennaRef = useRef<THREE.Group>(null);
+
+  // Expressive face refs
+  const eyeLeftGroupRef = useRef<THREE.Group>(null);
+  const eyeRightGroupRef = useRef<THREE.Group>(null);
+  const browLeftRef = useRef<THREE.Mesh>(null);
+  const browRightRef = useRef<THREE.Mesh>(null);
+  const mouthHappyRef = useRef<THREE.Group>(null);
+  const mouthEffortRef = useRef<THREE.Group>(null);
+  const mouthSurpriseRef = useRef<THREE.Mesh>(null);
+  const mouthSadRef = useRef<THREE.Mesh>(null);
+
+  // Limbs
   const leftArmRef = useRef<THREE.Group>(null);
   const rightArmRef = useRef<THREE.Group>(null);
   const leftLegRef = useRef<THREE.Group>(null);
   const rightLegRef = useRef<THREE.Group>(null);
-  const backpackRef = useRef<THREE.Group>(null);
-  const antennaRef = useRef<THREE.Group>(null);
 
+  // Continuous blend & procedural physics-visual states (never alters physics body)
   const stridePhase = useRef(0);
   const gaitBlend = useRef(0);
   const runBlend = useRef(0);
@@ -52,135 +82,210 @@ export function InventorCharacter({ animDataRef, carryAnchorRef }: InventorChara
   const wobbleVel = useRef(0);
   const smoothLean = useRef(0);
   const smoothPitch = useRef(0);
-  const blinkTimer = useRef(2.5);
+  const blinkTimer = useRef(2.4);
+
+  const landExprTimer = useRef(0);
+  const surpriseExprTimer = useRef(0);
+  const disappointExprTimer = useRef(0);
+  const ponytailPitchVel = useRef(0);
+  const ponytailPitch = useRef(0);
+
+  const pal = appearance.palette;
 
   const materials = useMemo(
     () => ({
       overall: new THREE.MeshStandardMaterial({
-        color: PALETTE.overallBlue,
-        roughness: 0.9,
-        metalness: 0.02,
+        color: pal.overall,
+        roughness: 0.86,
+        metalness: 0.03,
       }),
-      pocket: new THREE.MeshStandardMaterial({
-        color: PALETTE.overallPocket,
-        roughness: 0.92,
-        metalness: 0.02,
+      overallStrap: new THREE.MeshStandardMaterial({
+        color: pal.overallStrap,
+        roughness: 0.88,
+        metalness: 0.03,
       }),
       shirt: new THREE.MeshStandardMaterial({
-        color: PALETTE.shirtCream,
+        color: pal.shirt,
         roughness: 0.9,
         metalness: 0.0,
       }),
+      cuff: new THREE.MeshStandardMaterial({
+        color: pal.cuffAndRibbon,
+        roughness: 0.72,
+        metalness: 0.04,
+      }),
       skin: new THREE.MeshStandardMaterial({
-        color: PALETTE.skinWarm,
+        color: pal.skin,
         roughness: 0.72,
         metalness: 0.0,
       }),
       blush: new THREE.MeshStandardMaterial({
-        color: PALETTE.skinBlush,
+        color: pal.blush,
         roughness: 0.8,
         metalness: 0.0,
       }),
+      hair: new THREE.MeshStandardMaterial({
+        color: pal.hair,
+        roughness: 0.84,
+        metalness: 0.02,
+      }),
+      hairShadow: new THREE.MeshStandardMaterial({
+        color: pal.hairShadow,
+        roughness: 0.88,
+        metalness: 0.02,
+      }),
       glove: new THREE.MeshStandardMaterial({
-        color: PALETTE.gloveTan,
-        roughness: 0.86,
+        color: pal.glove,
+        roughness: 0.85,
+        metalness: 0.03,
+      }),
+      glovePad: new THREE.MeshStandardMaterial({
+        color: pal.glovePad,
+        roughness: 0.88,
         metalness: 0.02,
       }),
       boot: new THREE.MeshStandardMaterial({
-        color: PALETTE.bootRubber,
-        roughness: 0.9,
+        color: pal.boot,
+        roughness: 0.84,
         metalness: 0.04,
       }),
       sole: new THREE.MeshStandardMaterial({
-        color: PALETTE.bootSole,
-        roughness: 0.95,
+        color: pal.sole,
+        roughness: 0.94,
         metalness: 0.02,
       }),
-      cap: new THREE.MeshStandardMaterial({
-        color: PALETTE.capMustard,
-        roughness: 0.85,
-        metalness: 0.02,
+      hardhat: new THREE.MeshStandardMaterial({
+        color: pal.hardhat,
+        roughness: 0.42,
+        metalness: 0.08,
+      }),
+      hardhatCrest: new THREE.MeshStandardMaterial({
+        color: pal.hardhatCrest,
+        roughness: 0.38,
+        metalness: 0.08,
       }),
       goggleFrame: new THREE.MeshStandardMaterial({
-        color: PALETTE.goggleFrame,
+        color: pal.gogglesFrame,
         roughness: 0.45,
-        metalness: 0.55,
+        metalness: 0.52,
+      }),
+      goggleStrap: new THREE.MeshStandardMaterial({
+        color: pal.gogglesStrap,
+        roughness: 0.8,
+        metalness: 0.08,
       }),
       goggleLens: new THREE.MeshStandardMaterial({
-        color: PALETTE.goggleLens,
-        emissive: '#298fa8',
-        emissiveIntensity: 0.35,
+        color: pal.gogglesLens,
         roughness: 0.14,
-        metalness: 0.15,
-      }),
-      brass: new THREE.MeshStandardMaterial({
-        color: PALETTE.brass,
-        roughness: 0.3,
-        metalness: 0.88,
-      }),
-      backpack: new THREE.MeshStandardMaterial({
-        color: PALETTE.metalTeal,
-        roughness: 0.48,
-        metalness: 0.3,
+        metalness: 0.45,
       }),
       belt: new THREE.MeshStandardMaterial({
-        color: PALETTE.woodDark,
+        color: pal.belt,
         roughness: 0.82,
         metalness: 0.05,
       }),
-      eye: new THREE.MeshStandardMaterial({
-        color: '#1b1d22',
-        roughness: 0.3,
+      brass: new THREE.MeshStandardMaterial({
+        color: pal.brass,
+        roughness: 0.32,
+        metalness: 0.84,
+      }),
+      emblem: new THREE.MeshStandardMaterial({
+        color: pal.emblem,
+        roughness: 0.55,
         metalness: 0.05,
       }),
-      bulb: new THREE.MeshStandardMaterial({
-        color: '#ffb84d',
-        emissive: '#ff8a1f',
-        emissiveIntensity: 0.85,
-        roughness: 0.25,
-        metalness: 0.1,
+      patchLight: new THREE.MeshStandardMaterial({
+        color: pal.patchLight,
+        roughness: 0.9,
+        metalness: 0.02,
       }),
-      redHandle: new THREE.MeshStandardMaterial({
-        color: PALETTE.metalRed,
-        roughness: 0.45,
-        metalness: 0.2,
+      patchDark: new THREE.MeshStandardMaterial({
+        color: pal.patchDark,
+        roughness: 0.92,
+        metalness: 0.02,
+      }),
+      sclera: new THREE.MeshStandardMaterial({
+        color: '#ffffff',
+        roughness: 0.35,
+        metalness: 0.0,
+      }),
+      pupil: new THREE.MeshStandardMaterial({
+        color: '#1f1816',
+        roughness: 0.25,
+        metalness: 0.05,
+      }),
+      mouthDark: new THREE.MeshStandardMaterial({
+        color: '#3a1b19',
+        roughness: 0.55,
+        metalness: 0.0,
+      }),
+      teeth: new THREE.MeshStandardMaterial({
+        color: '#fff9ef',
+        roughness: 0.3,
+        metalness: 0.0,
+      }),
+      backpack: new THREE.MeshStandardMaterial({
+        color: pal.backpack,
+        roughness: 0.54,
+        metalness: 0.22,
       }),
     }),
-    []
+    [pal]
   );
+
+  useEffect(() => {
+    return () => {
+      Object.values(materials).forEach((mat) => mat.dispose());
+    };
+  }, [materials]);
 
   useFrame((state, rawDelta) => {
     const dt = Math.min(rawDelta, 0.05);
     const anim = animDataRef.current;
     const t = state.clock.elapsedTime;
 
-    // 1. Consume discrete takeoff / landing / bump impulses
+    // 1. Consume discrete takeoff / landing / bump / drop-blocked cues
     if (anim.takeoffImpulse > 0.01) {
-      squashVel.current += anim.takeoffImpulse * 4.2;
+      squashVel.current += anim.takeoffImpulse * 4.4;
+      ponytailPitchVel.current += anim.takeoffImpulse * 4.0;
       anim.takeoffImpulse = 0;
     }
     if (anim.landImpulse > 0.01) {
-      squashVel.current -= anim.landImpulse * 6.2;
+      squashVel.current -= anim.landImpulse * 6.8;
+      ponytailPitchVel.current -= anim.landImpulse * 5.2;
+      landExprTimer.current = Math.max(landExprTimer.current, 0.42);
       anim.landImpulse = 0;
     }
     if (anim.bumpImpulse > 0.01) {
-      squashVel.current -= anim.bumpImpulse * 3.4;
+      squashVel.current -= anim.bumpImpulse * 3.6;
       wobbleVel.current += anim.bumpImpulse * 7.8;
+      surpriseExprTimer.current = 0.55;
+      disappointExprTimer.current = Math.max(disappointExprTimer.current, 0.95);
       anim.bumpImpulse = 0;
     }
+    if (anim.dropBlockedImpulse && anim.dropBlockedImpulse > 0.01) {
+      disappointExprTimer.current = Math.max(disappointExprTimer.current, 0.85);
+      wobbleVel.current += 2.2;
+      anim.dropBlockedImpulse = 0;
+    }
+
+    landExprTimer.current = Math.max(0, landExprTimer.current - dt);
+    surpriseExprTimer.current = Math.max(0, surpriseExprTimer.current - dt);
+    disappointExprTimer.current = Math.max(0, disappointExprTimer.current - dt);
 
     // 2. Spring-damper for squash/stretch and bump stumble
-    const springForce = (1 - squashY.current) * 150 - squashVel.current * 16;
+    const springForce = (1 - squashY.current) * 155 - squashVel.current * 15.5;
     squashVel.current += springForce * dt;
-    squashY.current = THREE.MathUtils.clamp(squashY.current + squashVel.current * dt, 0.76, 1.18);
+    squashY.current = THREE.MathUtils.clamp(squashY.current + squashVel.current * dt, 0.74, 1.18);
 
     const wobbleForce = -wobbleAngle.current * 115 - wobbleVel.current * 12;
     wobbleVel.current += wobbleForce * dt;
     wobbleAngle.current = THREE.MathUtils.clamp(wobbleAngle.current + wobbleVel.current * dt, -0.4, 0.4);
 
-    // 3. Smooth locomotion state blends (no sudden snapping between idle/walk/run/stop)
+    // 3. Smooth locomotion state blends (idle / walk / run / stop / carry / air)
     const horizSpeed = anim.speed;
-    const targetGait = anim.isOnGround && horizSpeed > 0.22 ? THREE.MathUtils.clamp(horizSpeed / 4.2, 0.2, 1.0) : 0;
+    const targetGait =
+      anim.isOnGround && horizSpeed > 0.22 ? THREE.MathUtils.clamp(horizSpeed / 4.2, 0.2, 1.0) : 0;
     const targetRun = anim.isOnGround && anim.isRunning && horizSpeed > 4.4 ? 1 : 0;
     const targetCarry = anim.isCarrying ? 1 : 0;
     const targetAir = anim.isOnGround ? 0 : 1;
@@ -195,7 +300,6 @@ export function InventorCharacter({ animDataRef, carryAnchorRef }: InventorChara
       const strideLength = anim.isCarrying ? 0.56 : 0.62;
       stridePhase.current += (horizSpeed / strideLength) * dt;
     } else {
-      // Smoothly return feet to planted stance on stop
       const nearestStop = Math.round(stridePhase.current / Math.PI) * Math.PI;
       stridePhase.current = THREE.MathUtils.lerp(stridePhase.current, nearestStop, 1 - Math.exp(-11 * dt));
     }
@@ -210,14 +314,14 @@ export function InventorCharacter({ animDataRef, carryAnchorRef }: InventorChara
     smoothPitch.current = THREE.MathUtils.lerp(smoothPitch.current, targetPitch, 1 - Math.exp(-10 * dt));
     smoothLean.current = THREE.MathUtils.lerp(smoothLean.current, targetLean, 1 - Math.exp(-11 * dt));
 
-    // 5. Body pivot squash, dip on landing, and calm breathing
+    // 5. Body pivot squash, dip on landing, and breathing
     let airStretch = 1;
     if (!anim.isOnGround) {
       airStretch = anim.verticalSpeed > 0 ? 1.09 : 0.96;
     }
     const finalScaleY = squashY.current * airStretch;
     const invScaleXZ = 1 / Math.sqrt(Math.max(0.7, finalScaleY));
-    const landingDip = Math.min(0, squashY.current - 1) * 0.22;
+    const landingDip = Math.min(0, squashY.current - 1) * 0.24;
 
     if (bodyPivotRef.current) {
       bodyPivotRef.current.scale.set(invScaleXZ, finalScaleY, invScaleXZ);
@@ -225,22 +329,23 @@ export function InventorCharacter({ animDataRef, carryAnchorRef }: InventorChara
       const idleBreath = Math.sin(t * 2.1) * 0.008 * (1 - gAmp);
       bodyPivotRef.current.position.y = stepBob + idleBreath + landingDip;
 
-      const carryBackLean = carryBlend.current * -0.08;
-      const runFwdLean = (0.05 + runBlend.current * 0.07) * gAmp;
+      const carryBackLean = carryBlend.current * -0.07;
+      const runFwdLean = (0.05 + runBlend.current * 0.08) * gAmp;
       bodyPivotRef.current.rotation.x =
         carryBackLean + runFwdLean + smoothPitch.current - wobbleAngle.current * 0.65;
       bodyPivotRef.current.rotation.z =
         s * 0.042 * gAmp + smoothLean.current + wobbleAngle.current * 0.4;
     }
 
-    // 6. Legs stride & airborne tuck
+    // 6. Legs stride, jump tuck ("en el aire"), and landing crouch
     if (leftLegRef.current && rightLegRef.current) {
       const legAmp = (0.58 + runBlend.current * 0.22) * (1 - carryBlend.current * 0.22);
       const groundLegL = s * legAmp * gAmp;
       const groundLegR = -s * legAmp * gAmp;
 
-      const airLegL = anim.verticalSpeed > 0 ? 0.45 : -0.18;
-      const airLegR = anim.verticalSpeed > 0 ? -0.22 : 0.24;
+      // Joyful mid-air tuck matching concept sheet "EN EL AIRE"
+      const airLegL = anim.verticalSpeed > -1.0 ? -0.52 : -0.22;
+      const airLegR = anim.verticalSpeed > -1.0 ? -0.44 : 0.18;
 
       leftLegRef.current.rotation.x = THREE.MathUtils.lerp(groundLegL, airLegL, airBlend.current);
       rightLegRef.current.rotation.x = THREE.MathUtils.lerp(groundLegR, airLegR, airBlend.current);
@@ -259,25 +364,24 @@ export function InventorCharacter({ animDataRef, carryAnchorRef }: InventorChara
     if (leftArmRef.current && rightArmRef.current) {
       const lerpRate = 1 - Math.exp(-18 * dt);
 
-      // Base idle / walk / run arm swing
       const swingAmp = (0.54 + runBlend.current * 0.26) * gAmp;
       const idleArm = Math.sin(t * 2.1) * 0.025 * (1 - gAmp);
       const walkRotXL = -s * swingAmp + idleArm;
       const walkRotXR = s * swingAmp - idleArm;
 
-      // Jump / fall balance pose
-      const airArmX = anim.verticalSpeed > 0 ? -0.82 : -0.48 + Math.sin(t * 11) * 0.14;
-      const airArmZ = anim.verticalSpeed > 0 ? 0.46 : 0.58;
+      // Joyful jump arms up-and-out ("EN EL AIRE") & fall balance
+      const airArmX = anim.verticalSpeed > -0.5 ? -2.15 : -0.7 + Math.sin(t * 11) * 0.14;
+      const airArmZ = anim.verticalSpeed > -0.5 ? -0.55 : -0.48;
 
       const freeArmXL = THREE.MathUtils.lerp(walkRotXL, airArmX, airBlend.current);
       const freeArmXR = THREE.MathUtils.lerp(walkRotXR, airArmX, airBlend.current);
-      const freeArmZL = THREE.MathUtils.lerp(0.14, airArmZ, airBlend.current);
-      const freeArmZR = THREE.MathUtils.lerp(-0.14, -airArmZ, airBlend.current);
+      const freeArmZL = THREE.MathUtils.lerp(-0.14, airArmZ, airBlend.current);
+      const freeArmZR = THREE.MathUtils.lerp(0.14, -airArmZ, airBlend.current);
 
-      // Carry pose tailored to object size AND actual clearance distance/lift
+      // Carry pose tailored to object size & resolved clearance offset
       const carryArmBob = gAmp * Math.abs(c) * 0.035;
-      const distDelta = activeDist - profile.holdDistance; // negative when tucked close to chest
-      const liftDelta = activeLift - profile.holdHeight; // positive when raised over table/edge
+      const distDelta = activeDist - profile.holdDistance;
+      const liftDelta = activeLift - profile.holdHeight;
       const carryRotX =
         profile.armPitch + carryArmBob + distDelta * -0.95 + liftDelta * -1.45;
       const inwardAngle = (0.27 - profile.armSpread) * 1.45;
@@ -304,18 +408,27 @@ export function InventorCharacter({ animDataRef, carryAnchorRef }: InventorChara
         THREE.MathUtils.lerp(freeArmZR, carryRotZR, carryBlend.current),
         lerpRate
       );
-      // Keep shoulders/hands following the object's actual Z tuck & spread
+
       const shoulderOffset = THREE.MathUtils.lerp(0.25, profile.armSpread * 0.88, carryBlend.current);
       const handForwardPull = THREE.MathUtils.lerp(0, distDelta * 0.55, carryBlend.current);
-      leftArmRef.current.position.set(-shoulderOffset, 0.14 + THREE.MathUtils.lerp(0, liftDelta * 0.35, carryBlend.current), handForwardPull);
-      rightArmRef.current.position.set(shoulderOffset, 0.14 + THREE.MathUtils.lerp(0, liftDelta * 0.35, carryBlend.current), handForwardPull);
+      leftArmRef.current.position.set(
+        -shoulderOffset,
+        0.14 + THREE.MathUtils.lerp(0, liftDelta * 0.35, carryBlend.current),
+        handForwardPull
+      );
+      rightArmRef.current.position.set(
+        shoulderOffset,
+        0.14 + THREE.MathUtils.lerp(0, liftDelta * 0.35, carryBlend.current),
+        handForwardPull
+      );
     }
 
-    // 8. Expressive head look + blink
+    // 8. Expressive head look + ponytail secondary swing
     if (headRef.current) {
-      const lookYaw = gAmp > 0.25 ? THREE.MathUtils.clamp(-anim.turnRate * 0.06, -0.2, 0.2) : Math.sin(t * 0.7) * 0.14;
-      const lookTilt = gAmp > 0.25 ? s * 0.025 * gAmp : Math.sin(t * 1.1) * 0.025;
-      const lookPitch = !anim.isOnGround && anim.verticalSpeed < -1.5 ? 0.14 : carryBlend.current * 0.06;
+      const lookYaw =
+        gAmp > 0.25 ? THREE.MathUtils.clamp(-anim.turnRate * 0.06, -0.2, 0.2) : Math.sin(t * 0.7) * 0.12;
+      const lookTilt = gAmp > 0.25 ? s * 0.025 * gAmp : Math.sin(t * 1.1) * 0.022;
+      const lookPitch = !anim.isOnGround && anim.verticalSpeed < -1.5 ? 0.14 : carryBlend.current * 0.05;
       headRef.current.rotation.y = THREE.MathUtils.lerp(headRef.current.rotation.y, lookYaw, 1 - Math.exp(-8 * dt));
       headRef.current.rotation.z = THREE.MathUtils.lerp(
         headRef.current.rotation.z,
@@ -325,18 +438,76 @@ export function InventorCharacter({ animDataRef, carryAnchorRef }: InventorChara
       headRef.current.rotation.x = THREE.MathUtils.lerp(headRef.current.rotation.x, lookPitch, 1 - Math.exp(-8 * dt));
     }
 
+    if (ponytailRef.current) {
+      const targetTailPitch =
+        -0.12 - gAmp * (0.2 + runBlend.current * 0.25) + THREE.MathUtils.clamp(-anim.verticalSpeed * 0.08, -0.35, 0.35);
+      const tailSpring = (targetTailPitch - ponytailPitch.current) * 85 - ponytailPitchVel.current * 10;
+      ponytailPitchVel.current += tailSpring * dt;
+      ponytailPitch.current += ponytailPitchVel.current * dt;
+      ponytailRef.current.rotation.x = ponytailPitch.current + Math.sin(t * 8) * 0.04 * gAmp;
+      ponytailRef.current.rotation.y = smoothLean.current * 1.4 - wobbleAngle.current * 0.5;
+    }
+
+    // 9. Facial expression state ("alegre", "esfuerzo", "sorpresa", "decepcion")
+    let expr: CharacterExpression = 'happy';
+    if (surpriseExprTimer.current > 0 || (!anim.isOnGround && anim.verticalSpeed < -4.2)) {
+      expr = 'surprise';
+    } else if (disappointExprTimer.current > 0) {
+      expr = 'disappointed';
+    } else if (anim.isCarrying || landExprTimer.current > 0 || runBlend.current > 0.55) {
+      expr = 'effort';
+    }
+
     blinkTimer.current -= dt;
     if (blinkTimer.current <= 0) {
       blinkTimer.current = 2.8 + (Math.sin(t * 7.3) + 1) * 1.1;
     }
-    const isBlinking = blinkTimer.current < 0.11;
-    if (eyeLeftRef.current && eyeRightRef.current) {
-      const eyeScaleY = isBlinking ? 0.15 : 1;
-      eyeLeftRef.current.scale.y = eyeScaleY;
-      eyeRightRef.current.scale.y = eyeScaleY;
+    const isBlinking = expr !== 'surprise' && blinkTimer.current < 0.11;
+
+    if (eyeLeftGroupRef.current && eyeRightGroupRef.current) {
+      const targetEyeY = isBlinking
+        ? 0.14
+        : expr === 'surprise'
+          ? 1.15
+          : expr === 'effort'
+            ? 0.8
+            : expr === 'disappointed'
+              ? 0.72
+              : 1.0;
+      const targetEyeX = expr === 'surprise' ? 1.14 : 1.0;
+      eyeLeftGroupRef.current.scale.set(targetEyeX, targetEyeY, 1);
+      eyeRightGroupRef.current.scale.set(targetEyeX, targetEyeY, 1);
     }
 
-    // 9. Backpack antenna inertia
+    if (browLeftRef.current && browRightRef.current) {
+      if (expr === 'effort') {
+        browLeftRef.current.position.y = 0.086;
+        browRightRef.current.position.y = 0.086;
+        browLeftRef.current.rotation.z = -0.32;
+        browRightRef.current.rotation.z = 0.32;
+      } else if (expr === 'surprise') {
+        browLeftRef.current.position.y = 0.118;
+        browRightRef.current.position.y = 0.118;
+        browLeftRef.current.rotation.z = 0.18;
+        browRightRef.current.rotation.z = -0.18;
+      } else if (expr === 'disappointed') {
+        browLeftRef.current.position.y = 0.088;
+        browRightRef.current.position.y = 0.088;
+        browLeftRef.current.rotation.z = 0.3;
+        browRightRef.current.rotation.z = -0.3;
+      } else {
+        browLeftRef.current.position.y = 0.1;
+        browRightRef.current.position.y = 0.1;
+        browLeftRef.current.rotation.z = 0.1;
+        browRightRef.current.rotation.z = -0.1;
+      }
+    }
+
+    if (mouthHappyRef.current) mouthHappyRef.current.visible = expr === 'happy';
+    if (mouthEffortRef.current) mouthEffortRef.current.visible = expr === 'effort';
+    if (mouthSurpriseRef.current) mouthSurpriseRef.current.visible = expr === 'surprise';
+    if (mouthSadRef.current) mouthSadRef.current.visible = expr === 'disappointed';
+
     if (antennaRef.current) {
       const moveFactor = gAmp * (0.5 + runBlend.current * 0.5);
       antennaRef.current.rotation.x =
@@ -348,204 +519,392 @@ export function InventorCharacter({ animDataRef, carryAnchorRef }: InventorChara
   return (
     <group ref={rootRef} position={[0, CHARACTER_DIMENSIONS.visualYOffset, 0]}>
       <group ref={bodyPivotRef}>
-        {/* LEGS & CHUNKY BOOTS */}
-        <group ref={leftLegRef} position={[-0.14, 0.34, 0]}>
-          <mesh castShadow receiveShadow material={materials.overall} position={[0, -0.1, 0]}>
-            <capsuleGeometry args={[0.095, 0.12, 6, 12]} />
+        {/* LEGS & WORK BOOTS WITH ORANGE TONGUES */}
+        <group ref={leftLegRef} position={[-0.135, 0.34, 0]}>
+          <mesh castShadow receiveShadow material={materials.overall} position={[0, -0.09, 0]}>
+            <capsuleGeometry args={[0.105, 0.11, 6, 12]} />
           </mesh>
-          <mesh castShadow receiveShadow material={materials.cap} position={[0, -0.21, 0]}>
-            <cylinderGeometry args={[0.105, 0.105, 0.05, 12]} />
+          {/* Knee cloth patch (left = dark slate patch like concept sheet) */}
+          <mesh material={materials.patchDark} position={[0, -0.095, 0.1]} rotation={[0.08, 0, -0.12]}>
+            <boxGeometry args={[0.085, 0.085, 0.018]} />
           </mesh>
-          <mesh castShadow receiveShadow material={materials.boot} position={[0, -0.27, 0.035]}>
-            <boxGeometry args={[0.19, 0.11, 0.25]} />
+          {/* Orange ankle collar & front tongue */}
+          <mesh castShadow material={materials.cuff} position={[0, -0.205, 0.015]}>
+            <cylinderGeometry args={[0.102, 0.105, 0.055, 12]} />
           </mesh>
-          <mesh castShadow receiveShadow material={materials.sole} position={[0, -0.325, 0.035]}>
-            <boxGeometry args={[0.205, 0.035, 0.27]} />
+          <mesh castShadow material={materials.cuff} position={[0, -0.22, 0.09]}>
+            <boxGeometry args={[0.08, 0.075, 0.055]} />
           </mesh>
-        </group>
-
-        <group ref={rightLegRef} position={[0.14, 0.34, 0]}>
-          <mesh castShadow receiveShadow material={materials.overall} position={[0, -0.1, 0]}>
-            <capsuleGeometry args={[0.095, 0.12, 6, 12]} />
+          {/* Leather boot upper & dark tread sole */}
+          <mesh castShadow receiveShadow material={materials.boot} position={[0, -0.265, 0.035]}>
+            <boxGeometry args={[0.19, 0.1, 0.25]} />
           </mesh>
-          <mesh castShadow receiveShadow material={materials.cap} position={[0, -0.21, 0]}>
-            <cylinderGeometry args={[0.105, 0.105, 0.05, 12]} />
-          </mesh>
-          <mesh castShadow receiveShadow material={materials.boot} position={[0, -0.27, 0.035]}>
-            <boxGeometry args={[0.19, 0.11, 0.25]} />
-          </mesh>
-          <mesh castShadow receiveShadow material={materials.sole} position={[0, -0.325, 0.035]}>
-            <boxGeometry args={[0.205, 0.035, 0.27]} />
+          <mesh castShadow receiveShadow material={materials.sole} position={[0, -0.322, 0.04]}>
+            <boxGeometry args={[0.206, 0.038, 0.275]} />
           </mesh>
         </group>
 
-        {/* TORSO / OVERALLS */}
+        <group ref={rightLegRef} position={[0.135, 0.34, 0]}>
+          <mesh castShadow receiveShadow material={materials.overall} position={[0, -0.09, 0]}>
+            <capsuleGeometry args={[0.105, 0.11, 6, 12]} />
+          </mesh>
+          {/* Knee cloth patch (right = warm stitched tan patch) */}
+          <mesh material={materials.patchLight} position={[0, -0.085, 0.1]} rotation={[-0.08, 0, 0.14]}>
+            <boxGeometry args={[0.09, 0.085, 0.018]} />
+          </mesh>
+          {/* Orange ankle collar & front tongue */}
+          <mesh castShadow material={materials.cuff} position={[0, -0.205, 0.015]}>
+            <cylinderGeometry args={[0.102, 0.105, 0.055, 12]} />
+          </mesh>
+          <mesh castShadow material={materials.cuff} position={[0, -0.22, 0.09]}>
+            <boxGeometry args={[0.08, 0.075, 0.055]} />
+          </mesh>
+          <mesh castShadow receiveShadow material={materials.boot} position={[0, -0.265, 0.035]}>
+            <boxGeometry args={[0.19, 0.1, 0.25]} />
+          </mesh>
+          <mesh castShadow receiveShadow material={materials.sole} position={[0, -0.322, 0.04]}>
+            <boxGeometry args={[0.206, 0.038, 0.275]} />
+          </mesh>
+        </group>
+
+        {/* CHUNKY MECHANIC TORSO / OVERALLS */}
         <group ref={torsoRef} position={[0, 0.58, 0]}>
-          <mesh castShadow receiveShadow material={materials.overall}>
-            <capsuleGeometry args={[0.24, 0.22, 8, 16]} />
+          {/* Pear-shaped overall hips + cream shirt upper torso */}
+          <mesh castShadow receiveShadow material={materials.overall} position={[0, -0.04, 0]}>
+            <cylinderGeometry args={[0.23, 0.265, 0.3, 16]} />
           </mesh>
-          <mesh castShadow receiveShadow material={materials.shirt} position={[0, 0.14, 0.05]}>
-            <cylinderGeometry args={[0.21, 0.23, 0.16, 14]} />
-          </mesh>
-          <mesh castShadow material={materials.overall} position={[-0.12, 0.16, 0.15]} rotation={[0.15, 0, 0]}>
-            <boxGeometry args={[0.065, 0.18, 0.05]} />
-          </mesh>
-          <mesh castShadow material={materials.overall} position={[0.12, 0.16, 0.15]} rotation={[0.15, 0, 0]}>
-            <boxGeometry args={[0.065, 0.18, 0.05]} />
-          </mesh>
-          <mesh castShadow material={materials.brass} position={[-0.12, 0.1, 0.185]}>
-            <boxGeometry args={[0.075, 0.045, 0.025]} />
-          </mesh>
-          <mesh castShadow material={materials.brass} position={[0.12, 0.1, 0.185]}>
-            <boxGeometry args={[0.075, 0.045, 0.025]} />
-          </mesh>
-          <mesh castShadow material={materials.pocket} position={[0, 0.01, 0.23]}>
-            <boxGeometry args={[0.22, 0.14, 0.04]} />
-          </mesh>
-          <mesh castShadow material={materials.redHandle} position={[0.05, 0.09, 0.235]} rotation={[0, 0, -0.25]}>
-            <cylinderGeometry args={[0.018, 0.018, 0.09, 8]} />
-          </mesh>
-          <mesh castShadow material={materials.belt} position={[0, -0.1, 0]}>
-            <cylinderGeometry args={[0.255, 0.255, 0.075, 16]} />
-          </mesh>
-          <mesh castShadow material={materials.brass} position={[0, -0.1, 0.255]}>
-            <boxGeometry args={[0.09, 0.08, 0.03]} />
+          <mesh castShadow receiveShadow material={materials.shirt} position={[0, 0.145, 0]}>
+            <cylinderGeometry args={[0.205, 0.232, 0.16, 14]} />
           </mesh>
 
-          {/* CARRY ANCHOR dynamically positioned by CARRY_PROFILES */}
+          {/* Front overalls bib & white 6-tooth gear emblem */}
+          <mesh castShadow material={materials.overall} position={[0, 0.11, 0.18]} rotation={[-0.06, 0, 0]}>
+            <boxGeometry args={[0.24, 0.19, 0.08]} />
+          </mesh>
+          <group position={[0, 0.115, 0.224]}>
+            <mesh material={materials.emblem}>
+              <torusGeometry args={[0.044, 0.016, 8, 16]} />
+            </mesh>
+            {GEAR_ANGLES.map((ang) => (
+              <mesh
+                key={ang}
+                material={materials.emblem}
+                position={[Math.cos(ang) * 0.054, Math.sin(ang) * 0.054, 0]}
+                rotation={[0, 0, ang]}
+              >
+                <boxGeometry args={[0.022, 0.02, 0.014]} />
+              </mesh>
+            ))}
+          </group>
+
+          {/* Front straps + brass buckles */}
+          <mesh castShadow material={materials.overallStrap} position={[-0.1, 0.195, 0.135]} rotation={[0.18, 0, 0]}>
+            <boxGeometry args={[0.055, 0.17, 0.045]} />
+          </mesh>
+          <mesh castShadow material={materials.overallStrap} position={[0.1, 0.195, 0.135]} rotation={[0.18, 0, 0]}>
+            <boxGeometry args={[0.055, 0.17, 0.045]} />
+          </mesh>
+          <mesh castShadow material={materials.brass} position={[-0.1, 0.16, 0.175]}>
+            <boxGeometry args={[0.064, 0.04, 0.022]} />
+          </mesh>
+          <mesh castShadow material={materials.brass} position={[0.1, 0.16, 0.175]}>
+            <boxGeometry args={[0.064, 0.04, 0.022]} />
+          </mesh>
+
+          {/* Crossed back straps (signature silhouette from rear view!) */}
+          <mesh castShadow material={materials.overallStrap} position={[0, 0.145, -0.205]} rotation={[0, 0, 0.56]}>
+            <boxGeometry args={[0.06, 0.25, 0.036]} />
+          </mesh>
+          <mesh castShadow material={materials.overallStrap} position={[0, 0.145, -0.205]} rotation={[0, 0, -0.56]}>
+            <boxGeometry args={[0.06, 0.25, 0.036]} />
+          </mesh>
+
+          {/* Side & back stitched patches */}
+          <mesh material={materials.patchLight} position={[-0.08, -0.05, -0.242]} rotation={[0, 0, 0.18]}>
+            <boxGeometry args={[0.085, 0.08, 0.016]} />
+          </mesh>
+          <mesh material={materials.patchDark} position={[0.09, -0.07, -0.238]} rotation={[0, 0, -0.14]}>
+            <boxGeometry args={[0.075, 0.075, 0.016]} />
+          </mesh>
+
+          {/* BELT DECORATIVE ANCHOR (non-colliding, replaceable tools/pouches) */}
+          <group ref={beltAnchorRef} position={[0, -0.05, 0]}>
+            <mesh castShadow material={materials.belt}>
+              <cylinderGeometry args={[0.258, 0.264, 0.055, 16]} />
+            </mesh>
+            <mesh castShadow material={materials.brass} position={[0, 0, 0.255]}>
+              <boxGeometry args={[0.08, 0.065, 0.025]} />
+            </mesh>
+            {appearance.beltToolStyle === 'pouch' && (
+              <group position={[0.255, -0.02, 0.03]}>
+                <mesh castShadow material={materials.cuff}>
+                  <boxGeometry args={[0.075, 0.12, 0.12]} />
+                </mesh>
+                <mesh castShadow material={materials.brass} position={[0.04, 0.025, 0]}>
+                  <boxGeometry args={[0.014, 0.028, 0.04]} />
+                </mesh>
+              </group>
+            )}
+          </group>
+
+          {/* CARRY ANCHOR dynamically positioned by PlayerRig clearance solver */}
           <group ref={carryAnchorRef} position={[0, 0.12, 0.65]} />
 
-          {/* SCRAP BACKPACK */}
-          <group ref={backpackRef} position={[0, 0.04, -0.27]}>
-            <mesh castShadow receiveShadow material={materials.backpack}>
-              <boxGeometry args={[0.32, 0.34, 0.18]} />
-            </mesh>
-            <mesh castShadow material={materials.brass} position={[-0.08, 0.05, -0.1]} rotation={[Math.PI / 2, 0, 0]}>
-              <cylinderGeometry args={[0.06, 0.06, 0.03, 12]} />
-            </mesh>
-            <mesh castShadow material={materials.goggleFrame} position={[0.1, 0.12, -0.05]}>
-              <cylinderGeometry args={[0.03, 0.035, 0.2, 10]} />
-            </mesh>
-            <group ref={antennaRef} position={[-0.11, 0.17, -0.02]}>
-              <mesh castShadow material={materials.goggleFrame} position={[0, 0.12, 0]}>
-                <cylinderGeometry args={[0.012, 0.016, 0.24, 8]} />
-              </mesh>
-              <mesh material={materials.bulb} position={[0, 0.25, 0]}>
-                <sphereGeometry args={[0.042, 10, 10]} />
-              </mesh>
-            </group>
+          {/* BACKPACK DECORATIVE ANCHOR (non-colliding, swaps outfits without altering physics) */}
+          <group ref={backpackAnchorRef} position={[0, 0.04, -0.27]}>
+            {appearance.backpackStyle === 'scrap_pack' && (
+              <group>
+                <mesh castShadow receiveShadow material={materials.backpack}>
+                  <boxGeometry args={[0.3, 0.32, 0.16]} />
+                </mesh>
+                <mesh castShadow material={materials.brass} position={[-0.07, 0.04, -0.09]} rotation={[Math.PI / 2, 0, 0]}>
+                  <cylinderGeometry args={[0.052, 0.052, 0.026, 12]} />
+                </mesh>
+                <group ref={antennaRef} position={[-0.1, 0.16, -0.02]}>
+                  <mesh castShadow material={materials.goggleFrame} position={[0, 0.1, 0]}>
+                    <cylinderGeometry args={[0.012, 0.016, 0.2, 8]} />
+                  </mesh>
+                  <mesh material={materials.cuff} position={[0, 0.21, 0]}>
+                    <sphereGeometry args={[0.038, 10, 10]} />
+                  </mesh>
+                </group>
+              </group>
+            )}
           </group>
 
-          {/* LEFT ARM + BIG WORK GLOVE */}
+          {/* LEFT ARM + ORANGE CUFF + BIG WORK GLOVE */}
           <group ref={leftArmRef} position={[-0.25, 0.14, 0]}>
             <mesh castShadow material={materials.shirt}>
-              <sphereGeometry args={[0.086, 10, 10]} />
+              <sphereGeometry args={[0.088, 10, 10]} />
             </mesh>
-            <mesh castShadow material={materials.shirt} position={[-0.025, -0.055, 0]} rotation={[0, 0, 0.15]}>
-              <cylinderGeometry args={[0.076, 0.07, 0.1, 10]} />
+            <mesh castShadow material={materials.shirt} position={[-0.022, -0.055, 0]} rotation={[0, 0, 0.15]}>
+              <cylinderGeometry args={[0.078, 0.082, 0.095, 10]} />
             </mesh>
-            <mesh castShadow material={materials.skin} position={[-0.045, -0.155, 0]}>
-              <capsuleGeometry args={[0.055, 0.1, 6, 10]} />
+            <mesh castShadow material={materials.skin} position={[-0.042, -0.145, 0]}>
+              <capsuleGeometry args={[0.052, 0.085, 6, 10]} />
             </mesh>
-            <group position={[-0.055, -0.275, 0.03]}>
+            {/* Orange cuff + chunky grey-brown padded work glove */}
+            <group position={[-0.052, -0.265, 0.03]}>
+              <mesh castShadow material={materials.cuff} position={[0, 0.078, -0.015]}>
+                <cylinderGeometry args={[0.082, 0.092, 0.058, 12]} />
+              </mesh>
               <mesh castShadow material={materials.glove}>
-                <sphereGeometry args={[0.105, 12, 10]} />
+                <sphereGeometry args={[0.104, 12, 10]} />
               </mesh>
-              <mesh castShadow material={materials.glove} position={[0.06, 0.02, 0.05]}>
-                <sphereGeometry args={[0.048, 8, 8]} />
+              <mesh castShadow material={materials.glovePad} position={[-0.04, 0.01, 0.04]} rotation={[0, 0.5, 0]}>
+                <boxGeometry args={[0.07, 0.075, 0.06]} />
               </mesh>
-              <mesh castShadow material={materials.overall} position={[0, 0.075, -0.02]}>
-                <cylinderGeometry args={[0.085, 0.095, 0.045, 10]} />
+              <mesh castShadow material={materials.glove} position={[0.062, 0.02, 0.05]}>
+                <sphereGeometry args={[0.046, 8, 8]} />
               </mesh>
             </group>
           </group>
 
-          {/* RIGHT ARM + BIG WORK GLOVE */}
+          {/* RIGHT ARM + ORANGE CUFF + BIG WORK GLOVE */}
           <group ref={rightArmRef} position={[0.25, 0.14, 0]}>
             <mesh castShadow material={materials.shirt}>
-              <sphereGeometry args={[0.086, 10, 10]} />
+              <sphereGeometry args={[0.088, 10, 10]} />
             </mesh>
-            <mesh castShadow material={materials.shirt} position={[0.025, -0.055, 0]} rotation={[0, 0, -0.15]}>
-              <cylinderGeometry args={[0.076, 0.07, 0.1, 10]} />
+            <mesh castShadow material={materials.shirt} position={[0.022, -0.055, 0]} rotation={[0, 0, -0.15]}>
+              <cylinderGeometry args={[0.078, 0.082, 0.095, 10]} />
             </mesh>
-            <mesh castShadow material={materials.skin} position={[0.045, -0.155, 0]}>
-              <capsuleGeometry args={[0.055, 0.1, 6, 10]} />
+            <mesh castShadow material={materials.skin} position={[0.042, -0.145, 0]}>
+              <capsuleGeometry args={[0.052, 0.085, 6, 10]} />
             </mesh>
-            <group position={[0.055, -0.275, 0.03]}>
+            <group position={[0.052, -0.265, 0.03]}>
+              <mesh castShadow material={materials.cuff} position={[0, 0.078, -0.015]}>
+                <cylinderGeometry args={[0.082, 0.092, 0.058, 12]} />
+              </mesh>
               <mesh castShadow material={materials.glove}>
-                <sphereGeometry args={[0.105, 12, 10]} />
+                <sphereGeometry args={[0.104, 12, 10]} />
               </mesh>
-              <mesh castShadow material={materials.glove} position={[-0.06, 0.02, 0.05]}>
-                <sphereGeometry args={[0.048, 8, 8]} />
+              <mesh castShadow material={materials.glovePad} position={[0.04, 0.01, 0.04]} rotation={[0, -0.5, 0]}>
+                <boxGeometry args={[0.07, 0.075, 0.06]} />
               </mesh>
-              <mesh castShadow material={materials.overall} position={[0, 0.075, -0.02]}>
-                <cylinderGeometry args={[0.085, 0.095, 0.045, 10]} />
+              <mesh castShadow material={materials.glove} position={[-0.062, 0.02, 0.05]}>
+                <sphereGeometry args={[0.046, 8, 8]} />
               </mesh>
             </group>
           </group>
 
-          {/* HEAD + CAP + WELDING GOGGLES */}
+          {/* HEAD + EXPRESSIVE FACE + SPIKY PONYTAIL + HEAD/GOGGLES ANCHORS */}
           <group ref={headRef} position={[0, 0.37, 0.02]}>
-            <mesh castShadow receiveShadow material={materials.skin}>
+            {/* Slightly squashed charming head shape */}
+            <mesh castShadow receiveShadow material={materials.skin} scale={[1, 0.94, 0.96]}>
               <sphereGeometry args={[0.255, 18, 16]} />
             </mesh>
-            <mesh castShadow material={materials.skin} position={[-0.25, -0.01, 0]}>
-              <sphereGeometry args={[0.055, 10, 10]} />
+            {/* Ears */}
+            <mesh castShadow material={materials.skin} position={[-0.248, -0.015, -0.01]}>
+              <sphereGeometry args={[0.052, 10, 10]} />
             </mesh>
-            <mesh castShadow material={materials.skin} position={[0.25, -0.01, 0]}>
-              <sphereGeometry args={[0.055, 10, 10]} />
-            </mesh>
-            <mesh castShadow material={materials.blush} position={[0, -0.02, 0.255]}>
-              <sphereGeometry args={[0.048, 10, 10]} />
-            </mesh>
-            <mesh material={materials.blush} position={[-0.13, -0.06, 0.21]} scale={[1.2, 0.7, 0.5]}>
-              <sphereGeometry args={[0.042, 8, 8]} />
-            </mesh>
-            <mesh material={materials.blush} position={[0.13, -0.06, 0.21]} scale={[1.2, 0.7, 0.5]}>
-              <sphereGeometry args={[0.042, 8, 8]} />
-            </mesh>
-            <mesh ref={eyeLeftRef} material={materials.eye} position={[-0.088, 0.03, 0.23]}>
-              <sphereGeometry args={[0.036, 10, 10]} />
-            </mesh>
-            <mesh ref={eyeRightRef} material={materials.eye} position={[0.088, 0.03, 0.23]}>
-              <sphereGeometry args={[0.036, 10, 10]} />
+            <mesh castShadow material={materials.skin} position={[0.248, -0.015, -0.01]}>
+              <sphereGeometry args={[0.052, 10, 10]} />
             </mesh>
 
-            <group position={[0, 0.1, -0.01]} rotation={[-0.12, 0, 0]}>
-              <mesh castShadow material={materials.cap}>
-                <sphereGeometry args={[0.252, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.54]} />
+            {/* Triangular stylized nose, cheeks & subtle freckles */}
+            <mesh castShadow material={materials.blush} position={[0, -0.022, 0.252]} scale={[0.9, 0.85, 0.9]}>
+              <sphereGeometry args={[0.034, 10, 10]} />
+            </mesh>
+            <mesh material={materials.blush} position={[-0.145, -0.055, 0.195]} scale={[1.1, 0.65, 0.45]}>
+              <sphereGeometry args={[0.036, 8, 8]} />
+            </mesh>
+            <mesh material={materials.blush} position={[0.145, -0.055, 0.195]} scale={[1.1, 0.65, 0.45]}>
+              <sphereGeometry args={[0.036, 8, 8]} />
+            </mesh>
+
+            {/* LARGE EXPRESSIVE EYES (White sclera + dark iris + white glint) */}
+            <group ref={eyeLeftGroupRef} position={[-0.082, 0.028, 0.222]} rotation={[0, -0.18, 0]}>
+              <mesh material={materials.sclera} scale={[0.95, 1.25, 0.45]}>
+                <sphereGeometry args={[0.044, 12, 10]} />
               </mesh>
-              <mesh castShadow material={materials.cap} position={[0, 0.02, -0.24]} rotation={[0.18, 0, 0]}>
-                <boxGeometry args={[0.24, 0.035, 0.16]} />
+              <mesh material={materials.pupil} position={[0.008, -0.002, 0.012]} scale={[0.92, 1.2, 0.45]}>
+                <sphereGeometry args={[0.028, 10, 10]} />
               </mesh>
-              <mesh castShadow material={materials.brass} position={[0, 0.255, 0]}>
-                <sphereGeometry args={[0.03, 8, 8]} />
+              <mesh material={materials.sclera} position={[-0.006, 0.016, 0.024]}>
+                <sphereGeometry args={[0.01, 8, 8]} />
               </mesh>
             </group>
 
-            <group position={[0, 0.145, 0.195]} rotation={[-0.25, 0, 0.04]}>
-              <mesh material={materials.boot} position={[0, -0.01, -0.19]} rotation={[Math.PI / 2, 0, 0]}>
-                <torusGeometry args={[0.255, 0.024, 8, 22]} />
+            <group ref={eyeRightGroupRef} position={[0.082, 0.028, 0.222]} rotation={[0, 0.18, 0]}>
+              <mesh material={materials.sclera} scale={[0.95, 1.25, 0.45]}>
+                <sphereGeometry args={[0.044, 12, 10]} />
               </mesh>
-              <group position={[-0.095, 0, 0]}>
-                <mesh castShadow material={materials.goggleFrame} rotation={[Math.PI / 2, 0, 0]}>
-                  <cylinderGeometry args={[0.078, 0.082, 0.08, 14]} />
-                </mesh>
-                <mesh material={materials.goggleLens} position={[0, 0, 0.036]} rotation={[Math.PI / 2, 0, 0]}>
-                  <cylinderGeometry args={[0.062, 0.062, 0.02, 14]} />
-                </mesh>
-              </group>
-              <group position={[0.095, 0.006, 0]}>
-                <mesh castShadow material={materials.goggleFrame} rotation={[Math.PI / 2, 0, 0]}>
-                  <cylinderGeometry args={[0.09, 0.094, 0.084, 14]} />
-                </mesh>
-                <mesh material={materials.goggleLens} position={[0, 0, 0.038]} rotation={[Math.PI / 2, 0, 0]}>
-                  <cylinderGeometry args={[0.072, 0.072, 0.02, 14]} />
-                </mesh>
-              </group>
-              <mesh castShadow material={materials.brass} position={[0, 0, 0.01]}>
-                <boxGeometry args={[0.07, 0.028, 0.03]} />
+              <mesh material={materials.pupil} position={[-0.008, -0.002, 0.012]} scale={[0.92, 1.2, 0.45]}>
+                <sphereGeometry args={[0.028, 10, 10]} />
               </mesh>
+              <mesh material={materials.sclera} position={[-0.006, 0.016, 0.024]}>
+                <sphereGeometry args={[0.01, 8, 8]} />
+              </mesh>
+            </group>
+
+            {/* ARTICULATED EYEBROWS */}
+            <mesh ref={browLeftRef} material={materials.hairShadow} position={[-0.086, 0.1, 0.228]} rotation={[0, -0.18, 0.1]}>
+              <boxGeometry args={[0.072, 0.022, 0.024]} />
+            </mesh>
+            <mesh ref={browRightRef} material={materials.hairShadow} position={[0.086, 0.1, 0.228]} rotation={[0, 0.18, -0.1]}>
+              <boxGeometry args={[0.072, 0.022, 0.024]} />
+            </mesh>
+
+            {/* EXPRESSIVE MOUTHS (4 modes matching concept sheet!) */}
+            <group ref={mouthHappyRef} position={[0, -0.088, 0.226]}>
+              <mesh material={materials.mouthDark} rotation={[0.15, 0, Math.PI]}>
+                <torusGeometry args={[0.042, 0.01, 8, 14, Math.PI]} />
+              </mesh>
+            </group>
+
+            <group ref={mouthEffortRef} position={[0, -0.09, 0.23]} visible={false}>
+              <mesh material={materials.mouthDark} scale={[1.25, 0.65, 0.6]}>
+                <boxGeometry args={[0.078, 0.048, 0.025]} />
+              </mesh>
+              <mesh material={materials.teeth} position={[0, 0, 0.008]} scale={[1.18, 0.52, 0.6]}>
+                <boxGeometry args={[0.072, 0.04, 0.02]} />
+              </mesh>
+            </group>
+
+            <mesh
+              ref={mouthSurpriseRef}
+              material={materials.mouthDark}
+              position={[0, -0.092, 0.23]}
+              scale={[0.85, 1.15, 0.5]}
+              visible={false}
+            >
+              <sphereGeometry args={[0.03, 10, 10]} />
+            </mesh>
+
+            <mesh
+              ref={mouthSadRef}
+              material={materials.mouthDark}
+              position={[0, -0.108, 0.226]}
+              rotation={[-0.15, 0, 0]}
+              visible={false}
+            >
+              <torusGeometry args={[0.036, 0.009, 8, 12, Math.PI]} />
+            </mesh>
+
+            {/* HAIR CAP, BANGS, SIDE LOCKS & BOUNCING PONYTAIL + ORANGE RIBBON */}
+            <mesh castShadow material={materials.hair} position={[0, 0.055, -0.035]}>
+              <sphereGeometry args={[0.256, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.62]} />
+            </mesh>
+            {/* Front bangs peeking below helmet */}
+            <mesh castShadow material={materials.hair} position={[-0.045, 0.135, 0.19]} rotation={[0.45, 0.15, 0.25]}>
+              <coneGeometry args={[0.052, 0.11, 6]} />
+            </mesh>
+            <mesh castShadow material={materials.hair} position={[0.045, 0.135, 0.19]} rotation={[0.45, -0.15, -0.22]}>
+              <coneGeometry args={[0.052, 0.11, 6]} />
+            </mesh>
+            {/* Cheek side locks */}
+            <mesh castShadow material={materials.hair} position={[-0.225, 0.015, 0.075]} rotation={[0.15, 0, 0.35]}>
+              <coneGeometry args={[0.055, 0.15, 7]} />
+            </mesh>
+            <mesh castShadow material={materials.hair} position={[0.225, 0.015, 0.075]} rotation={[0.15, 0, -0.35]}>
+              <coneGeometry args={[0.055, 0.15, 7]} />
+            </mesh>
+
+            {/* Spiky Ponytail + Orange Ribbon */}
+            <group ref={ponytailRef} position={[0, 0.04, -0.23]}>
+              <mesh castShadow material={materials.cuff} rotation={[Math.PI / 2, 0, 0]}>
+                <torusGeometry args={[0.068, 0.024, 8, 14]} />
+              </mesh>
+              {/* Two fluttering ribbon tails */}
+              <mesh castShadow material={materials.cuff} position={[-0.045, -0.07, -0.03]} rotation={[-0.5, 0, -0.4]}>
+                <boxGeometry args={[0.038, 0.11, 0.018]} />
+              </mesh>
+              <mesh castShadow material={materials.cuff} position={[0.045, -0.07, -0.03]} rotation={[-0.5, 0, 0.4]}>
+                <boxGeometry args={[0.038, 0.11, 0.018]} />
+              </mesh>
+              {/* 3 spiky brown hair tufts */}
+              <mesh castShadow material={materials.hair} position={[0, 0.05, -0.1]} rotation={[-1.15, 0, 0]}>
+                <coneGeometry args={[0.088, 0.24, 7]} />
+              </mesh>
+              <mesh castShadow material={materials.hair} position={[-0.065, -0.02, -0.095]} rotation={[-1.45, 0, 0.42]}>
+                <coneGeometry args={[0.075, 0.21, 7]} />
+              </mesh>
+              <mesh castShadow material={materials.hair} position={[0.065, -0.02, -0.095]} rotation={[-1.45, 0, -0.42]}>
+                <coneGeometry args={[0.075, 0.21, 7]} />
+              </mesh>
+            </group>
+
+            {/* HEAD DECORATIVE ANCHOR (Hard-hat with front visor brim, replaceable by helmet/cap/astronaut) */}
+            <group ref={headAnchorRef} position={[0, 0.095, -0.015]} rotation={[-0.14, 0, 0]}>
+              {appearance.hatStyle === 'hardhat' && (
+                <group>
+                  <mesh castShadow material={materials.hardhat}>
+                    <sphereGeometry args={[0.268, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.52]} />
+                  </mesh>
+                  {/* Top center safety crest */}
+                  <mesh castShadow material={materials.hardhatCrest} position={[0, 0.245, 0]}>
+                    <boxGeometry args={[0.068, 0.055, 0.34]} />
+                  </mesh>
+                  {/* Front visor brim (+Z!) */}
+                  <mesh castShadow material={materials.hardhat} position={[0, 0.015, 0.24]} rotation={[0.14, 0, 0]}>
+                    <boxGeometry args={[0.32, 0.036, 0.16]} />
+                  </mesh>
+                </group>
+              )}
+
+              {/* GOGGLES DECORATIVE ANCHOR resting cleanly on front of hard-hat */}
+              <group ref={gogglesAnchorRef} position={[0, 0.125, 0.21]} rotation={[-0.22, 0, 0]}>
+                {appearance.gogglesStyle === 'forehead' && (
+                  <group>
+                    <mesh material={materials.goggleStrap} position={[0, -0.01, -0.21]} rotation={[Math.PI / 2, 0, 0]}>
+                      <torusGeometry args={[0.266, 0.02, 8, 22]} />
+                    </mesh>
+                    {[-0.088, 0.088].map((gx) => (
+                      <group key={gx} position={[gx, 0, 0]}>
+                        <mesh castShadow material={materials.goggleFrame} rotation={[Math.PI / 2, 0, 0]}>
+                          <cylinderGeometry args={[0.076, 0.08, 0.076, 14]} />
+                        </mesh>
+                        <mesh material={materials.goggleLens} position={[0, 0, 0.034]} rotation={[Math.PI / 2, 0, 0]}>
+                          <cylinderGeometry args={[0.06, 0.06, 0.018, 14]} />
+                        </mesh>
+                      </group>
+                    ))}
+                    <mesh castShadow material={materials.goggleStrap} position={[0, 0, 0.01]}>
+                      <boxGeometry args={[0.06, 0.028, 0.03]} />
+                    </mesh>
+                  </group>
+                )}
+              </group>
             </group>
           </group>
         </group>
