@@ -14,6 +14,7 @@ export interface GameHudState {
   carriedKind: GrabbableKind | null;
   impactFeedback: 'land' | 'bump' | null;
   impactNonce: number;
+  dropBlockedHint: boolean;
   resetNonce: number;
   showHelp: boolean;
   sceneReady: boolean;
@@ -33,6 +34,7 @@ let state: GameHudState = {
   carriedKind: null,
   impactFeedback: null,
   impactNonce: 0,
+  dropBlockedHint: false,
   resetNonce: 0,
   showHelp: true,
   sceneReady: false,
@@ -41,6 +43,7 @@ let state: GameHudState = {
 const listeners = new Set<() => void>();
 
 let impactClearTimer: number | null = null;
+let dropHintClearTimer: number | null = null;
 
 function emit() {
   for (const listener of listeners) {
@@ -89,6 +92,18 @@ export const gameStore = {
       state = { ...state, impactFeedback: null };
       emit();
     }, 550);
+  },
+  triggerDropBlocked() {
+    if (dropHintClearTimer !== null) {
+      window.clearTimeout(dropHintClearTimer);
+    }
+    state = { ...state, dropBlockedHint: true };
+    emit();
+    dropHintClearTimer = window.setTimeout(() => {
+      dropHintClearTimer = null;
+      state = { ...state, dropBlockedHint: false };
+      emit();
+    }, 1400);
   },
   triggerReset() {
     state = { ...state, resetNonce: state.resetNonce + 1 };

@@ -119,6 +119,7 @@ export function HudOverlay() {
   const nearbyTargetKind = useGameStore((s) => s.nearbyTargetKind);
   const carriedKind = useGameStore((s) => s.carriedKind);
   const impactFeedback = useGameStore((s) => s.impactFeedback);
+  const dropBlockedHint = useGameStore((s) => s.dropBlockedHint);
   const showHelp = useGameStore((s) => s.showHelp);
   const sceneReady = useGameStore((s) => s.sceneReady);
 
@@ -195,6 +196,16 @@ export function HudOverlay() {
               </span>
             ) : (
               <span>Manos libres · Explorá el taller y el carrito</span>
+            )}
+            {dropBlockedHint && (
+              <span
+                style={{
+                  color: '#ff9080',
+                  fontWeight: 700,
+                }}
+              >
+                · Sin espacio para soltar
+              </span>
             )}
             {flashText && (
               <span

@@ -78,7 +78,21 @@ export function PlayerRig({
   const scratchItemPos = useRef(new THREE.Vector3());
   const scratchToItem = useRef(new THREE.Vector3());
   const scratchRayDir = useRef(new THREE.Vector3());
-  const dropBallRef = useRef<InstanceType<typeof rapier.Ball> | null>(null);
+  const scratchDropQuat = useRef(new THREE.Quaternion());
+  const scratchShapeQuat = useRef(new THREE.Quaternion());
+  const scratchWheelOffsetQuat = useRef(
+    new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI / 2))
+  );
+  const scratchDropEuler = useRef(new THREE.Euler(0, 0, 0, 'YXZ'));
+  const scratchCandDir = useRef(new THREE.Vector3());
+  const dropRayRef = useRef<InstanceType<typeof rapier.Ray> | null>(null);
+  const dropShapesRef = useRef<{
+    crate: InstanceType<typeof rapier.Cuboid>;
+    wheel: InstanceType<typeof rapier.Cylinder>;
+    canister: InstanceType<typeof rapier.Cylinder>;
+    part: InstanceType<typeof rapier.Cuboid>;
+    sweepBall: InstanceType<typeof rapier.Ball>;
+  } | null>(null);
 
   // Wire up camera target source when active
   useEffect(() => {
@@ -134,7 +148,7 @@ export function PlayerRig({
     ctrl.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
   }, [resetSignal, rapier]);
 
-  const dropCarriedItem = (withToss: boolean) => {
+  const dropCarriedItem = () => {
     const carriedId = carriedIdRef.current;
     const carriedKind = carriedKindRef.current ?? 'crate';
     if (!carriedId) return;
@@ -143,39 +157,110 @@ export function PlayerRig({
     const col = entry?.getCollider();
     const ctrl = ecctrlRef.current;
 
-    if (body && col && ctrl) {
-      const profile = CARRY_PROFILES[carriedKind];
-      scratchPlayerPos.current.copy(ctrl.currPos);
-      scratchForward.current.copy(ctrl.bodyZAxis).setY(0).normalize();
-      if (scratchForward.current.lengthSq() < 0.01) {
-        scratchForward.current.set(0, 0, 1);
+    if (!body || !col || !ctrl || !ctrl.body) {
+      carriedIdRef.current = null;
+      carriedKindRef.current = null;
+      grabbableRegistry.carriedId = null;
+      gameStore.setCarried(null, null);
+      return;
+    }
+
+    if (!dropShapesRef.current) {
+      dropShapesRef.current = {
+        crate: new rapier.Cuboid(0.34, 0.31, 0.34),
+        wheel: new rapier.Cylinder(0.16, 0.4),
+        canister: new rapier.Cylinder(0.39, 0.24),
+        part: new rapier.Cuboid(0.29, 0.24, 0.24),
+        sweepBall: new rapier.Ball(0.16),
+      };
+    }
+    if (!dropRayRef.current) {
+      dropRayRef.current = new rapier.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
+    }
+
+    const profile = CARRY_PROFILES[carriedKind];
+    const volumeShape = dropShapesRef.current[carriedKind];
+    const halfHeight = profile.dropHalfExtents[1];
+
+    scratchPlayerPos.current.copy(ctrl.currPos);
+    scratchForward.current.copy(ctrl.bodyZAxis).setY(0).normalize();
+    if (scratchForward.current.lengthSq() < 0.01) {
+      scratchForward.current.set(0, 0, 1);
+    }
+
+    const baseYaw = Math.atan2(scratchForward.current.x, scratchForward.current.z);
+    // Guarantee radial separation outside player's 0.32m capsule + object's footprint
+    const minHorizDist = CHARACTER_DIMENSIONS.capsuleRadius + profile.dropRadius + 0.16;
+    const primaryDist = Math.max(profile.holdDistance + 0.12, minHorizDist);
+    const playerFeetY =
+      scratchPlayerPos.current.y -
+      CHARACTER_DIMENSIONS.capsuleHalfHeight -
+      CHARACTER_DIMENSIONS.capsuleRadius;
+
+    // Candidate offsets: (yawAngleOffset, distance, extraHeightAboveFeet)
+    const candidates: readonly [number, number, number][] = [
+      [0, primaryDist, halfHeight + 0.06],
+      [0, primaryDist, halfHeight + 0.38],
+      [0, primaryDist, halfHeight + 0.72],
+      [0, primaryDist + 0.34, halfHeight + 0.06],
+      [0.58, primaryDist, halfHeight + 0.06],
+      [-0.58, primaryDist, halfHeight + 0.06],
+      [0.58, primaryDist, halfHeight + 0.42],
+      [-0.58, primaryDist, halfHeight + 0.42],
+      [1.25, primaryDist, halfHeight + 0.08],
+      [-1.25, primaryDist, halfHeight + 0.08],
+      [Math.PI, primaryDist, halfHeight + 0.08],
+    ];
+
+    const ray = dropRayRef.current;
+    const sweepBall = dropShapesRef.current.sweepBall;
+    let foundPose: { x: number; y: number; z: number; q: THREE.Quaternion } | null = null;
+
+    for (const [yawOffset, dist, heightAboveFeet] of candidates) {
+      const candYaw = baseYaw + yawOffset;
+      scratchCandDir.current.set(Math.sin(candYaw), 0, Math.cos(candYaw));
+
+      const candX = scratchPlayerPos.current.x + scratchCandDir.current.x * dist;
+      let candY = playerFeetY + heightAboveFeet;
+      const candZ = scratchPlayerPos.current.z + scratchCandDir.current.z * dist;
+
+      // 1. Check line-of-sight from player chest to candidate spot so we never drop through a wall
+      const chestY = scratchPlayerPos.current.y + 0.25;
+      const toCandX = candX - scratchPlayerPos.current.x;
+      const toCandY = candY - chestY;
+      const toCandZ = candZ - scratchPlayerPos.current.z;
+      const toCandLen = Math.hypot(toCandX, toCandY, toCandZ);
+
+      if (toCandLen > 0.05) {
+        const losHit = world.castShape(
+          { x: scratchPlayerPos.current.x, y: chestY, z: scratchPlayerPos.current.z },
+          { x: 0, y: 0, z: 0, w: 1 },
+          { x: toCandX / toCandLen, y: toCandY / toCandLen, z: toCandZ / toCandLen },
+          sweepBall,
+          0,
+          toCandLen,
+          true,
+          rapier.QueryFilterFlags.EXCLUDE_SENSORS,
+          undefined,
+          undefined,
+          ctrl.body,
+          (collider) => collider.parent()?.handle !== body.handle
+        );
+        if (losHit) {
+          continue;
+        }
       }
 
-      // Shapecast forward with a ball matching the object's radius so we never embed into walls
-      if (!dropBallRef.current || dropBallRef.current.radius !== profile.dropRadius) {
-        dropBallRef.current = new rapier.Ball(profile.dropRadius);
-      }
-
-      const maxSweepDist = profile.holdDistance + 0.35;
-      const origin = {
-        x: scratchPlayerPos.current.x,
-        y: scratchPlayerPos.current.y + 0.28,
-        z: scratchPlayerPos.current.z,
-      };
-      const rot = { x: 0, y: 0, z: 0, w: 1 };
-      const vel = {
-        x: scratchForward.current.x,
-        y: 0,
-        z: scratchForward.current.z,
-      };
-
-      const shapeHit = world.castShape(
-        origin,
-        rot,
-        vel,
-        dropBallRef.current,
-        0,
-        maxSweepDist,
+      // 2. Check ground beneath candidate spot so object is never placed overlapping below floor
+      ray.origin.x = candX;
+      ray.origin.y = candY + 0.4;
+      ray.origin.z = candZ;
+      ray.dir.x = 0;
+      ray.dir.y = -1;
+      ray.dir.z = 0;
+      const groundHit = world.castRay(
+        ray,
+        3.2,
         true,
         rapier.QueryFilterFlags.EXCLUDE_SENSORS,
         undefined,
@@ -183,48 +268,72 @@ export function PlayerRig({
         ctrl.body,
         (collider) => collider.parent()?.handle !== body.handle
       );
-
-      let dropDist = Math.max(profile.holdDistance, CHARACTER_DIMENSIONS.capsuleRadius + profile.dropRadius + 0.12);
-      let blockedByWall = false;
-      if (shapeHit) {
-        blockedByWall = true;
-        dropDist = Math.max(0.25, shapeHit.time_of_impact - 0.14);
+      if (!groundHit) {
+        continue;
+      }
+      const surfaceY = ray.origin.y - groundHit.timeOfImpact;
+      if (candY < surfaceY + halfHeight + 0.04) {
+        candY = surfaceY + halfHeight + 0.05;
       }
 
-      const minSafeHorizDist = CHARACTER_DIMENSIONS.capsuleRadius + profile.dropRadius + 0.08;
-      const needLiftAboveCapsule = dropDist < minSafeHorizDist;
-      const dropX = scratchPlayerPos.current.x + scratchForward.current.x * dropDist;
-      const dropY =
-        scratchPlayerPos.current.y +
-        (needLiftAboveCapsule ? 0.85 : profile.dropHeightOffset);
-      const dropZ = scratchPlayerPos.current.z + scratchForward.current.z * dropDist;
-
-      // Move body BEFORE re-enabling collider & physics body so it never overlaps the player capsule
-      body.setTranslation({ x: dropX, y: dropY, z: dropZ }, true);
-      body.setLinvel({ x: 0, y: 0, z: 0 }, true);
-      body.setAngvel({ x: 0, y: 0, z: 0 }, true);
-      col.setSensor(false);
-      col.setEnabled(true);
-      body.setEnabled(true);
-      body.setBodyType(rapier.RigidBodyType.Dynamic, true);
-
-      if (withToss && !blockedByWall) {
-        const tossPower = carriedKind === 'wheel' ? 3.1 : 2.1;
-        body.setLinvel(
-          {
-            x: ctrl.currLinVel.x * 0.45 + scratchForward.current.x * tossPower,
-            y: 1.25,
-            z: ctrl.currLinVel.z * 0.45 + scratchForward.current.z * tossPower,
-          },
-          true
-        );
+      // 3. Full-volume intersection test against ALL colliders INCLUDING player capsule!
+      scratchDropEuler.current.set(0, candYaw, 0);
+      scratchDropQuat.current.setFromEuler(scratchDropEuler.current);
+      if (carriedKind === 'wheel') {
+        scratchShapeQuat.current
+          .copy(scratchDropQuat.current)
+          .multiply(scratchWheelOffsetQuat.current);
       } else {
-        // Blocked by wall or gentle drop: zero forward impulse so it settles straight down cleanly
-        body.setLinvel({ x: 0, y: -0.2, z: 0 }, true);
-        body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+        scratchShapeQuat.current.copy(scratchDropQuat.current);
       }
-      body.wakeUp();
+
+      const overlapping = world.intersectionWithShape(
+        { x: candX, y: candY, z: candZ },
+        {
+          x: scratchShapeQuat.current.x,
+          y: scratchShapeQuat.current.y,
+          z: scratchShapeQuat.current.z,
+          w: scratchShapeQuat.current.w,
+        },
+        volumeShape,
+        rapier.QueryFilterFlags.EXCLUDE_SENSORS,
+        undefined,
+        undefined,
+        undefined,
+        (collider) => collider.parent()?.handle !== body.handle
+      );
+
+      if (!overlapping) {
+        foundPose = { x: candX, y: candY, z: candZ, q: scratchDropQuat.current.clone() };
+        break;
+      }
     }
+
+    if (!foundPose) {
+      // No free non-overlapping volume available: keep holding and alert player briefly
+      gameStore.triggerDropBlocked();
+      return;
+    }
+
+    // Gentle drop velocity: NO automatic launch! Cap horizontal carry-over speed cleanly.
+    const gentleVx = THREE.MathUtils.clamp(ctrl.currLinVel.x * 0.15, -0.65, 0.65);
+    const gentleVz = THREE.MathUtils.clamp(ctrl.currLinVel.z * 0.15, -0.65, 0.65);
+
+    body.setTranslation({ x: foundPose.x, y: foundPose.y, z: foundPose.z }, true);
+    body.setRotation(
+      { x: foundPose.q.x, y: foundPose.q.y, z: foundPose.q.z, w: foundPose.q.w },
+      true
+    );
+    body.setLinvel({ x: gentleVx, y: -0.05, z: gentleVz }, true);
+    body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    col.setSensor(false);
+    col.setEnabled(true);
+    body.setEnabled(true);
+    body.setBodyType(rapier.RigidBodyType.Dynamic, true);
+    body.wakeUp();
+
+    grabbableRegistry.carriedVisualPos.set(foundPose.x, foundPose.y, foundPose.z);
+    grabbableRegistry.carriedVisualQuat.copy(foundPose.q);
 
     carriedIdRef.current = null;
     carriedKindRef.current = null;
@@ -386,7 +495,7 @@ export function PlayerRig({
     // 6. Handle Grab / Drop interaction trigger
     if (playerInput.consumeInteract()) {
       if (carriedIdRef.current) {
-        dropCarriedItem(true);
+        dropCarriedItem();
       } else if (bestId) {
         const entry = grabbableRegistry.getById(bestId);
         const body = entry?.getBody();
