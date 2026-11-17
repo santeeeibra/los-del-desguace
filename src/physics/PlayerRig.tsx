@@ -120,7 +120,7 @@ export function PlayerRig({
       const body = entry?.getBody();
       const col = entry?.getCollider();
       if (body && col) {
-        col.setSensor(false);
+        col.setEnabled(true);
         body.setBodyType(rapier.RigidBodyType.Dynamic, true);
       }
       carriedIdRef.current = null;
@@ -184,20 +184,25 @@ export function PlayerRig({
         (collider) => collider.parent()?.handle !== body.handle
       );
 
-      let dropDist = profile.holdDistance;
+      let dropDist = Math.max(profile.holdDistance, CHARACTER_DIMENSIONS.capsuleRadius + profile.dropRadius + 0.12);
       let blockedByWall = false;
       if (shapeHit) {
         blockedByWall = true;
-        dropDist = Math.max(0.28, shapeHit.time_of_impact - 0.14);
+        dropDist = Math.max(0.25, shapeHit.time_of_impact - 0.14);
       }
 
+      const minSafeHorizDist = CHARACTER_DIMENSIONS.capsuleRadius + profile.dropRadius + 0.08;
+      const needLiftAboveCapsule = dropDist < minSafeHorizDist;
       const dropX = scratchPlayerPos.current.x + scratchForward.current.x * dropDist;
-      const dropY = scratchPlayerPos.current.y + profile.dropHeightOffset + (blockedByWall ? 0.15 : 0);
+      const dropY =
+        scratchPlayerPos.current.y +
+        (needLiftAboveCapsule ? 0.85 : profile.dropHeightOffset);
       const dropZ = scratchPlayerPos.current.z + scratchForward.current.z * dropDist;
 
-      body.setBodyType(rapier.RigidBodyType.Dynamic, true);
-      col.setSensor(false);
+      // Move body BEFORE re-enabling collider so it never overlaps the player capsule
       body.setTranslation({ x: dropX, y: dropY, z: dropZ }, true);
+      col.setEnabled(true);
+      body.setBodyType(rapier.RigidBodyType.Dynamic, true);
 
       if (withToss && !blockedByWall) {
         const tossPower = carriedKind === 'wheel' ? 3.1 : 2.1;
@@ -356,13 +361,22 @@ export function PlayerRig({
         const body = entry?.getBody();
         const col = entry?.getCollider();
         if (entry && body && col) {
-          col.setSensor(true);
+          // Disable collider BEFORE switching to kinematic so it never shoves the player backward
+          col.setEnabled(false);
           body.setBodyType(rapier.RigidBodyType.KinematicPositionBased, true);
+          body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+          body.setAngvel({ x: 0, y: 0, z: 0 }, true);
           carriedIdRef.current = bestId;
           carriedKindRef.current = entry.kind;
           grabbableRegistry.carriedId = bestId;
           grabbableRegistry.highlightedId = null;
           gameStore.setCarried(bestId, entry.kind);
+          if (carryAnchorRef.current) {
+            carryAnchorRef.current.getWorldPosition(scratchCarryWorldPos.current);
+            carryAnchorRef.current.getWorldQuaternion(scratchCarryWorldQuat.current);
+            body.setTranslation(scratchCarryWorldPos.current, true);
+            body.setRotation(scratchCarryWorldQuat.current, true);
+          }
           dustPoolRef.current?.spawnBurst(
             scratchPlayerPos.current.x,
             scratchPlayerPos.current.y + 0.1,
@@ -409,6 +423,7 @@ export function PlayerRig({
         jumpVel={6.4}
         jumpDuration={0.12}
         fallingGravityScale={2.6}
+        enableToggleRun={false}
         springK={85}
         dampingC={7}
         autoBalance

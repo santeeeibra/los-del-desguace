@@ -220,7 +220,10 @@ function GrabbableItem({
     b.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true);
     b.setLinvel({ x: 0, y: 0, z: 0 }, true);
     b.setAngvel({ x: 0, y: 0, z: 0 }, true);
-    if (c) c.setSensor(false);
+    if (c) {
+      c.setSensor(false);
+      c.setEnabled(true);
+    }
   }, [resetSignal, position, rotation]);
 
   useFrame((state) => {
@@ -401,10 +404,17 @@ export function GrabbableProps({ resetSignal }: { resetSignal: number }) {
 
       {/* Bidones tumbables */}
       <GrabbableItem id="canister-1" kind="canister" position={[-1.55, 0.4, -3.2]} resetSignal={resetSignal} />
-      <GrabbableItem id="canister-2" kind="canister" position={[-2.1, 0.4, 2.5]} resetSignal={resetSignal} />
+      <GrabbableItem id="canister-2" kind="canister" position={[-2.9, 0.4, 3.3]} resetSignal={resetSignal} />
 
       {/* Pieza de repuesto */}
       <GrabbableItem id="part-1" kind="part" position={[-4.2, 1.22, -6.1]} resetSignal={resetSignal} />
+
+      {/* Objetos adicionales en el Patio de Chatarra (Zona Oeste) */}
+      <GrabbableItem id="crate-4" kind="crate" position={[-15.2, 0.35, 2.2]} resetSignal={resetSignal} />
+      <GrabbableItem id="crate-5" kind="crate" position={[-15.9, 0.35, 2.9]} resetSignal={resetSignal} />
+      <GrabbableItem id="wheel-3" kind="wheel" position={[-13.2, 0.4, 5.2]} rotation={[0, 0.8, 0]} resetSignal={resetSignal} />
+      <GrabbableItem id="canister-3" kind="canister" position={[-14.5, 0.4, -0.6]} resetSignal={resetSignal} />
+      <GrabbableItem id="part-2" kind="part" position={[-16.8, 0.78, -2.5]} resetSignal={resetSignal} />
     </group>
   );
 }

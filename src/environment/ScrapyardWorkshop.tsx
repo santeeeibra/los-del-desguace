@@ -187,10 +187,11 @@ export function ScrapyardWorkshop({ extraProps }: ScrapyardWorkshopProps) {
     <group name="scrapyard-workshop">
       {/* GROUND PLANE & CONCRETE WORKSHOP SLAB */}
       <RigidBody type="fixed" colliders={false} friction={1}>
-        <CuboidCollider args={[30, 0.5, 30]} position={[0, -0.5, 0]} />
+        {/* Ground collision covers entire expanded campus (workshop + west patio + south track) */}
+        <CuboidCollider args={[36, 0.5, 36]} position={[0, -0.5, 12]} />
         {/* Warm sandy scrapyard dirt ground */}
-        <mesh receiveShadow material={materials.earth} position={[0, -0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={[64, 64]} />
+        <mesh receiveShadow material={materials.earth} position={[0, -0.02, 12]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[96, 96]} />
         </mesh>
         {/* Main concrete workshop floor */}
         <mesh receiveShadow material={materials.concrete} position={[0, 0.005, -0.5]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -424,26 +425,35 @@ export function ScrapyardWorkshop({ extraProps }: ScrapyardWorkshopProps) {
         ))}
       </RigidBody>
 
-      {/* PERIMETER SCRAPYARD FENCE (Bounds the playable yard clearly) */}
+      {/* PERIMETER SCRAPYARD FENCE (Con portones abiertos hacia el Patio Oeste y la Pista Sur) */}
       <RigidBody type="fixed" colliders={false}>
-        {/* North, South, East, West boundary colliders */}
+        {/* North wall */}
         <CuboidCollider args={[11.5, 1.5, 0.25]} position={[0, 1.5, -9.2]} />
-        <CuboidCollider args={[11.5, 1.5, 0.25]} position={[0, 1.5, 8.6]} />
-        <CuboidCollider args={[0.25, 1.5, 9.2]} position={[-10.4, 1.5, -0.3]} />
-        <CuboidCollider args={[0.25, 1.5, 9.2]} position={[10.4, 1.5, -0.3]} />
+        {/* South wall split to leave wide 7.2m gate (x = -0.6..6.6) open to the Test Track! */}
+        <CuboidCollider args={[4.8, 1.5, 0.25]} position={[-5.4, 1.5, 8.6]} />
+        <CuboidCollider args={[2.0, 1.5, 0.25]} position={[8.6, 1.5, 8.6]} />
+        {/* West wall split to leave wide 6m gate (z = 1.0..7.0) open to the Scrapyard Patio! */}
+        <CuboidCollider args={[0.25, 1.5, 5.2]} position={[-10.4, 1.5, -4.2]} />
+        {/* East wall split near south-east return lane */}
+        <CuboidCollider args={[0.25, 1.5, 4.5]} position={[10.4, 1.5, -4.5]} />
 
-        {/* Visual fence segments around courtyard perimeter */}
-        {[-7.5, -2.5, 2.5, 7.5].map((fx, i) => (
-          <group key={`south-${fx}`} position={[fx, 0, 8.5]}>
-            <mesh castShadow receiveShadow material={i % 2 === 0 ? materials.metalRust : materials.metalTeal} position={[0, 0.85, 0]}>
-              <boxGeometry args={[4.6, 1.5, 0.16]} />
-            </mesh>
-            <mesh castShadow material={materials.woodDark} position={[-2.4, 1.0, 0]}>
-              <boxGeometry args={[0.22, 2.0, 0.22]} />
-            </mesh>
-          </group>
-        ))}
-        {[-6.5, -2.0, 2.5, 6.8].map((fz, i) => (
+        {/* South fence visuals flanking the track gate */}
+        <group position={[-5.5, 0, 8.5]}>
+          <mesh castShadow receiveShadow material={materials.metalRust} position={[0, 0.85, 0]}>
+            <boxGeometry args={[9.4, 1.5, 0.16]} />
+          </mesh>
+          <mesh castShadow material={materials.woodDark} position={[-4.8, 1.0, 0]}>
+            <boxGeometry args={[0.22, 2.0, 0.22]} />
+          </mesh>
+        </group>
+        <group position={[8.6, 0, 8.5]}>
+          <mesh castShadow receiveShadow material={materials.metalTeal} position={[0, 0.85, 0]}>
+            <boxGeometry args={[3.6, 1.5, 0.16]} />
+          </mesh>
+        </group>
+
+        {/* East fence visuals (north half) */}
+        {[-6.5, -2.0].map((fz, i) => (
           <group key={`east-${fz}`} position={[10.3, 0, fz]}>
             <mesh castShadow receiveShadow material={i % 2 === 0 ? materials.metalTeal : materials.metalYellow} position={[0, 0.85, 0]}>
               <boxGeometry args={[0.16, 1.5, 4.1]} />
@@ -453,7 +463,9 @@ export function ScrapyardWorkshop({ extraProps }: ScrapyardWorkshopProps) {
             </mesh>
           </group>
         ))}
-        {[-6.5, -2.0, 2.5, 6.8].map((fz, i) => (
+
+        {/* West fence visuals flanking the scrapyard patio gate */}
+        {[-6.5, -2.0].map((fz, i) => (
           <group key={`west-${fz}`} position={[-10.3, 0, fz]}>
             <mesh castShadow receiveShadow material={i % 2 === 0 ? materials.metalRust : materials.metalTeal} position={[0, 0.85, 0]}>
               <boxGeometry args={[0.16, 1.5, 4.1]} />

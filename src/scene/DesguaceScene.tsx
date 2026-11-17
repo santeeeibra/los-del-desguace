@@ -8,6 +8,7 @@ import { PALETTE, QUALITY_PRESETS } from '../config/visualConfig';
 import { ThirdPersonCamera, type CameraTargetSource } from '../controls/ThirdPersonCamera';
 import { useKeyboardInput } from '../controls/playerInput';
 import { ScrapyardWorkshop } from '../environment/ScrapyardWorkshop';
+import { TestTrackAndYard } from '../environment/TestTrackAndYard';
 import { PlayerRig } from '../physics/PlayerRig';
 import { GrabbableProps } from '../props/GrabbableProps';
 import { gameStore, useGameStore } from '../state/gameStore';
@@ -22,8 +23,8 @@ function SceneReadyNotifier() {
 
 function ProceduralSkyDome() {
   return (
-    <mesh scale={[-1, 1, 1]}>
-      <sphereGeometry args={[48, 24, 16]} />
+    <mesh scale={[-1, 1, 1]} position={[0, 0, 10]}>
+      <sphereGeometry args={[86, 24, 16]} />
       <meshBasicMaterial color={PALETTE.skyTop} side={THREE.BackSide} fog={false} />
     </mesh>
   );
@@ -55,24 +56,24 @@ export function DesguaceScene() {
       }}
     >
       <color attach="background" args={[PALETTE.fogColor]} />
-      <fog attach="fog" args={[PALETTE.fogColor, 24, 56]} />
+      <fog attach="fog" args={[PALETTE.fogColor, 36, 84]} />
 
       <ProceduralSkyDome />
 
-      {/* Warm golden-hour key sunlight with tight frustum around the workshop */}
+      {/* Warm golden-hour key sunlight covering workshop, scrapyard & test track */}
       <directionalLight
-        position={[14, 19, 11]}
+        position={[18, 26, 20]}
         intensity={2.45}
         color={PALETTE.sunColor}
         castShadow={preset.shadows}
         shadow-mapSize-width={preset.shadowMapSize}
         shadow-mapSize-height={preset.shadowMapSize}
-        shadow-camera-left={-13}
-        shadow-camera-right={13}
-        shadow-camera-top={13}
-        shadow-camera-bottom={-13}
+        shadow-camera-left={-26}
+        shadow-camera-right={26}
+        shadow-camera-top={28}
+        shadow-camera-bottom={-26}
         shadow-camera-near={1}
-        shadow-camera-far={46}
+        shadow-camera-far={72}
         shadow-bias={-0.0004}
         shadow-normalBias={0.03}
       />
@@ -111,6 +112,7 @@ export function DesguaceScene() {
       <Suspense fallback={null}>
         <Physics timeStep={1 / 60} interpolate gravity={[0, -18, 0]}>
           <ScrapyardWorkshop extraProps={preset.extraProps} />
+          <TestTrackAndYard extraProps={preset.extraProps} />
           <ScrapCart />
           <GrabbableProps resetSignal={resetNonce} />
           <PlayerRig

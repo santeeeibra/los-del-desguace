@@ -1,9 +1,9 @@
-import { useRef, useState } from 'react';
+import { memo, useRef, useState } from 'react';
 import type { QualityLevel } from '../config/visualConfig';
 import { playerInput } from '../controls/playerInput';
 import { gameStore, useGameStore, type TouchOverlayMode } from '../state/gameStore';
 
-function VirtualJoystick() {
+const VirtualJoystick = memo(function VirtualJoystick() {
   const baseRef = useRef<HTMLDivElement>(null);
   const pointerIdRef = useRef<number | null>(null);
   const [knobOffset, setKnobOffset] = useState({ x: 0, y: 0 });
@@ -47,7 +47,9 @@ function VirtualJoystick() {
       ref={baseRef}
       className="hud-interactive"
       aria-label="Joystick de movimiento"
+      onContextMenu={(e) => e.preventDefault()}
       onPointerDown={(e) => {
+        e.preventDefault();
         e.stopPropagation();
         e.currentTarget.setPointerCapture(e.pointerId);
         pointerIdRef.current = e.pointerId;
@@ -55,12 +57,16 @@ function VirtualJoystick() {
       }}
       onPointerMove={(e) => {
         if (pointerIdRef.current !== e.pointerId) return;
+        e.preventDefault();
         e.stopPropagation();
         updateFromClient(e.clientX, e.clientY);
       }}
       onPointerUp={(e) => {
         if (pointerIdRef.current !== e.pointerId) return;
         e.stopPropagation();
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        }
         resetStick();
       }}
       onPointerCancel={(e) => {
@@ -97,7 +103,7 @@ function VirtualJoystick() {
       />
     </div>
   );
-}
+});
 
 const ITEM_LABELS: Record<'crate' | 'wheel' | 'canister' | 'part', string> = {
   crate: 'Caja apilable',
