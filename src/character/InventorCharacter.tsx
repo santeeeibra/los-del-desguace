@@ -1,13 +1,21 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { Suspense, useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { CHARACTER_DIMENSIONS } from '../config/visualConfig';
 import { CARRY_PROFILES, type GrabbableKind } from '../props/grabbableRegistry';
+import { CabezaBaseModel } from './CabezaBaseModel';
 import {
   DEFAULT_CHISPA_APPEARANCE,
   type CharacterAppearanceConfig,
   type CharacterExpression,
 } from './characterAppearance';
+import {
+  FaceRigController,
+  resolveAnchorPosition,
+  resolveShapeFitMetrics,
+  type FaceRigBindings,
+  type HeadShapePreset,
+} from './faceRigController';
 
 export interface CharacterAnimData {
   speed: number;
@@ -31,22 +39,28 @@ interface InventorCharacterProps {
   animDataRef: React.RefObject<CharacterAnimData>;
   carryAnchorRef?: React.RefObject<THREE.Group | null>;
   appearance?: CharacterAppearanceConfig;
+  headShape?: HeadShapePreset;
   firstPersonHideHead?: boolean;
 }
 
 const GEAR_ANGLES = [0, 1, 2, 3, 4, 5].map((i) => (i * Math.PI) / 3);
+const HEAD_MODEL_SCALE = 1.08;
+const HEAD_MODEL_OFFSET: readonly [number, number, number] = [0, -0.91, -0.01];
+const HARDHAT_TILT_X = -0.22;
+const HARDHAT_RADIUS = 0.268;
+const HAT_CLEARANCE = 0.014;
 
 export function InventorCharacter({
   animDataRef,
   carryAnchorRef,
   appearance = DEFAULT_CHISPA_APPEARANCE,
+  headShape = 'base',
   firstPersonHideHead = false,
 }: InventorCharacterProps) {
   const rootRef = useRef<THREE.Group>(null);
   const bodyPivotRef = useRef<THREE.Group>(null);
   const torsoRef = useRef<THREE.Group>(null);
   const headRef = useRef<THREE.Group>(null);
-  const ponytailRef = useRef<THREE.Group>(null);
 
   // Decorative-only attachment anchor refs (non-colliding)
   const headAnchorRef = useRef<THREE.Group>(null);
@@ -55,15 +69,13 @@ export function InventorCharacter({
   const beltAnchorRef = useRef<THREE.Group>(null);
   const antennaRef = useRef<THREE.Group>(null);
 
-  // Expressive face refs
-  const eyeLeftGroupRef = useRef<THREE.Group>(null);
-  const eyeRightGroupRef = useRef<THREE.Group>(null);
-  const browLeftRef = useRef<THREE.Mesh>(null);
-  const browRightRef = useRef<THREE.Mesh>(null);
-  const mouthHappyRef = useRef<THREE.Group>(null);
-  const mouthEffortRef = useRef<THREE.Group>(null);
-  const mouthSurpriseRef = useRef<THREE.Mesh>(null);
-  const mouthSadRef = useRef<THREE.Mesh>(null);
+  // Separate GLB face rig bindings & animation controller
+  const faceBindingsRef = useRef<FaceRigBindings | null>(null);
+  const faceControllerRef = useRef<FaceRigController | null>(null);
+  if (!faceControllerRef.current) {
+    faceControllerRef.current = new FaceRigController();
+  }
+  const scratchAnchorPos = useRef(new THREE.Vector3());
 
   // Limbs
   const leftArmRef = useRef<THREE.Group>(null);
@@ -87,13 +99,10 @@ export function InventorCharacter({
   const wobbleVel = useRef(0);
   const smoothLean = useRef(0);
   const smoothPitch = useRef(0);
-  const blinkTimer = useRef(2.4);
 
   const landExprTimer = useRef(0);
   const surpriseExprTimer = useRef(0);
   const disappointExprTimer = useRef(0);
-  const ponytailPitchVel = useRef(0);
-  const ponytailPitch = useRef(0);
 
   const pal = appearance.palette;
 
@@ -123,21 +132,6 @@ export function InventorCharacter({
         color: pal.skin,
         roughness: 0.72,
         metalness: 0.0,
-      }),
-      blush: new THREE.MeshStandardMaterial({
-        color: pal.blush,
-        roughness: 0.8,
-        metalness: 0.0,
-      }),
-      hair: new THREE.MeshStandardMaterial({
-        color: pal.hair,
-        roughness: 0.84,
-        metalness: 0.02,
-      }),
-      hairShadow: new THREE.MeshStandardMaterial({
-        color: pal.hairShadow,
-        roughness: 0.88,
-        metalness: 0.02,
       }),
       glove: new THREE.MeshStandardMaterial({
         color: pal.glove,
@@ -209,26 +203,6 @@ export function InventorCharacter({
         roughness: 0.92,
         metalness: 0.02,
       }),
-      sclera: new THREE.MeshStandardMaterial({
-        color: '#ffffff',
-        roughness: 0.35,
-        metalness: 0.0,
-      }),
-      pupil: new THREE.MeshStandardMaterial({
-        color: '#1f1816',
-        roughness: 0.25,
-        metalness: 0.05,
-      }),
-      mouthDark: new THREE.MeshStandardMaterial({
-        color: '#3a1b19',
-        roughness: 0.55,
-        metalness: 0.0,
-      }),
-      teeth: new THREE.MeshStandardMaterial({
-        color: '#fff9ef',
-        roughness: 0.3,
-        metalness: 0.0,
-      }),
       backpack: new THREE.MeshStandardMaterial({
         color: pal.backpack,
         roughness: 0.54,
@@ -252,12 +226,10 @@ export function InventorCharacter({
     // 1. Consume discrete takeoff / landing / bump / drop-blocked cues
     if (anim.takeoffImpulse > 0.01) {
       squashVel.current += anim.takeoffImpulse * 4.4;
-      ponytailPitchVel.current += anim.takeoffImpulse * 4.0;
       anim.takeoffImpulse = 0;
     }
     if (anim.landImpulse > 0.01) {
       squashVel.current -= anim.landImpulse * 6.8;
-      ponytailPitchVel.current -= anim.landImpulse * 5.2;
       landExprTimer.current = Math.max(landExprTimer.current, 0.42);
       anim.landImpulse = 0;
     }
@@ -487,16 +459,6 @@ export function InventorCharacter({
       headRef.current.rotation.x = THREE.MathUtils.lerp(headRef.current.rotation.x, lookPitch, 1 - Math.exp(-8 * dt));
     }
 
-    if (ponytailRef.current) {
-      const targetTailPitch =
-        -0.12 - gAmp * (0.2 + runBlend.current * 0.25) + THREE.MathUtils.clamp(-anim.verticalSpeed * 0.08, -0.35, 0.35);
-      const tailSpring = (targetTailPitch - ponytailPitch.current) * 85 - ponytailPitchVel.current * 10;
-      ponytailPitchVel.current += tailSpring * dt;
-      ponytailPitch.current += ponytailPitchVel.current * dt;
-      ponytailRef.current.rotation.x = ponytailPitch.current + Math.sin(t * 8) * 0.04 * gAmp;
-      ponytailRef.current.rotation.y = smoothLean.current * 1.4 - wobbleAngle.current * 0.5;
-    }
-
     // 9. Facial expression state ("alegre", "esfuerzo", "sorpresa", "decepcion")
     let expr: CharacterExpression = 'happy';
     if (surpriseExprTimer.current > 0 || (!anim.isOnGround && anim.verticalSpeed < -4.2)) {
@@ -507,55 +469,32 @@ export function InventorCharacter({
       expr = 'effort';
     }
 
-    blinkTimer.current -= dt;
-    if (blinkTimer.current <= 0) {
-      blinkTimer.current = 2.8 + (Math.sin(t * 7.3) + 1) * 1.1;
-    }
-    const isBlinking = expr !== 'surprise' && blinkTimer.current < 0.11;
+    const faceBindings = faceBindingsRef.current;
+    const faceController = faceControllerRef.current;
+    if (faceBindings && faceController) {
+      faceController.setShapePreset(headShape);
+      faceController.update(faceBindings, dt, expr, {
+        isMoving: gAmp > 0.25,
+        turnRate: anim.turnRate,
+        suppressGaze: firstPersonHideHead,
+      });
 
-    if (eyeLeftGroupRef.current && eyeRightGroupRef.current) {
-      const targetEyeY = isBlinking
-        ? 0.14
-        : expr === 'surprise'
-          ? 1.15
-          : expr === 'effort'
-            ? 0.8
-            : expr === 'disappointed'
-              ? 0.72
-              : 1.0;
-      const targetEyeX = expr === 'surprise' ? 1.14 : 1.0;
-      eyeLeftGroupRef.current.scale.set(targetEyeX, targetEyeY, 1);
-      eyeRightGroupRef.current.scale.set(targetEyeX, targetEyeY, 1);
-    }
-
-    if (browLeftRef.current && browRightRef.current) {
-      if (expr === 'effort') {
-        browLeftRef.current.position.y = 0.086;
-        browRightRef.current.position.y = 0.086;
-        browLeftRef.current.rotation.z = -0.32;
-        browRightRef.current.rotation.z = 0.32;
-      } else if (expr === 'surprise') {
-        browLeftRef.current.position.y = 0.118;
-        browRightRef.current.position.y = 0.118;
-        browLeftRef.current.rotation.z = 0.18;
-        browRightRef.current.rotation.z = -0.18;
-      } else if (expr === 'disappointed') {
-        browLeftRef.current.position.y = 0.088;
-        browRightRef.current.position.y = 0.088;
-        browLeftRef.current.rotation.z = 0.3;
-        browRightRef.current.rotation.z = -0.3;
-      } else {
-        browLeftRef.current.position.y = 0.1;
-        browRightRef.current.position.y = 0.1;
-        browLeftRef.current.rotation.z = 0.1;
-        browRightRef.current.rotation.z = -0.1;
+      // Casco y antiparras siguen el anclaje y las medidas de la forma elegida (face_rig)
+      if (headAnchorRef.current) {
+        const appearanceWeights = faceController.getAppearanceWeights();
+        const fit = resolveShapeFitMetrics(faceBindings.meta, appearanceWeights);
+        const p = resolveAnchorPosition(faceBindings.meta, 'anchor_hat', appearanceWeights, scratchAnchorPos.current);
+        headAnchorRef.current.position.set(
+          p.x * HEAD_MODEL_SCALE + HEAD_MODEL_OFFSET[0],
+          p.y * HEAD_MODEL_SCALE + HEAD_MODEL_OFFSET[1],
+          p.z * HEAD_MODEL_SCALE + HEAD_MODEL_OFFSET[2]
+        );
+        const sx = ((fit.hat_band_width * HEAD_MODEL_SCALE) / 2 + HAT_CLEARANCE) / HARDHAT_RADIUS;
+        const sz = ((fit.hat_band_depth * HEAD_MODEL_SCALE) / 2 + HAT_CLEARANCE) / HARDHAT_RADIUS;
+        headAnchorRef.current.scale.set(sx, (sx + sz) / 2, sz);
+        headAnchorRef.current.rotation.x = HARDHAT_TILT_X * 0.5;
       }
     }
-
-    if (mouthHappyRef.current) mouthHappyRef.current.visible = expr === 'happy';
-    if (mouthEffortRef.current) mouthEffortRef.current.visible = expr === 'effort';
-    if (mouthSurpriseRef.current) mouthSurpriseRef.current.visible = expr === 'surprise';
-    if (mouthSadRef.current) mouthSadRef.current.visible = expr === 'disappointed';
 
     if (antennaRef.current) {
       const moveFactor = gAmp * (0.5 + runBlend.current * 0.5);
@@ -784,140 +723,12 @@ export function InventorCharacter({
 
           {/* HEAD + EXPRESSIVE FACE + SPIKY PONYTAIL + HEAD/GOGGLES ANCHORS */}
           <group ref={headRef} position={[0, 0.37, 0.02]}>
-            {/* Slightly squashed charming head shape */}
-            <mesh castShadow receiveShadow material={materials.skin} scale={[1, 0.94, 0.96]}>
-              <sphereGeometry args={[0.255, 18, 16]} />
-            </mesh>
-            {/* Ears */}
-            <mesh castShadow material={materials.skin} position={[-0.248, -0.015, -0.01]}>
-              <sphereGeometry args={[0.052, 10, 10]} />
-            </mesh>
-            <mesh castShadow material={materials.skin} position={[0.248, -0.015, -0.01]}>
-              <sphereGeometry args={[0.052, 10, 10]} />
-            </mesh>
-
-            {/* Triangular stylized nose, cheeks & subtle freckles */}
-            <mesh castShadow material={materials.blush} position={[0, -0.022, 0.252]} scale={[0.9, 0.85, 0.9]}>
-              <sphereGeometry args={[0.034, 10, 10]} />
-            </mesh>
-            <mesh material={materials.blush} position={[-0.145, -0.055, 0.195]} scale={[1.1, 0.65, 0.45]}>
-              <sphereGeometry args={[0.036, 8, 8]} />
-            </mesh>
-            <mesh material={materials.blush} position={[0.145, -0.055, 0.195]} scale={[1.1, 0.65, 0.45]}>
-              <sphereGeometry args={[0.036, 8, 8]} />
-            </mesh>
-
-            {/* LARGE EXPRESSIVE EYES (White sclera + dark iris + white glint) */}
-            <group ref={eyeLeftGroupRef} position={[-0.082, 0.028, 0.222]} rotation={[0, -0.18, 0]}>
-              <mesh material={materials.sclera} scale={[0.95, 1.25, 0.45]}>
-                <sphereGeometry args={[0.044, 12, 10]} />
-              </mesh>
-              <mesh material={materials.pupil} position={[0.008, -0.002, 0.012]} scale={[0.92, 1.2, 0.45]}>
-                <sphereGeometry args={[0.028, 10, 10]} />
-              </mesh>
-              <mesh material={materials.sclera} position={[-0.006, 0.016, 0.024]}>
-                <sphereGeometry args={[0.01, 8, 8]} />
-              </mesh>
-            </group>
-
-            <group ref={eyeRightGroupRef} position={[0.082, 0.028, 0.222]} rotation={[0, 0.18, 0]}>
-              <mesh material={materials.sclera} scale={[0.95, 1.25, 0.45]}>
-                <sphereGeometry args={[0.044, 12, 10]} />
-              </mesh>
-              <mesh material={materials.pupil} position={[-0.008, -0.002, 0.012]} scale={[0.92, 1.2, 0.45]}>
-                <sphereGeometry args={[0.028, 10, 10]} />
-              </mesh>
-              <mesh material={materials.sclera} position={[-0.006, 0.016, 0.024]}>
-                <sphereGeometry args={[0.01, 8, 8]} />
-              </mesh>
-            </group>
-
-            {/* ARTICULATED EYEBROWS */}
-            <mesh ref={browLeftRef} material={materials.hairShadow} position={[-0.086, 0.1, 0.228]} rotation={[0, -0.18, 0.1]}>
-              <boxGeometry args={[0.072, 0.022, 0.024]} />
-            </mesh>
-            <mesh ref={browRightRef} material={materials.hairShadow} position={[0.086, 0.1, 0.228]} rotation={[0, 0.18, -0.1]}>
-              <boxGeometry args={[0.072, 0.022, 0.024]} />
-            </mesh>
-
-            {/* EXPRESSIVE MOUTHS (4 modes matching concept sheet!) */}
-            <group ref={mouthHappyRef} position={[0, -0.088, 0.226]}>
-              <mesh material={materials.mouthDark} rotation={[0.15, 0, Math.PI]}>
-                <torusGeometry args={[0.042, 0.01, 8, 14, Math.PI]} />
-              </mesh>
-            </group>
-
-            <group ref={mouthEffortRef} position={[0, -0.09, 0.23]} visible={false}>
-              <mesh material={materials.mouthDark} scale={[1.25, 0.65, 0.6]}>
-                <boxGeometry args={[0.078, 0.048, 0.025]} />
-              </mesh>
-              <mesh material={materials.teeth} position={[0, 0, 0.008]} scale={[1.18, 0.52, 0.6]}>
-                <boxGeometry args={[0.072, 0.04, 0.02]} />
-              </mesh>
-            </group>
-
-            <mesh
-              ref={mouthSurpriseRef}
-              material={materials.mouthDark}
-              position={[0, -0.092, 0.23]}
-              scale={[0.85, 1.15, 0.5]}
-              visible={false}
-            >
-              <sphereGeometry args={[0.03, 10, 10]} />
-            </mesh>
-
-            <mesh
-              ref={mouthSadRef}
-              material={materials.mouthDark}
-              position={[0, -0.108, 0.226]}
-              rotation={[-0.15, 0, 0]}
-              visible={false}
-            >
-              <torusGeometry args={[0.036, 0.009, 8, 12, Math.PI]} />
-            </mesh>
-
-            {/* HAIR CAP, BANGS, SIDE LOCKS & BOUNCING PONYTAIL + ORANGE RIBBON */}
-            <mesh castShadow material={materials.hair} position={[0, 0.055, -0.035]}>
-              <sphereGeometry args={[0.256, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.62]} />
-            </mesh>
-            {/* Front bangs peeking below helmet */}
-            <mesh castShadow material={materials.hair} position={[-0.045, 0.135, 0.19]} rotation={[0.45, 0.15, 0.25]}>
-              <coneGeometry args={[0.052, 0.11, 6]} />
-            </mesh>
-            <mesh castShadow material={materials.hair} position={[0.045, 0.135, 0.19]} rotation={[0.45, -0.15, -0.22]}>
-              <coneGeometry args={[0.052, 0.11, 6]} />
-            </mesh>
-            {/* Cheek side locks */}
-            <mesh castShadow material={materials.hair} position={[-0.225, 0.015, 0.075]} rotation={[0.15, 0, 0.35]}>
-              <coneGeometry args={[0.055, 0.15, 7]} />
-            </mesh>
-            <mesh castShadow material={materials.hair} position={[0.225, 0.015, 0.075]} rotation={[0.15, 0, -0.35]}>
-              <coneGeometry args={[0.055, 0.15, 7]} />
-            </mesh>
-
-            {/* Spiky Ponytail + Orange Ribbon */}
-            <group ref={ponytailRef} position={[0, 0.04, -0.23]}>
-              <mesh castShadow material={materials.cuff} rotation={[Math.PI / 2, 0, 0]}>
-                <torusGeometry args={[0.068, 0.024, 8, 14]} />
-              </mesh>
-              {/* Two fluttering ribbon tails */}
-              <mesh castShadow material={materials.cuff} position={[-0.045, -0.07, -0.03]} rotation={[-0.5, 0, -0.4]}>
-                <boxGeometry args={[0.038, 0.11, 0.018]} />
-              </mesh>
-              <mesh castShadow material={materials.cuff} position={[0.045, -0.07, -0.03]} rotation={[-0.5, 0, 0.4]}>
-                <boxGeometry args={[0.038, 0.11, 0.018]} />
-              </mesh>
-              {/* 3 spiky brown hair tufts */}
-              <mesh castShadow material={materials.hair} position={[0, 0.05, -0.1]} rotation={[-1.15, 0, 0]}>
-                <coneGeometry args={[0.088, 0.24, 7]} />
-              </mesh>
-              <mesh castShadow material={materials.hair} position={[-0.065, -0.02, -0.095]} rotation={[-1.45, 0, 0.42]}>
-                <coneGeometry args={[0.075, 0.21, 7]} />
-              </mesh>
-              <mesh castShadow material={materials.hair} position={[0.065, -0.02, -0.095]} rotation={[-1.45, 0, -0.42]}>
-                <coneGeometry args={[0.075, 0.21, 7]} />
-              </mesh>
-            </group>
+            {/* Cabeza base v002 (GLB con rig facial por morph targets) */}
+            <Suspense fallback={null}>
+              <group scale={HEAD_MODEL_SCALE} position={HEAD_MODEL_OFFSET}>
+                <CabezaBaseModel bindingsRef={faceBindingsRef} />
+              </group>
+            </Suspense>
 
             {/* HEAD DECORATIVE ANCHOR (Hard-hat with front visor brim, replaceable by helmet/cap/astronaut) */}
             <group ref={headAnchorRef} position={[0, 0.095, -0.015]} rotation={[-0.14, 0, 0]}>
