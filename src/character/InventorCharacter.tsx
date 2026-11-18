@@ -1,4 +1,4 @@
-import { Suspense, useMemo, useRef } from 'react';
+import { Suspense, useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { CHARACTER_DIMENSIONS } from '../config/visualConfig';
@@ -7,6 +7,7 @@ import { CabezaBaseModel } from './CabezaBaseModel';
 import { BASE_BODY_PROFILE as BODY, BODY_SOCKETS } from './body/bodyProfile';
 import { BeltMeshes, ForearmZone, LegZone, ShoulderZone, TorsoZone } from './body/BodyParts';
 import { useCharacterMaterials } from './characterMaterials';
+import { applyBodyOutline } from './body/bodyOutline';
 import { getHeadVariant, headModelToPivot, resolveHeadTransform } from './heads/headRegistry';
 import { getOutfit } from './outfits/outfitRegistry';
 import {
@@ -122,6 +123,11 @@ export function InventorCharacter({
     [appearance.palette, outfit.palette]
   );
   const materials = useCharacterMaterials(pal);
+
+  // Contorno del cuerpo (la cabeza trae el suyo en el GLB).
+  useEffect(() => {
+    if (bodyPivotRef.current) applyBodyOutline(bodyPivotRef.current);
+  }, [outfit, materials, appearance]);
 
   useFrame((state, rawDelta) => {
     const dt = Math.min(rawDelta, 0.05);

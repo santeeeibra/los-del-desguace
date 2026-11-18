@@ -10,6 +10,8 @@ import type { OutfitConfig } from '../outfits/outfitRegistry';
  */
 
 const SEG = P.radialSegments;
+/** Solo las capas exteriores de cada zona llevan contorno (ver bodyOutline.ts). */
+const OUTLINE = { outline: true };
 const GEAR_ANGLES = [0, 1, 2, 3, 4, 5].map((i) => (i * Math.PI) / 3);
 
 interface ZoneProps {
@@ -44,10 +46,10 @@ export function TorsoZone({ m, outfit }: ZoneProps) {
       </mesh>
 
       {/* Capa 1: camisa / remera con tapa de hombros redondeada y cuello */}
-      <mesh castShadow receiveShadow material={m.shirt} position={[0, s.bottom + shirtUpperH / 2, 0]}>
+      <mesh userData={OUTLINE} castShadow receiveShadow material={m.shirt} position={[0, s.bottom + shirtUpperH / 2, 0]}>
         <cylinderGeometry args={[s.radiusChest, s.radiusBottom, shirtUpperH, SEG]} />
       </mesh>
-      <mesh castShadow receiveShadow material={m.shirt} position={[0, s.capBase, 0]} scale={[1, s.capHeight / s.radiusChest, 1]}>
+      <mesh userData={OUTLINE} castShadow receiveShadow material={m.shirt} position={[0, s.capBase, 0]} scale={[1, s.capHeight / s.radiusChest, 1]}>
         <sphereGeometry args={[s.radiusChest, SEG, 12, 0, Math.PI * 2, 0, Math.PI / 2]} />
       </mesh>
       <mesh castShadow material={m.shirt} position={[0, G.collar.y, P.head.pivotZ * 0.5]} rotation={[Math.PI / 2, 0, 0]}>
@@ -66,7 +68,7 @@ function OverallHips({ m }: { m: CharacterMaterials }) {
   const h = o.top - o.bottom;
   return (
     <group>
-      <mesh castShadow receiveShadow material={m.overall} position={[0, o.bottom + h / 2, 0]}>
+      <mesh userData={OUTLINE} castShadow receiveShadow material={m.overall} position={[0, o.bottom + h / 2, 0]}>
         <cylinderGeometry args={[o.radiusTop, o.radiusHips, h, SEG]} />
       </mesh>
       {/* Parches cosidos traseros */}
@@ -84,7 +86,7 @@ function PantsHips({ m }: { m: CharacterMaterials }) {
   const p = G.pants;
   const h = p.top - p.bottom;
   return (
-    <mesh castShadow receiveShadow material={m.overall} position={[0, p.bottom + h / 2, 0]}>
+    <mesh userData={OUTLINE} castShadow receiveShadow material={m.overall} position={[0, p.bottom + h / 2, 0]}>
       <cylinderGeometry args={[p.radiusTop, p.radiusHips, h, SEG]} />
     </mesh>
   );
@@ -101,7 +103,7 @@ function OverallBib({ m }: { m: CharacterMaterials }) {
   return (
     <group>
       {/* Peto frontal + emblema de engranaje */}
-      <mesh castShadow material={m.overall} position={[0, bibY, o.bibZ]} rotation={[-0.06, 0, 0]}>
+      <mesh userData={OUTLINE} castShadow material={m.overall} position={[0, bibY, o.bibZ]} rotation={[-0.06, 0, 0]}>
         <boxGeometry args={[o.bibWidth, o.bibHeight, 0.08]} />
       </mesh>
       <group position={[0, bibY + 0.005, o.bibZ + 0.044]}>
@@ -140,7 +142,7 @@ export function BeltMeshes({ m }: { m: CharacterMaterials }) {
   const b = G.belt;
   return (
     <>
-      <mesh castShadow material={m.belt}>
+      <mesh userData={OUTLINE} castShadow material={m.belt}>
         <cylinderGeometry args={[b.radius, b.radius + 0.004, b.height, SEG]} />
       </mesh>
       <mesh castShadow material={m.brass} position={[0, 0, b.radius]}>
@@ -157,7 +159,7 @@ export function ShoulderZone({ m, outfit, side }: ZoneProps & { side: 1 | -1 }) 
   const upperY = a.elbowY / 2;
   return (
     <group>
-      <mesh castShadow material={sleeve ? m.shirt : m.skin}>
+      <mesh userData={OUTLINE} castShadow material={sleeve ? m.shirt : m.skin}>
         <sphereGeometry args={[sleeve ? G.sleeve.shoulderRadius : a.shoulderRadius, SEG, 14]} />
       </mesh>
       <mesh castShadow material={m.skin} position={[side * 0.02, upperY, 0]} rotation={[0, 0, -side * 0.15]}>
@@ -181,7 +183,7 @@ export function ForearmZone({ m, outfit, side }: ZoneProps & { side: 1 | -1 }) {
   const r = a.handRadius;
   return (
     <group>
-      <mesh castShadow material={m.skin} position={[side * h.handOutX * 0.75, forearmY, h.handZ * 0.4]}>
+      <mesh userData={OUTLINE} castShadow material={m.skin} position={[side * h.handOutX * 0.75, forearmY, h.handZ * 0.4]}>
         <capsuleGeometry args={[a.forearmRadius, a.forearmLength, 6, SEG]} />
       </mesh>
       <group position={[side * h.handOutX, h.handY, h.handZ]}>
@@ -190,7 +192,7 @@ export function ForearmZone({ m, outfit, side }: ZoneProps & { side: 1 | -1 }) {
             <mesh castShadow material={m.cuff} position={[0, r * 0.75, -0.015]}>
               <cylinderGeometry args={[G.glove.cuffRadius, G.glove.cuffRadius + 0.01, 0.056, SEG]} />
             </mesh>
-            <mesh castShadow material={m.glove}>
+            <mesh userData={OUTLINE} castShadow material={m.glove}>
               <sphereGeometry args={[r, SEG, 14]} />
             </mesh>
             <mesh castShadow material={m.glovePad} position={[-side * r * 0.4, 0.01, r * 0.4]} rotation={[0, side * -0.5, 0]}>
@@ -201,7 +203,7 @@ export function ForearmZone({ m, outfit, side }: ZoneProps & { side: 1 | -1 }) {
             </mesh>
           </>
         ) : (
-          <mesh castShadow material={m.skin}>
+          <mesh userData={OUTLINE} castShadow material={m.skin}>
             <sphereGeometry args={[r * 0.8, SEG, 14]} />
           </mesh>
         )}
@@ -217,7 +219,7 @@ export function LegZone({ m, outfit, side }: ZoneProps & { side: 1 | -1 }) {
   const isOverall = outfit.legs === 'overall_legs';
   return (
     <group>
-      <mesh castShadow receiveShadow material={m.overall} position={[0, legCenter, 0]}>
+      <mesh userData={OUTLINE} castShadow receiveShadow material={m.overall} position={[0, legCenter, 0]}>
         <capsuleGeometry args={[G.leg.radius, l.length, 6, SEG]} />
       </mesh>
       {isOverall && (
@@ -234,10 +236,10 @@ export function LegZone({ m, outfit, side }: ZoneProps & { side: 1 | -1 }) {
           <mesh castShadow material={m.cuff} position={[0, -0.22, 0.095]}>
             <boxGeometry args={[0.08, 0.075, 0.055]} />
           </mesh>
-          <mesh castShadow receiveShadow material={m.boot} position={[0, l.footY, 0.035]}>
+          <mesh userData={OUTLINE} castShadow receiveShadow material={m.boot} position={[0, l.footY, 0.035]}>
             <boxGeometry args={l.bootSize} />
           </mesh>
-          <mesh castShadow receiveShadow material={m.sole} position={[0, -0.322, 0.04]}>
+          <mesh userData={OUTLINE} castShadow receiveShadow material={m.sole} position={[0, -0.322, 0.04]}>
             <boxGeometry args={l.soleSize} />
           </mesh>
         </>
