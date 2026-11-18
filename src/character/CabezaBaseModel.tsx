@@ -11,14 +11,17 @@ interface CabezaBaseModelProps {
   bindingsRef: React.MutableRefObject<FaceRigBindings | null>;
   showBrows?: boolean;
   showOutline?: boolean;
+  /** Modelo de cabeza (registro `HEAD_VARIANTS`); por defecto la cabeza base v002. */
+  url?: string;
 }
 
 export function CabezaBaseModel({
   bindingsRef,
   showBrows = true,
   showOutline = true,
+  url = HEAD_MODEL_URL,
 }: CabezaBaseModelProps) {
-  const gltf = useGLTF(HEAD_MODEL_URL);
+  const gltf = useGLTF(url);
 
   const { sceneClone, bindings } = useMemo(() => {
     const clone = gltf.scene.clone(true);

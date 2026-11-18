@@ -1,9 +1,14 @@
-import { Suspense, useEffect, useMemo, useRef } from 'react';
+import { Suspense, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { CHARACTER_DIMENSIONS } from '../config/visualConfig';
 import { CARRY_PROFILES, type GrabbableKind } from '../props/grabbableRegistry';
 import { CabezaBaseModel } from './CabezaBaseModel';
+import { BASE_BODY_PROFILE as BODY, BODY_SOCKETS } from './body/bodyProfile';
+import { BeltMeshes, ForearmZone, LegZone, ShoulderZone, TorsoZone } from './body/BodyParts';
+import { useCharacterMaterials } from './characterMaterials';
+import { getHeadVariant, headModelToPivot, resolveHeadTransform } from './heads/headRegistry';
+import { getOutfit } from './outfits/outfitRegistry';
 import {
   DEFAULT_CHISPA_APPEARANCE,
   type CharacterAppearanceConfig,
@@ -39,13 +44,16 @@ interface InventorCharacterProps {
   animDataRef: React.RefObject<CharacterAnimData>;
   carryAnchorRef?: React.RefObject<THREE.Group | null>;
   appearance?: CharacterAppearanceConfig;
+  /** Id de `HEAD_VARIANTS`. Si se omite, se usa `headShape` (compatibilidad). */
+  headId?: string;
+  /** @deprecated usar `headId`; se mantiene para las llamadas existentes. */
   headShape?: HeadShapePreset;
+  /** Id de `OUTFITS`. */
+  outfitId?: string;
   firstPersonHideHead?: boolean;
 }
 
-const GEAR_ANGLES = [0, 1, 2, 3, 4, 5].map((i) => (i * Math.PI) / 3);
-const HEAD_MODEL_SCALE = 1.08;
-const HEAD_MODEL_OFFSET: readonly [number, number, number] = [0, -0.91, -0.01];
+// Accesorios de cabeza (casco): medidas propias del accesorio, no del cuerpo.
 const HARDHAT_TILT_X = -0.22;
 const HARDHAT_RADIUS = 0.268;
 const HAT_CLEARANCE = 0.014;
@@ -54,7 +62,9 @@ export function InventorCharacter({
   animDataRef,
   carryAnchorRef,
   appearance = DEFAULT_CHISPA_APPEARANCE,
+  headId,
   headShape = 'base',
+  outfitId,
   firstPersonHideHead = false,
 }: InventorCharacterProps) {
   const rootRef = useRef<THREE.Group>(null);
@@ -104,119 +114,14 @@ export function InventorCharacter({
   const surpriseExprTimer = useRef(0);
   const disappointExprTimer = useRef(0);
 
-  const pal = appearance.palette;
-
-  const materials = useMemo(
-    () => ({
-      overall: new THREE.MeshStandardMaterial({
-        color: pal.overall,
-        roughness: 0.86,
-        metalness: 0.03,
-      }),
-      overallStrap: new THREE.MeshStandardMaterial({
-        color: pal.overallStrap,
-        roughness: 0.88,
-        metalness: 0.03,
-      }),
-      shirt: new THREE.MeshStandardMaterial({
-        color: pal.shirt,
-        roughness: 0.9,
-        metalness: 0.0,
-      }),
-      cuff: new THREE.MeshStandardMaterial({
-        color: pal.cuffAndRibbon,
-        roughness: 0.72,
-        metalness: 0.04,
-      }),
-      skin: new THREE.MeshStandardMaterial({
-        color: pal.skin,
-        roughness: 0.72,
-        metalness: 0.0,
-      }),
-      glove: new THREE.MeshStandardMaterial({
-        color: pal.glove,
-        roughness: 0.85,
-        metalness: 0.03,
-      }),
-      glovePad: new THREE.MeshStandardMaterial({
-        color: pal.glovePad,
-        roughness: 0.88,
-        metalness: 0.02,
-      }),
-      boot: new THREE.MeshStandardMaterial({
-        color: pal.boot,
-        roughness: 0.84,
-        metalness: 0.04,
-      }),
-      sole: new THREE.MeshStandardMaterial({
-        color: pal.sole,
-        roughness: 0.94,
-        metalness: 0.02,
-      }),
-      hardhat: new THREE.MeshStandardMaterial({
-        color: pal.hardhat,
-        roughness: 0.42,
-        metalness: 0.08,
-      }),
-      hardhatCrest: new THREE.MeshStandardMaterial({
-        color: pal.hardhatCrest,
-        roughness: 0.38,
-        metalness: 0.08,
-      }),
-      goggleFrame: new THREE.MeshStandardMaterial({
-        color: pal.gogglesFrame,
-        roughness: 0.45,
-        metalness: 0.52,
-      }),
-      goggleStrap: new THREE.MeshStandardMaterial({
-        color: pal.gogglesStrap,
-        roughness: 0.8,
-        metalness: 0.08,
-      }),
-      goggleLens: new THREE.MeshStandardMaterial({
-        color: pal.gogglesLens,
-        roughness: 0.14,
-        metalness: 0.45,
-      }),
-      belt: new THREE.MeshStandardMaterial({
-        color: pal.belt,
-        roughness: 0.82,
-        metalness: 0.05,
-      }),
-      brass: new THREE.MeshStandardMaterial({
-        color: pal.brass,
-        roughness: 0.32,
-        metalness: 0.84,
-      }),
-      emblem: new THREE.MeshStandardMaterial({
-        color: pal.emblem,
-        roughness: 0.55,
-        metalness: 0.05,
-      }),
-      patchLight: new THREE.MeshStandardMaterial({
-        color: pal.patchLight,
-        roughness: 0.9,
-        metalness: 0.02,
-      }),
-      patchDark: new THREE.MeshStandardMaterial({
-        color: pal.patchDark,
-        roughness: 0.92,
-        metalness: 0.02,
-      }),
-      backpack: new THREE.MeshStandardMaterial({
-        color: pal.backpack,
-        roughness: 0.54,
-        metalness: 0.22,
-      }),
-    }),
-    [pal]
+  const headVariant = getHeadVariant(headId ?? headShape);
+  const headTransform = useMemo(() => resolveHeadTransform(headVariant), [headVariant]);
+  const outfit = getOutfit(outfitId);
+  const pal = useMemo(
+    () => (outfit.palette ? { ...appearance.palette, ...outfit.palette } : appearance.palette),
+    [appearance.palette, outfit.palette]
   );
-
-  useEffect(() => {
-    return () => {
-      Object.values(materials).forEach((mat) => mat.dispose());
-    };
-  }, [materials]);
+  const materials = useCharacterMaterials(pal);
 
   useFrame((state, rawDelta) => {
     const dt = Math.min(rawDelta, 0.05);
@@ -402,16 +307,16 @@ export function InventorCharacter({
         lerpRate
       );
 
-      const fpArmScale = firstPersonHideHead ? 0.84 : 1.0;
+      const fpArmScale = firstPersonHideHead ? BODY.firstPerson.armScale : 1.0;
       leftArmRef.current.scale.setScalar(fpArmScale);
       rightArmRef.current.scale.setScalar(fpArmScale);
 
-      const baseShoulderX = firstPersonHideHead ? 0.28 : 0.25;
+      const baseShoulderX = firstPersonHideHead ? BODY.firstPerson.shoulderX : BODY.arm.shoulderX;
       const carryShoulderX = firstPersonHideHead
         ? Math.max(profile.armSpread * 0.94, 0.22)
         : profile.armSpread * 0.88;
       const shoulderOffset = THREE.MathUtils.lerp(baseShoulderX, carryShoulderX, carryBlend.current);
-      const baseArmY = firstPersonHideHead ? 0.08 : 0.14;
+      const baseArmY = firstPersonHideHead ? BODY.firstPerson.shoulderY : BODY.arm.shoulderY;
       const armPosY = baseArmY + THREE.MathUtils.lerp(0, liftDelta * 0.35, carryBlend.current);
       const handForwardPull = firstPersonHideHead
         ? THREE.MathUtils.lerp(0.1, 0.14 + distDelta * 0.65, carryBlend.current)
@@ -472,7 +377,7 @@ export function InventorCharacter({
     const faceBindings = faceBindingsRef.current;
     const faceController = faceControllerRef.current;
     if (faceBindings && faceController) {
-      faceController.setShapePreset(headShape);
+      faceController.setShapePreset(headVariant.shapePreset);
       faceController.update(faceBindings, dt, expr, {
         isMoving: gAmp > 0.25,
         turnRate: anim.turnRate,
@@ -484,13 +389,10 @@ export function InventorCharacter({
         const appearanceWeights = faceController.getAppearanceWeights();
         const fit = resolveShapeFitMetrics(faceBindings.meta, appearanceWeights);
         const p = resolveAnchorPosition(faceBindings.meta, 'anchor_hat', appearanceWeights, scratchAnchorPos.current);
-        headAnchorRef.current.position.set(
-          p.x * HEAD_MODEL_SCALE + HEAD_MODEL_OFFSET[0],
-          p.y * HEAD_MODEL_SCALE + HEAD_MODEL_OFFSET[1],
-          p.z * HEAD_MODEL_SCALE + HEAD_MODEL_OFFSET[2]
-        );
-        const sx = ((fit.hat_band_width * HEAD_MODEL_SCALE) / 2 + HAT_CLEARANCE) / HARDHAT_RADIUS;
-        const sz = ((fit.hat_band_depth * HEAD_MODEL_SCALE) / 2 + HAT_CLEARANCE) / HARDHAT_RADIUS;
+        const [hx, hy, hz] = headModelToPivot(headTransform, p.x, p.y, p.z);
+        headAnchorRef.current.position.set(hx, hy, hz);
+        const sx = ((fit.hat_band_width * headTransform.scale) / 2 + HAT_CLEARANCE) / HARDHAT_RADIUS;
+        const sz = ((fit.hat_band_depth * headTransform.scale) / 2 + HAT_CLEARANCE) / HARDHAT_RADIUS;
         headAnchorRef.current.scale.set(sx, (sx + sz) / 2, sz);
         headAnchorRef.current.rotation.x = HARDHAT_TILT_X * 0.5;
       }
@@ -503,145 +405,45 @@ export function InventorCharacter({
       antennaRef.current.rotation.z = Math.cos(t * 7.0) * (0.025 + moveFactor * 0.08) + smoothLean.current * 0.6;
     }
   });
+  const S = BODY_SOCKETS;
 
   return (
     <group ref={rootRef} position={[0, CHARACTER_DIMENSIONS.visualYOffset, 0]}>
       <group ref={bodyPivotRef}>
-        {/* LEGS & WORK BOOTS WITH ORANGE TONGUES */}
-        <group ref={leftLegRef} position={[-0.135, 0.34, 0]}>
-          <mesh castShadow receiveShadow material={materials.overall} position={[0, -0.09, 0]}>
-            <capsuleGeometry args={[0.105, 0.11, 6, 12]} />
-          </mesh>
-          {/* Knee cloth patch (left = dark slate patch like concept sheet) */}
-          <mesh material={materials.patchDark} position={[0, -0.095, 0.1]} rotation={[0.08, 0, -0.12]}>
-            <boxGeometry args={[0.085, 0.085, 0.018]} />
-          </mesh>
-          {/* Orange ankle collar & front tongue */}
-          <mesh castShadow material={materials.cuff} position={[0, -0.205, 0.015]}>
-            <cylinderGeometry args={[0.102, 0.105, 0.055, 12]} />
-          </mesh>
-          <mesh castShadow material={materials.cuff} position={[0, -0.22, 0.09]}>
-            <boxGeometry args={[0.08, 0.075, 0.055]} />
-          </mesh>
-          {/* Leather boot upper & dark tread sole */}
-          <mesh castShadow receiveShadow material={materials.boot} position={[0, -0.265, 0.035]}>
-            <boxGeometry args={[0.19, 0.1, 0.25]} />
-          </mesh>
-          <mesh castShadow receiveShadow material={materials.sole} position={[0, -0.322, 0.04]}>
-            <boxGeometry args={[0.206, 0.038, 0.275]} />
-          </mesh>
+        {/* PIERNAS: cuerpo base + prenda de pierna + botas (medidas en bodyProfile) */}
+        <group ref={leftLegRef} position={S.hipL}>
+          <LegZone m={materials} outfit={outfit} side={-1} />
+        </group>
+        <group ref={rightLegRef} position={S.hipR}>
+          <LegZone m={materials} outfit={outfit} side={1} />
         </group>
 
-        <group ref={rightLegRef} position={[0.135, 0.34, 0]}>
-          <mesh castShadow receiveShadow material={materials.overall} position={[0, -0.09, 0]}>
-            <capsuleGeometry args={[0.105, 0.11, 6, 12]} />
-          </mesh>
-          {/* Knee cloth patch (right = warm stitched tan patch) */}
-          <mesh material={materials.patchLight} position={[0, -0.085, 0.1]} rotation={[-0.08, 0, 0.14]}>
-            <boxGeometry args={[0.09, 0.085, 0.018]} />
-          </mesh>
-          {/* Orange ankle collar & front tongue */}
-          <mesh castShadow material={materials.cuff} position={[0, -0.205, 0.015]}>
-            <cylinderGeometry args={[0.102, 0.105, 0.055, 12]} />
-          </mesh>
-          <mesh castShadow material={materials.cuff} position={[0, -0.22, 0.09]}>
-            <boxGeometry args={[0.08, 0.075, 0.055]} />
-          </mesh>
-          <mesh castShadow receiveShadow material={materials.boot} position={[0, -0.265, 0.035]}>
-            <boxGeometry args={[0.19, 0.1, 0.25]} />
-          </mesh>
-          <mesh castShadow receiveShadow material={materials.sole} position={[0, -0.322, 0.04]}>
-            <boxGeometry args={[0.206, 0.038, 0.275]} />
-          </mesh>
-        </group>
-
-        {/* CHUNKY MECHANIC TORSO / OVERALLS */}
-        <group ref={torsoRef} position={[0, 0.58, 0]}>
+        {/* TORSO: cuerpo base + cuello + ropa por capas */}
+        <group ref={torsoRef} position={[0, BODY.torso.y, 0]}>
           <group ref={torsoBodyRef}>
-          {/* Pear-shaped overall hips + cream shirt upper torso */}
-          <mesh castShadow receiveShadow material={materials.overall} position={[0, -0.04, 0]}>
-            <cylinderGeometry args={[0.23, 0.265, 0.3, 16]} />
-          </mesh>
-          <mesh castShadow receiveShadow material={materials.shirt} position={[0, 0.145, 0]}>
-            <cylinderGeometry args={[0.205, 0.232, 0.16, 14]} />
-          </mesh>
+            <TorsoZone m={materials} outfit={outfit} />
 
-          {/* Front overalls bib & white 6-tooth gear emblem */}
-          <mesh castShadow material={materials.overall} position={[0, 0.11, 0.18]} rotation={[-0.06, 0, 0]}>
-            <boxGeometry args={[0.24, 0.19, 0.08]} />
-          </mesh>
-          <group position={[0, 0.115, 0.224]}>
-            <mesh material={materials.emblem}>
-              <torusGeometry args={[0.044, 0.016, 8, 16]} />
-            </mesh>
-            {GEAR_ANGLES.map((ang) => (
-              <mesh
-                key={ang}
-                material={materials.emblem}
-                position={[Math.cos(ang) * 0.054, Math.sin(ang) * 0.054, 0]}
-                rotation={[0, 0, ang]}
-              >
-                <boxGeometry args={[0.022, 0.02, 0.014]} />
-              </mesh>
-            ))}
-          </group>
-
-          {/* Front straps + brass buckles */}
-          <mesh castShadow material={materials.overallStrap} position={[-0.1, 0.195, 0.135]} rotation={[0.18, 0, 0]}>
-            <boxGeometry args={[0.055, 0.17, 0.045]} />
-          </mesh>
-          <mesh castShadow material={materials.overallStrap} position={[0.1, 0.195, 0.135]} rotation={[0.18, 0, 0]}>
-            <boxGeometry args={[0.055, 0.17, 0.045]} />
-          </mesh>
-          <mesh castShadow material={materials.brass} position={[-0.1, 0.16, 0.175]}>
-            <boxGeometry args={[0.064, 0.04, 0.022]} />
-          </mesh>
-          <mesh castShadow material={materials.brass} position={[0.1, 0.16, 0.175]}>
-            <boxGeometry args={[0.064, 0.04, 0.022]} />
-          </mesh>
-
-          {/* Crossed back straps (signature silhouette from rear view!) */}
-          <mesh castShadow material={materials.overallStrap} position={[0, 0.145, -0.205]} rotation={[0, 0, 0.56]}>
-            <boxGeometry args={[0.06, 0.25, 0.036]} />
-          </mesh>
-          <mesh castShadow material={materials.overallStrap} position={[0, 0.145, -0.205]} rotation={[0, 0, -0.56]}>
-            <boxGeometry args={[0.06, 0.25, 0.036]} />
-          </mesh>
-
-          {/* Side & back stitched patches */}
-          <mesh material={materials.patchLight} position={[-0.08, -0.05, -0.242]} rotation={[0, 0, 0.18]}>
-            <boxGeometry args={[0.085, 0.08, 0.016]} />
-          </mesh>
-          <mesh material={materials.patchDark} position={[0.09, -0.07, -0.238]} rotation={[0, 0, -0.14]}>
-            <boxGeometry args={[0.075, 0.075, 0.016]} />
-          </mesh>
-
-          {/* BELT DECORATIVE ANCHOR (non-colliding, replaceable tools/pouches) */}
-          <group ref={beltAnchorRef} position={[0, -0.05, 0]}>
-            <mesh castShadow material={materials.belt}>
-              <cylinderGeometry args={[0.258, 0.264, 0.055, 16]} />
-            </mesh>
-            <mesh castShadow material={materials.brass} position={[0, 0, 0.255]}>
-              <boxGeometry args={[0.08, 0.065, 0.025]} />
-            </mesh>
-            {appearance.beltToolStyle === 'pouch' && (
-              <group position={[0.255, -0.02, 0.03]}>
-                <mesh castShadow material={materials.cuff}>
-                  <boxGeometry args={[0.075, 0.12, 0.12]} />
-                </mesh>
-                <mesh castShadow material={materials.brass} position={[0.04, 0.025, 0]}>
-                  <boxGeometry args={[0.014, 0.028, 0.04]} />
-                </mesh>
-              </group>
-            )}
-          </group>
+            {/* BELT DECORATIVE ANCHOR (non-colliding, replaceable tools/pouches) */}
+            <group ref={beltAnchorRef} position={S.waist}>
+              <BeltMeshes m={materials} />
+              {appearance.beltToolStyle === 'pouch' && (
+                <group position={[BODY.torso.radiusHips + 0.022, -0.02, 0.03]}>
+                  <mesh castShadow material={materials.cuff}>
+                    <boxGeometry args={[0.075, 0.12, 0.12]} />
+                  </mesh>
+                  <mesh castShadow material={materials.brass} position={[0.04, 0.025, 0]}>
+                    <boxGeometry args={[0.014, 0.028, 0.04]} />
+                  </mesh>
+                </group>
+              )}
+            </group>
           </group>
 
           {/* CARRY ANCHOR dynamically positioned by PlayerRig clearance solver */}
           <group ref={carryAnchorRef} position={[0, 0.12, 0.65]} />
 
           {/* BACKPACK DECORATIVE ANCHOR (non-colliding, swaps outfits without altering physics) */}
-          <group ref={backpackAnchorRef} position={[0, 0.04, -0.27]}>
+          <group ref={backpackAnchorRef} position={S.back}>
             {appearance.backpackStyle === 'scrap_pack' && (
               <group>
                 <mesh castShadow receiveShadow material={materials.backpack}>
@@ -662,71 +464,25 @@ export function InventorCharacter({
             )}
           </group>
 
-          {/* LEFT ARM + ORANGE CUFF + BIG WORK GLOVE */}
-          <group ref={leftArmRef} position={[-0.25, 0.14, 0]}>
+          {/* BRAZOS: posición de reposo = socket de hombro (useFrame la recalcula con el mismo perfil) */}
+          <group ref={leftArmRef} position={S.shoulderL}>
             <group ref={leftShoulderRef}>
-              <mesh castShadow material={materials.shirt}>
-                <sphereGeometry args={[0.088, 10, 10]} />
-              </mesh>
-              <mesh castShadow material={materials.shirt} position={[-0.022, -0.055, 0]} rotation={[0, 0, 0.15]}>
-                <cylinderGeometry args={[0.078, 0.082, 0.095, 10]} />
-              </mesh>
+              <ShoulderZone m={materials} outfit={outfit} side={-1} />
             </group>
-            <mesh castShadow material={materials.skin} position={[-0.042, -0.145, 0]}>
-              <capsuleGeometry args={[0.052, 0.085, 6, 10]} />
-            </mesh>
-            {/* Orange cuff + chunky grey-brown padded work glove */}
-            <group position={[-0.052, -0.265, 0.03]}>
-              <mesh castShadow material={materials.cuff} position={[0, 0.078, -0.015]}>
-                <cylinderGeometry args={[0.082, 0.092, 0.058, 12]} />
-              </mesh>
-              <mesh castShadow material={materials.glove}>
-                <sphereGeometry args={[0.104, 12, 10]} />
-              </mesh>
-              <mesh castShadow material={materials.glovePad} position={[-0.04, 0.01, 0.04]} rotation={[0, 0.5, 0]}>
-                <boxGeometry args={[0.07, 0.075, 0.06]} />
-              </mesh>
-              <mesh castShadow material={materials.glove} position={[0.062, 0.02, 0.05]}>
-                <sphereGeometry args={[0.046, 8, 8]} />
-              </mesh>
-            </group>
+            <ForearmZone m={materials} outfit={outfit} side={-1} />
           </group>
-
-          {/* RIGHT ARM + ORANGE CUFF + BIG WORK GLOVE */}
-          <group ref={rightArmRef} position={[0.25, 0.14, 0]}>
+          <group ref={rightArmRef} position={S.shoulderR}>
             <group ref={rightShoulderRef}>
-              <mesh castShadow material={materials.shirt}>
-                <sphereGeometry args={[0.088, 10, 10]} />
-              </mesh>
-              <mesh castShadow material={materials.shirt} position={[0.022, -0.055, 0]} rotation={[0, 0, -0.15]}>
-                <cylinderGeometry args={[0.078, 0.082, 0.095, 10]} />
-              </mesh>
+              <ShoulderZone m={materials} outfit={outfit} side={1} />
             </group>
-            <mesh castShadow material={materials.skin} position={[0.042, -0.145, 0]}>
-              <capsuleGeometry args={[0.052, 0.085, 6, 10]} />
-            </mesh>
-            <group position={[0.052, -0.265, 0.03]}>
-              <mesh castShadow material={materials.cuff} position={[0, 0.078, -0.015]}>
-                <cylinderGeometry args={[0.082, 0.092, 0.058, 12]} />
-              </mesh>
-              <mesh castShadow material={materials.glove}>
-                <sphereGeometry args={[0.104, 12, 10]} />
-              </mesh>
-              <mesh castShadow material={materials.glovePad} position={[0.04, 0.01, 0.04]} rotation={[0, -0.5, 0]}>
-                <boxGeometry args={[0.07, 0.075, 0.06]} />
-              </mesh>
-              <mesh castShadow material={materials.glove} position={[-0.062, 0.02, 0.05]}>
-                <sphereGeometry args={[0.046, 8, 8]} />
-              </mesh>
-            </group>
+            <ForearmZone m={materials} outfit={outfit} side={1} />
           </group>
 
-          {/* HEAD + EXPRESSIVE FACE + SPIKY PONYTAIL + HEAD/GOGGLES ANCHORS */}
-          <group ref={headRef} position={[0, 0.37, 0.02]}>
-            {/* Cabeza base v002 (GLB con rig facial por morph targets) */}
+          {/* CABEZA: pivote en el socket del cuello; el registro resuelve escala/offset por variante */}
+          <group ref={headRef} position={headTransform.pivot}>
             <Suspense fallback={null}>
-              <group scale={HEAD_MODEL_SCALE} position={HEAD_MODEL_OFFSET}>
-                <CabezaBaseModel bindingsRef={faceBindingsRef} />
+              <group scale={headTransform.scale} position={headTransform.offset}>
+                <CabezaBaseModel bindingsRef={faceBindingsRef} url={headVariant.modelUrl} />
               </group>
             </Suspense>
 
@@ -735,7 +491,7 @@ export function InventorCharacter({
               {appearance.hatStyle === 'hardhat' && (
                 <group>
                   <mesh castShadow material={materials.hardhat}>
-                    <sphereGeometry args={[0.268, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.52]} />
+                    <sphereGeometry args={[HARDHAT_RADIUS, 24, 14, 0, Math.PI * 2, 0, Math.PI * 0.52]} />
                   </mesh>
                   {/* Top center safety crest */}
                   <mesh castShadow material={materials.hardhatCrest} position={[0, 0.245, 0]}>
