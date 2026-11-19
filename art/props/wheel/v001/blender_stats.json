@@ -1,0 +1,18 @@
+{
+  "recipe": "wheel",
+  "kind": "wheel",
+  "collider_hint": "CylinderCollider args=[0.14, 0.38] rotation=[0, 0, Math.PI/2]",
+  "triangles": 2876,
+  "vertices": 1540,
+  "blender_materials": 1,
+  "bbox_min_zup": [
+    -0.145,
+    -0.3877,
+    -0.3783
+  ],
+  "bbox_max_zup": [
+    0.145,
+    0.3877,
+    0.3783
+  ]
+}

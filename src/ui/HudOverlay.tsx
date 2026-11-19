@@ -121,7 +121,7 @@ const VirtualJoystick = memo(function VirtualJoystick() {
       window.removeEventListener('pointercancel', release, true);
       window.removeEventListener('blur', resetStick);
       document.removeEventListener('visibilitychange', resetStick);
-      playerInput.setTouchJoystick(0, 0);
+      if (!gameStore.getState().seated) playerInput.setTouchJoystick(0, 0);
     };
   }, [resetStick]);
 
@@ -521,6 +521,7 @@ export function HudOverlay() {
   const aimedWorkshopSlot = useGameStore((s) => s.aimedWorkshopSlot);
   const laserHint = useGameStore((s) => s.laserHint);
   const wireHint = useGameStore((s) => s.wireHint);
+  const towerNutFound = useGameStore((s) => s.towerNutFound);
   const pendingWireFrom = useGameStore((s) => s.pendingWireFrom);
   const laserPlacementReady = useGameStore((s) => s.laserPlacementReady);
   const partMountReady = useGameStore((s) => s.partMountReady);
@@ -644,13 +645,6 @@ export function HudOverlay() {
   }, [roundWon]);
 
   useEffect(() => {
-    playerInput.setTouchSteer(0);
-    playerInput.setTouchThrottle(0);
-    playerInput.setTouchJump(false);
-    playerInput.setTouchDescend(false);
-  }, [seated]);
-
-  useEffect(() => {
     const modalActive = menuOpen || showWelcome || showFinish || showContractFinish;
     playerInput.menuOpen = modalActive || emotesOpen;
     if (modalActive || emotesOpen) {
@@ -719,7 +713,7 @@ export function HudOverlay() {
     : workshopSlot ? 'Montar'
     : partMountReady ? 'Soldar'
     : carriedKind ? (wrenchAiming ? 'Colocar' : 'Soltar')
-    : nearbyTargetMounted ? (nearbyTargetRideable && !wrenchAiming ? 'Subir' : 'Retirar')
+    : nearbyTargetMounted ? (nearbyTargetRideable ? 'Subir' : 'Retirar')
     : 'Agarrar';
   const interactHint = showTouch ? interactLabel : `E · ${interactLabel}`;
   const slotInView = workshopSlot ?? aimedWorkshopSlot;
@@ -1308,6 +1302,8 @@ export function HudOverlay() {
                         type="button"
                         className="hud-button hud-swatch-btn"
                         aria-pressed={characterConfig.colorPresetId === preset.id}
+                        disabled={preset.id === 'mirador' && !towerNutFound}
+                        title={preset.id === 'mirador' && !towerNutFound ? 'Encontrá la Tuerca Dorada de la Torre Mirador' : undefined}
                         onClick={() => gameStore.setCharacterConfig({ colorPresetId: preset.id })}
                       >
                         <span className="hud-swatch-dot" style={{ background: preset.swatch }} aria-hidden="true" />
@@ -1315,6 +1311,7 @@ export function HudOverlay() {
                       </button>
                     ))}
                   </div>
+                  {!towerNutFound && <p>Encontrá la Tuerca Dorada de la Torre Mirador para desbloquear su paleta.</p>}
                 </div>
 
                 <div className="hud-creator-section">

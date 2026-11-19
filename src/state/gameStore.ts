@@ -18,6 +18,16 @@ export type CameraViewMode = 'firstPerson' | 'thirdPersonClose' | 'thirdPersonWi
 export type MouseLookMode = 'pointerLock' | 'drag';
 
 const MOUSE_LOOK_STORAGE_KEY = 'los-del-desguace.mouselook.v1';
+const TOWER_NUT_STORAGE_KEY = 'los-del-desguace.mirador-nut.v1';
+
+function loadTowerNut(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(TOWER_NUT_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 
 function loadSavedMouseLookMode(): MouseLookMode {
   if (typeof window === 'undefined') return 'pointerLock';
@@ -86,6 +96,7 @@ export const MAX_EXTRA_PROPS = 24;
 
 export interface GameHudState {
   blueprints: ContraptionBlueprint[];
+  towerNutFound: boolean;
   quality: QualityLevel;
   touchMode: TouchOverlayMode;
   isTouchDevice: boolean;
@@ -149,6 +160,7 @@ function starterInventory(): InventorySlots {
 
 let state: GameHudState = {
   blueprints: listBlueprints(),
+  towerNutFound: loadTowerNut(),
   quality: 'high',
   touchMode: 'auto',
   isTouchDevice: initialIsTouch,
@@ -213,6 +225,19 @@ function emit() {
 }
 
 export const gameStore = {
+  collectTowerNut() {
+    if (state.towerNutFound) return false;
+    state = { ...state, towerNutFound: true };
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(TOWER_NUT_STORAGE_KEY, '1');
+      } catch {
+        // Keep the reward for this session if storage is unavailable.
+      }
+    }
+    emit();
+    return true;
+  },
   getState(): GameHudState {
     return state;
   },
@@ -530,6 +555,7 @@ export const gameStore = {
     emit();
   },
   setCharacterConfig(patch: Partial<CharacterCustomizationConfig>) {
+    if (patch.colorPresetId === 'mirador' && !state.towerNutFound) return;
     const next: CharacterCustomizationConfig = { ...state.characterConfig, ...patch };
     saveCharacterCustomization(next);
     state = { ...state, characterConfig: next };

@@ -1,0 +1,71 @@
+{
+  "spec": {
+    "recipe": "wheel",
+    "key": "wheel",
+    "variant": "v001",
+    "seed": 7,
+    "res": 1024,
+    "dims": null,
+    "pivot": "center",
+    "palette": {},
+    "out_dir": "D:\\los-del-desguace\\art\\props\\wheel\\v001",
+    "glb": "D:\\los-del-desguace\\public\\models\\props\\variants\\wheel-v001.glb",
+    "dry_run": false
+  },
+  "blender": "Blender 5.2.3 LTS",
+  "mesh": {
+    "recipe": "wheel",
+    "kind": "wheel",
+    "collider_hint": "CylinderCollider args=[0.14, 0.38] rotation=[0, 0, Math.PI/2]",
+    "triangles": 2876,
+    "vertices": 1540,
+    "blender_materials": 1,
+    "bbox_min_zup": [
+      -0.145,
+      -0.3877,
+      -0.3783
+    ],
+    "bbox_max_zup": [
+      0.145,
+      0.3877,
+      0.3783
+    ]
+  },
+  "glb": {
+    "file": "public/models/props/variants/wheel-v001.glb",
+    "bytes": 309752,
+    "triangles": 2876,
+    "materials": [
+      "M_Wheel"
+    ],
+    "double_sided": [
+      false
+    ],
+    "textures": 3,
+    "images": [
+      {
+        "name": "wheel_normal",
+        "mime": "image/webp",
+        "bytes": 13020
+      },
+      {
+        "name": "wheel_orm",
+        "mime": "image/webp",
+        "bytes": 131622
+      },
+      {
+        "name": "wheel_baseColor",
+        "mime": "image/webp",
+        "bytes": 81804
+      }
+    ],
+    "extensions_used": [
+      "EXT_texture_webp",
+      "KHR_mesh_quantization"
+    ],
+    "extensions_required": [
+      "EXT_texture_webp",
+      "KHR_mesh_quantization"
+    ]
+  }
+}

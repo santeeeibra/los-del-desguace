@@ -1,0 +1,18 @@
+{
+  "recipe": "barrel",
+  "key": "barrel",
+  "variant": "v002",
+  "seed": 21,
+  "res": 1024,
+  "dims": null,
+  "pivot": "center",
+  "palette": {
+    "teal": "#e56a20",
+    "teal_dark": "#b34312",
+    "steel": "#8f4526",
+    "rust": "#6e2d14"
+  },
+  "out_dir": "D:\\los-del-desguace\\art\\props\\barrel\\v002",
+  "glb": "D:\\los-del-desguace\\public\\models\\props\\variants\\barrel-v002.glb",
+  "dry_run": false
+}

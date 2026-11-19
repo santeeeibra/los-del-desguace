@@ -1,0 +1,18 @@
+{
+  "recipe": "wood_barrel",
+  "kind": "wood_barrel",
+  "collider_hint": "CylinderCollider args=[0.48, 0.36]",
+  "triangles": 4088,
+  "vertices": 2208,
+  "blender_materials": 1,
+  "bbox_min_zup": [
+    -0.3678,
+    -0.3678,
+    -0.48
+  ],
+  "bbox_max_zup": [
+    0.3678,
+    0.3678,
+    0.48
+  ]
+}

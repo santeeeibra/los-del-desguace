@@ -1,0 +1,13 @@
+{
+  "recipe": "logic_and",
+  "key": "logic_and",
+  "variant": "v001",
+  "seed": 7,
+  "res": 1024,
+  "dims": null,
+  "pivot": "center",
+  "palette": {},
+  "out_dir": "D:\\los-del-desguace\\art\\props\\logic_and\\v001",
+  "glb": "D:\\los-del-desguace\\public\\models\\props\\variants\\logic_and-v001.glb",
+  "dry_run": false
+}

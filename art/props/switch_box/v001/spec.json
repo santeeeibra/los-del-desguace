@@ -1,0 +1,13 @@
+{
+  "recipe": "switch_box",
+  "key": "switch_box",
+  "variant": "v001",
+  "seed": 7,
+  "res": 1024,
+  "dims": null,
+  "pivot": "center",
+  "palette": {},
+  "out_dir": "D:\\los-del-desguace\\art\\props\\switch_box\\v001",
+  "glb": "D:\\los-del-desguace\\public\\models\\props\\variants\\switch_box-v001.glb",
+  "dry_run": false
+}

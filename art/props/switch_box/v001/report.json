@@ -1,0 +1,71 @@
+{
+  "spec": {
+    "recipe": "switch_box",
+    "key": "switch_box",
+    "variant": "v001",
+    "seed": 7,
+    "res": 1024,
+    "dims": null,
+    "pivot": "center",
+    "palette": {},
+    "out_dir": "D:\\los-del-desguace\\art\\props\\switch_box\\v001",
+    "glb": "D:\\los-del-desguace\\public\\models\\props\\variants\\switch_box-v001.glb",
+    "dry_run": false
+  },
+  "blender": "Blender 5.2.3 LTS",
+  "mesh": {
+    "recipe": "switch_box",
+    "kind": "switchBox",
+    "collider_hint": "CuboidCollider args=[0.18, 0.14, 0.18]",
+    "triangles": 1552,
+    "vertices": 788,
+    "blender_materials": 1,
+    "bbox_min_zup": [
+      -0.185,
+      -0.165,
+      -0.12
+    ],
+    "bbox_max_zup": [
+      0.185,
+      0.165,
+      0.1822
+    ]
+  },
+  "glb": {
+    "file": "public/models/props/variants/switch_box-v001.glb",
+    "bytes": 145128,
+    "triangles": 1552,
+    "materials": [
+      "M_Switch_box"
+    ],
+    "double_sided": [
+      false
+    ],
+    "textures": 3,
+    "images": [
+      {
+        "name": "switch_box_normal",
+        "mime": "image/webp",
+        "bytes": 2506
+      },
+      {
+        "name": "switch_box_orm",
+        "mime": "image/webp",
+        "bytes": 54642
+      },
+      {
+        "name": "switch_box_baseColor",
+        "mime": "image/webp",
+        "bytes": 43896
+      }
+    ],
+    "extensions_used": [
+      "EXT_texture_webp",
+      "KHR_mesh_quantization"
+    ],
+    "extensions_required": [
+      "EXT_texture_webp",
+      "KHR_mesh_quantization"
+    ]
+  }
+}

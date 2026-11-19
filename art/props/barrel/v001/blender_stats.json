@@ -1,0 +1,18 @@
+{
+  "recipe": "barrel",
+  "kind": "canister",
+  "collider_hint": "CylinderCollider args=[0.38, 0.22] (half-height, radio)",
+  "triangles": 3726,
+  "vertices": 1908,
+  "blender_materials": 1,
+  "bbox_min_zup": [
+    -0.2295,
+    -0.2295,
+    -0.38
+  ],
+  "bbox_max_zup": [
+    0.243,
+    0.2295,
+    0.385
+  ]
+}

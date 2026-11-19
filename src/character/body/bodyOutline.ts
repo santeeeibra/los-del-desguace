@@ -22,26 +22,28 @@ function outlineMaterial() {
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nuniform float outlineWidth;')
       .replace(
-        '#include <begin_vertex>',
-        // Empuje constante en espacio de mundo, sin depender de la escala de la malla.
-        `#include <begin_vertex>
-        vec3 sc = vec3(length(modelMatrix[0].xyz), length(modelMatrix[1].xyz), length(modelMatrix[2].xyz));
-        transformed += normalize(normal) * outlineWidth / sc;`
+        '#include <project_vertex>',
+        // La matriz inversa transpuesta corrige la normal incluso con escalas y rotaciones anidadas.
+        `#include <project_vertex>
+        mvPosition.xyz += normalize(normalMatrix * normal) * outlineWidth;
+        gl_Position = projectionMatrix * mvPosition;`
       );
   };
   sharedMaterial = mat;
   return mat;
 }
 
-const hullGeometries = new WeakMap<THREE.BufferGeometry, THREE.BufferGeometry>();
-function hullGeometry(src: THREE.BufferGeometry) {
-  let g = hullGeometries.get(src);
-  if (!g) {
+const hullGeometries = new WeakMap<THREE.BufferGeometry, { geometry: THREE.BufferGeometry; users: number }>();
+function acquireHullGeometry(src: THREE.BufferGeometry) {
+  let entry = hullGeometries.get(src);
+  if (!entry) {
     // Normales suavizadas: las aristas de cajas y tapas no abren grietas en el contorno.
-    g = toCreasedNormals(src, Math.PI);
-    hullGeometries.set(src, g);
+    const geometry = toCreasedNormals(src.index ? src : src.clone(), Math.PI);
+    entry = { geometry, users: 0 };
+    hullGeometries.set(src, entry);
   }
-  return g;
+  entry.users++;
+  return entry.geometry;
 }
 
 /** Agrega (una sola vez) el casco de contorno a cada malla marcada dentro de `root`. */
@@ -51,12 +53,24 @@ export function applyBodyOutline(root: THREE.Object3D) {
     const m = o as THREE.Mesh;
     if (m.isMesh && m.userData.outline && !m.children.some((c) => c.userData[HULL_FLAG])) targets.push(m);
   });
-  for (const m of targets) {
-    const hull = new THREE.Mesh(hullGeometry(m.geometry), outlineMaterial());
+  const release = targets.map((m) => {
+    const source = m.geometry;
+    const hull = new THREE.Mesh(acquireHullGeometry(source), outlineMaterial());
     hull.userData[HULL_FLAG] = true;
     hull.castShadow = false;
     hull.receiveShadow = false;
     hull.raycast = () => {};
     m.add(hull);
-  }
+    return () => {
+      m.remove(hull);
+      const entry = hullGeometries.get(source);
+      if (entry && --entry.users === 0) {
+        hullGeometries.delete(source);
+        entry.geometry.dispose();
+      }
+    };
+  });
+  return () => {
+    for (const remove of release.splice(0)) remove();
+  };
 }

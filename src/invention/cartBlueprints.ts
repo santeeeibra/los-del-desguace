@@ -159,7 +159,7 @@ export function restoreCartBlueprint(
   const targetStation: WorkshopStation = rootId ? `custom:${rootId}` : 'cart';
   const rootEntry = rootId ? grabbableRegistry.getById(rootId) : undefined;
   const rootBody = rootId ? rootEntry?.getBody() : cart;
-  if (rootId && (!rootEntry || !rootBody?.isValid())) {
+  if (!rootBody?.isValid()) {
     return 'Falta la pieza base del plano';
   }
 
@@ -416,6 +416,8 @@ export function restoreCartBlueprint(
   for (const wire of blueprint.logic.wires) {
     graph.connect(wire.fromNodeId, wire.toNodeId, { fromPort: wire.fromPort, toPort: wire.toPort });
   }
+  physics.parkRestoredAssembly(targetStation, rootBody);
+  world.propagateModifiedBodyPositionsToColliders();
   physics.updateMotors(assembly);
   return null;
 }

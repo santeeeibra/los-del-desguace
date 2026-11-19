@@ -100,7 +100,7 @@ export const EMOTE_BY_ID: Record<EmoteId, EmoteDefinition> = Object.fromEntries(
   EMOTE_CATALOG.map((e) => [e.id, e])
 ) as Record<EmoteId, EmoteDefinition>;
 
-export type ColorPresetId = 'mecanico' | 'oxido' | 'chapa' | 'grua' | 'nitro';
+export type ColorPresetId = 'mecanico' | 'oxido' | 'chapa' | 'grua' | 'nitro' | 'mirador';
 export type SkinPresetId = 'clara' | 'triguena' | 'morena' | 'oliva';
 export type HairPresetId = 'castano' | 'oscuro' | 'cobrizo' | 'rubio';
 
@@ -177,6 +177,18 @@ export const WORKSHOP_COLOR_PRESETS: readonly ColorPresetOption[] = [
     hardhat: '#d64538',
     hardhatCrest: '#f77465',
     backpack: '#593a28',
+  },
+  {
+    id: 'mirador',
+    label: 'Atardecer del Mirador',
+    swatch: '#9d5f91',
+    overall: '#6b426b',
+    overallStrap: '#4f304d',
+    shirt: '#ffe0ad',
+    cuffAndRibbon: '#f7b24f',
+    hardhat: '#ac648b',
+    hardhatCrest: '#f1b072',
+    backpack: '#724659',
   },
 ] as const;
 

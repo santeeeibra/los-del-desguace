@@ -48,6 +48,7 @@ export function createWorkshopPhysics(
     localPose?: { position: Vector3; rotation: Quaternion; axis?: Vector3 };
   }>();
   const releasedStations = new Set<WorkshopStation>();
+  const parkedParts = new Set<RapierRigidBody>();
   /** Rumbo objetivo por estación para el vuelo libre (se reinicia si pasa un rato sin controlarse). */
   const flightHeading = new Map<WorkshopStation, { yaw: number; at: number }>();
   const flightTargetQuat = new Quaternion();
@@ -128,6 +129,12 @@ export function createWorkshopPhysics(
     return bodies;
   }
 
+  function unparkPart(body: RapierRigidBody) {
+    if (!parkedParts.delete(body) || !body.isValid()) return;
+    body.setBodyType(rapier.RigidBodyType.Dynamic, true);
+    body.recomputeMassPropertiesFromColliders();
+  }
+
   function updateMotors(assembly: WorkshopAssembly, driver?: { station: WorkshopStation; throttle: number }) {
     let active = false;
     for (const [partId, mount] of mounts) {
@@ -143,7 +150,7 @@ export function createWorkshopPhysics(
         ? (wired === 0 && !autoPowered ? 0 : driverThrottle * engineDirection)
         : (wired ?? engineDirection);
       const axleDirection = slot.type === 'wheel' ? motorDirection?.(partId) ?? 1 : 1;
-      const speed = engine ? SPIN_SPEED * factor * axleDirection : 0;
+      const speed = engine && !parkedParts.has(body) ? SPIN_SPEED * factor * axleDirection : 0;
       if (speed !== 0) active = true;
       const shouldBrake = speed === 0 && driverThrottle !== undefined;
       if (speed === mount.speed && shouldBrake === Boolean(mount.braking)) continue;
@@ -169,6 +176,7 @@ export function createWorkshopPhysics(
       const parent = cartMount ? cartRoot : (anchor ??= world.createRigidBody(rapier.RigidBodyDesc.fixed()));
       const point = cartMount ? new Vector3(...slot.position) : slot.worldPosition;
       if (cartMount) ignoreVehicleContacts(slot.station, cartRoot, body);
+      body.setAdditionalSolverIterations(4);
       if (slot.type === 'wheel') setWheelFriction(body, WHEEL_MOUNTED_FRICTION);
       const createJoint = () => {
         const descriptor = slot.axle
@@ -215,6 +223,8 @@ export function createWorkshopPhysics(
           rapier.JointData.fixed(localPoint, localRot, CENTER, LEVEL_ROTATION), parentBody, axleMount, true);
       }
       ignoreVehicleContacts(mount.station, parentBody, body);
+      body.setAdditionalSolverIterations(4);
+      parentBody.setAdditionalSolverIterations(4);
       if (mount.type === 'wheel') setWheelFriction(body, WHEEL_MOUNTED_FRICTION);
       const createJoint = () => {
         const descriptor = localAxis
@@ -236,7 +246,11 @@ export function createWorkshopPhysics(
       const mount = mounts.get(id);
       if (!mount) return;
       if (mount.joint.isValid()) world.removeImpulseJoint(mount.joint, true);
-      if (mount.axleMount?.isValid()) world.removeRigidBody(mount.axleMount);
+      if (mount.axleMount) {
+        parkedParts.delete(mount.axleMount);
+        if (mount.axleMount.isValid()) world.removeRigidBody(mount.axleMount);
+      }
+      unparkPart(mount.body);
       if (mount.slot.type === 'wheel') setWheelFriction(mount.body, WHEEL_LOOSE_FRICTION);
       mounts.delete(id);
       restoreVehicleContacts(mount.slot.station, mount.body.handle);
@@ -410,89 +424,163 @@ export function createWorkshopPhysics(
       else fwd.set(0, 0, 1);
 
       if (!assembly.hasWheels(station)) {
-        // Vuelo libre (barril, robot, silla...): controlador por orientación objetivo.
-        // Rumbo = lo que marca el giro; inclinación = hacia adelante con el acelerador y ladeado al girar.
+        // Vuelo libre (barril, robot, silla...): controlador unificado de cuerpo rígido.
+        // Aplica rotación objetivo + velocidad lineal distribuida por igual a todas las piezas para evitar tironeos.
         flightClock += dt;
-        const q = root.rotation();
-        const currentYaw = Math.atan2(2 * (q.w * q.y + q.x * q.z), 1 - 2 * (q.y * q.y + q.x * q.x));
+        const steerInput = Math.max(-1, Math.min(1, input.steer));
+        const throttleInput = Math.max(-1, Math.min(1, input.throttle));
+        const rootRot = driveRotation.copy(root.rotation());
+        const rootFwd = driveDirection.set(0, 0, 1).applyQuaternion(rootRot);
+        const rootUp = upVector.set(0, 1, 0).applyQuaternion(rootRot);
+        const horizFwd = Math.hypot(rootFwd.x, rootFwd.z);
         let heading = flightHeading.get(station);
+        const currentYaw = horizFwd > 0.25 ? Math.atan2(rootFwd.x, rootFwd.z) : (heading?.yaw ?? 0);
         if (!heading || flightClock - heading.at > 0.4) heading = { yaw: currentYaw, at: flightClock };
-        heading.yaw -= Math.max(-1, Math.min(1, input.steer)) * 1.9 * dt;
+        heading.yaw -= steerInput * 2.1 * dt;
         heading.at = flightClock;
-        // El rumbo objetivo no puede adelantarse mucho al cuerpo: si no, al cambiar de lado sigue girando al anterior.
-        const lead = Math.atan2(Math.sin(heading.yaw - currentYaw), Math.cos(heading.yaw - currentYaw));
-        heading.yaw = currentYaw + Math.max(-0.7, Math.min(0.7, lead));
+        // Solo alinear rumbo objetivo al rumbo físico cuando la nave está razonablemente derecha;
+        // tras un choque inclinado evitamos que un yaw corrupto arrastre el rumbo.
+        if (rootUp.y > 0.55 && horizFwd > 0.35) {
+          const maxLead = Math.abs(steerInput) < 0.05 ? 0.28 : 0.65;
+          const lead = Math.atan2(Math.sin(heading.yaw - currentYaw), Math.cos(heading.yaw - currentYaw));
+          heading.yaw = currentYaw + Math.max(-maxLead, Math.min(maxLead, lead));
+        }
         flightHeading.set(station, heading);
-        const airborneNow = pos.y > 1.0;
-        const pitch = airborneNow ? Math.max(-1, Math.min(1, input.throttle)) * 0.18 : 0;
-        const bank = airborneNow ? Math.max(-1, Math.min(1, input.steer)) * 0.28 : 0;
+
+        const airborneNow = pos.y > 0.95 || input.ascend;
+        const pitch = airborneNow ? throttleInput * 0.13 : 0;
+        const bank = airborneNow ? steerInput * 0.18 : 0;
         flightTargetQuat.setFromEuler(flightEuler.set(pitch, heading.yaw, bank, 'YXZ'));
-        flightErrQuat.copy(root.rotation() as unknown as Quaternion).invert();
+        flightErrQuat.copy(rootRot).invert();
         flightErrQuat.premultiply(flightTargetQuat);
         const sign = flightErrQuat.w < 0 ? -1 : 1;
-        const gain = hasGyro ? 10 : 5;
+        // En tierra usamos ganancia suave para no clavar el borde del barril/chasis contra el suelo y evitar vibración.
+        const gain = airborneNow ? (hasGyro ? 12 : 7.5) : (hasGyro ? 6 : 4);
         let wx = 2 * flightErrQuat.x * sign * gain;
         let wy = 2 * flightErrQuat.y * sign * gain;
         let wz = 2 * flightErrQuat.z * sign * gain;
+        const maxAngCmd = airborneNow ? 5.5 : 3.2;
         const mag = Math.hypot(wx, wy, wz);
-        if (mag > 5) { wx *= 5 / mag; wy *= 5 / mag; wz *= 5 / mag; }
-        // Se gira el conjunto como un sólido rígido: misma velocidad angular para todas las piezas y la
-        // velocidad lineal que corresponde a cada posición. Así las uniones no se estiran ni oscilan.
-        const k = Math.min(1, dt * 10);
-        const nwx = av.x + (wx - av.x) * k;
-        const nwy = av.y + (wy - av.y) * k;
-        const nwz = av.z + (wz - av.z) * k;
+        if (mag > maxAngCmd) { wx *= maxAngCmd / mag; wy *= maxAngCmd / mag; wz *= maxAngCmd / mag; }
+
         let cx = 0, cy = 0, cz = 0, mAll = 0, vx = 0, vy = 0, vz = 0;
+        let avgWx = 0, avgWy = 0, avgWz = 0;
         for (const b of bodies) {
           if (!b.isValid()) continue;
-          const m = b.mass(); const t = b.translation(); const v = b.linvel();
+          const m = b.mass(); const t = b.translation(); const v = b.linvel(); const w = b.angvel();
           cx += t.x * m; cy += t.y * m; cz += t.z * m;
-          vx += v.x * m; vy += v.y * m; vz += v.z * m; mAll += m;
+          vx += v.x * m; vy += v.y * m; vz += v.z * m;
+          avgWx += w.x * m; avgWy += w.y * m; avgWz += w.z * m;
+          mAll += m;
         }
         if (mAll > 0) {
-          cx /= mAll; cy /= mAll; cz /= mAll; vx /= mAll; vy /= mAll; vz /= mAll;
+          cx /= mAll; cy /= mAll; cz /= mAll;
+          vx /= mAll; vy /= mAll; vz /= mAll;
+          // Promedio ponderado por masa y acotado para NO amplificar picos de choque de una pieza liviana.
+          const clampW = (val: number) => Math.max(-4.5, Math.min(4.5, val / mAll));
+          const curWx = clampW(avgWx);
+          const curWy = clampW(avgWy);
+          const curWz = clampW(avgWz);
+          const kAng = 1 - Math.exp(-(airborneNow ? 14 : 10) * dt);
+          const nwx = curWx + (wx - curWx) * kAng;
+          const nwy = curWy + (wy - curWy) * kAng;
+          const nwz = curWz + (wz - curWz) * kAng;
+
+          const fwdX = Math.sin(heading.yaw);
+          const fwdZ = Math.cos(heading.yaw);
+          const rightX = fwdZ;
+          const rightZ = -fwdX;
+          const fwdSpeed = vx * fwdX + vz * fwdZ;
+          const sideSpeed = vx * rightX + vz * rightZ;
+
+          let dFwd = 0;
+          if (Math.abs(throttleInput) > 0.05) {
+            const targetFwdSpeed = throttleInput * 12;
+            dFwd = (targetFwdSpeed - fwdSpeed) * (1 - Math.exp(-4.2 * dt));
+          } else {
+            dFwd = -fwdSpeed * (1 - Math.exp(-(airborneNow ? 2.0 : 5.0) * dt));
+          }
+          const dSide = -sideSpeed * (1 - Math.exp(-(airborneNow ? 4.2 : 6.5) * dt));
+          const dvx = fwdX * dFwd + rightX * dSide;
+          const dvz = fwdZ * dFwd + rightZ * dSide;
+
+          let dvy = 0;
+          if (input.ascend && hasFlight) {
+            if (pos.y < 42) {
+              const altScale = pos.y > 34 ? (42 - pos.y) / 8 : 1;
+              const targetVy = (hasGyro ? 7.5 : 6.5) * altScale;
+              const ay = Math.min(34, 18 * altScale + Math.max(0, targetVy - vy) * 4.5);
+              dvy = ay * dt;
+            }
+          } else if (input.descend && hasFlight && pos.y > 0.95) {
+            const targetVy = -5.0;
+            const ay = Math.max(-14, (targetVy - vy) * 4.0);
+            dvy = ay * dt;
+          } else if (hasGyro && hasFlight && pos.y > 1.15) {
+            // Hover asistido con giroscopio: descenso suave y estable al soltar el botón de subir.
+            const targetVy = -0.8;
+            const ay = Math.max(0, Math.min(24, 18 + (targetVy - vy) * 3.5));
+            dvy = ay * dt;
+          }
+
+          let nextVx = vx + dvx;
+          let nextVy = Math.max(-10, Math.min(10, vy + dvy));
+          let nextVz = vz + dvz;
+          // Límite de velocidad horizontal para evitar disparos tras choques
+          const horizSpd = Math.hypot(nextVx, nextVz);
+          if (horizSpd > 15) {
+            nextVx *= 15 / horizSpd;
+            nextVz *= 15 / horizSpd;
+          }
+          // Límite suave de zona de vuelo para no cruzar el borde de respawn (±150m)
+          const MAX_BOUNDS = 115;
+          if (cx > MAX_BOUNDS && nextVx > 0) nextVx = -Math.min(4, (cx - MAX_BOUNDS) * 0.5);
+          else if (cx < -MAX_BOUNDS && nextVx < 0) nextVx = Math.min(4, (-MAX_BOUNDS - cx) * 0.5);
+          if (cz > MAX_BOUNDS && nextVz > 0) nextVz = -Math.min(4, (cz - MAX_BOUNDS) * 0.5);
+          else if (cz < -MAX_BOUNDS && nextVz < 0) nextVz = Math.min(4, (-MAX_BOUNDS - cz) * 0.5);
+
           for (const b of bodies) {
             if (!b.isValid()) continue;
             const t = b.translation();
             const rx = t.x - cx, ry = t.y - cy, rz = t.z - cz;
             b.setAngvel({ x: nwx, y: nwy, z: nwz }, true);
             b.setLinvel({
-              x: vx + nwy * rz - nwz * ry,
-              y: vy + nwz * rx - nwx * rz,
-              z: vz + nwx * ry - nwy * rx,
+              x: nextVx + nwy * rz - nwz * ry,
+              y: nextVy + nwz * rx - nwx * rz,
+              z: nextVz + nwx * ry - nwy * rx,
             }, true);
           }
         }
-      } else {
-        // Estabilización vertical (libre de gimbal lock mediante producto vectorial)
-        const localUp = upVector.set(0, 1, 0).applyQuaternion(driveRotation.copy(root.rotation()));
-        const desiredUp = targetUp.set(0, 1, 0);
-        if (hasGyro && pos.y > 1.0) {
-          const pitchTilt = Math.max(-1, Math.min(1, input.throttle)) * 0.15;
-          const rollTilt = Math.max(-1, Math.min(1, input.steer)) * 0.12;
-          desiredUp.set(
-            fwd.x * pitchTilt - fwd.z * rollTilt,
-            1,
-            fwd.z * pitchTilt + fwd.x * rollTilt,
-          ).normalize();
-        }
-        const torqueAxis = localUp.cross(desiredUp);
-        const kP = hasGyro ? 14 : 6.5;
-        const kD = hasGyro ? 4.2 : 2.4;
-        // Corrección directa de velocidad angular (aceleración rad/s²): estable sin depender de la inercia del compuesto.
-        const maxAccel = 40;
-        const ax = Math.max(-maxAccel, Math.min(maxAccel, torqueAxis.x * kP - av.x * kD));
-        const az = Math.max(-maxAccel, Math.min(maxAccel, torqueAxis.z * kP - av.z * kD));
-        root.setAngvel({ x: av.x + ax * dt, y: av.y, z: av.z + az * dt }, true);
+        return;
       }
 
-      // Ascenso y empuje aéreo (solo cuando ascend está activo)
+      // Estabilización vertical para vehículos con ruedas (libre de gimbal lock mediante producto vectorial)
+      const localUp = upVector.set(0, 1, 0).applyQuaternion(driveRotation.copy(root.rotation()));
+      const desiredUp = targetUp.set(0, 1, 0);
+      if (hasGyro && pos.y > 1.0) {
+        const pitchTilt = Math.max(-1, Math.min(1, input.throttle)) * 0.15;
+        const rollTilt = Math.max(-1, Math.min(1, input.steer)) * 0.12;
+        desiredUp.set(
+          fwd.x * pitchTilt - fwd.z * rollTilt,
+          1,
+          fwd.z * pitchTilt + fwd.x * rollTilt,
+        ).normalize();
+      }
+      const torqueAxis = localUp.cross(desiredUp);
+      const kP = hasGyro ? 14 : 6.5;
+      const kD = hasGyro ? 4.2 : 2.4;
+      const maxAccel = 40;
+      const ax = Math.max(-maxAccel, Math.min(maxAccel, torqueAxis.x * kP - av.x * kD));
+      const az = Math.max(-maxAccel, Math.min(maxAccel, torqueAxis.z * kP - av.z * kD));
+      root.setAngvel({ x: av.x + ax * dt, y: av.y, z: av.z + az * dt }, true);
+
+      // Ascenso y empuje aéreo (vehículos con ruedas)
       if (input.ascend && hasFlight) {
         if (pos.y < 42 && lv.y < (hasGyro ? 9.5 : 8.5)) {
           const altScale = pos.y > 34 ? (42 - pos.y) / 8 : 1;
           applyImpulseAtCenterOfMass(bodies, root, { x: 0, y: totalMass * (hasGyro ? 31 : 27) * altScale * dt, z: 0 });
         }
-        if (Math.abs(input.throttle) > 0.05 && (pos.y > 0.9 || !assembly.hasWheels(station))) {
+        if (Math.abs(input.throttle) > 0.05 && pos.y > 0.9) {
           const horizSpeed = Math.hypot(lv.x, lv.z);
           const fwdSpeed = lv.x * fwd.x + lv.z * fwd.z;
           if (horizSpeed < 15 || fwdSpeed * input.throttle < 0) {
@@ -518,21 +606,38 @@ export function createWorkshopPhysics(
       root.setAngvel(CENTER, true);
       root.setBodyType(rapier.RigidBodyType.Fixed, true);
     },
+    parkRestoredAssembly(station: WorkshopStation, root: RapierRigidBody) {
+      for (const body of assemblyBodies(station, root)) {
+        if (body === root || !body.isValid()) continue;
+        body.setBodyType(rapier.RigidBodyType.Fixed, true);
+        parkedParts.add(body);
+      }
+    },
     releaseCustomRoot(station: WorkshopStation, root: RapierRigidBody) {
       releasedStations.delete(station);
+      flightHeading.delete(station);
       root.setLinvel(CENTER, true);
       root.setAngvel(CENTER, true);
       root.setBodyType(rapier.RigidBodyType.Dynamic, true);
       root.wakeUp();
     },
-    toggleAssembly(station: WorkshopStation, root: RapierRigidBody, assembly: WorkshopAssembly) {
+    toggleAssembly(station: WorkshopStation, root: RapierRigidBody, assembly: WorkshopAssembly, withDriver = false) {
       const released = !releasedStations.has(station);
       if (released) releasedStations.add(station);
       else releasedStations.delete(station);
+      flightHeading.delete(station);
       root.setLinvel(CENTER, true);
       root.setAngvel(CENTER, true);
       root.setBodyType(released ? rapier.RigidBodyType.Dynamic : rapier.RigidBodyType.Fixed, true);
-      updateMotors(assembly);
+      if (released) root.recomputeMassPropertiesFromColliders();
+      for (const b of assemblyBodies(station, root)) {
+        if (!b.isValid()) continue;
+        if (released) unparkPart(b);
+        b.setLinvel(CENTER, true);
+        b.setAngvel(CENTER, true);
+        b.wakeUp();
+      }
+      updateMotors(assembly, released && withDriver ? { station, throttle: 0 } : undefined);
     },
     toggleCart(cart: RapierRigidBody, assembly: WorkshopAssembly) {
       this.toggleAssembly('cart', cart, assembly);
@@ -583,6 +688,7 @@ export function createWorkshopPhysics(
         body.setAngvel(CENTER, true);
       }
       world.propagateModifiedBodyPositionsToColliders();
+      flightHeading.delete(station);
       return true;
     },
     rotateCart(cart: RapierRigidBody, angle = TURN_STEP): boolean {
@@ -611,6 +717,7 @@ export function createWorkshopPhysics(
         body.setAngvel(CENTER, true);
       }
       world.propagateModifiedBodyPositionsToColliders();
+      flightHeading.delete(station);
       return true;
     },
     reset(cart?: RapierRigidBody | null) {
@@ -618,12 +725,15 @@ export function createWorkshopPhysics(
         if (joint.isValid()) world.removeImpulseJoint(joint, true);
         if (axleMount?.isValid()) world.removeRigidBody(axleMount);
         if (slot.type === 'wheel') setWheelFriction(body, WHEEL_LOOSE_FRICTION);
+        unparkPart(body);
       }
       for (const station of vehicleGroups.keys()) restoreVehicleContacts(station);
       if (anchor?.isValid()) world.removeRigidBody(anchor);
       mounts.clear();
+      parkedParts.clear();
       anchor = null;
       releasedStations.clear();
+      flightHeading.clear();
       if (!cart?.isValid()) return;
       cart.setBodyType(rapier.RigidBodyType.Fixed, true);
       cart.setRotation(LEVEL_ROTATION, true);

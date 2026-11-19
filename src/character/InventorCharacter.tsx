@@ -137,7 +137,7 @@ export function InventorCharacter({
 
   // Contorno del cuerpo (la cabeza trae el suyo en el GLB).
   useEffect(() => {
-    if (bodyPivotRef.current) applyBodyOutline(bodyPivotRef.current);
+    if (bodyPivotRef.current) return applyBodyOutline(bodyPivotRef.current);
   }, [outfit, appearance.hatStyle, appearance.gogglesStyle, appearance.backpackStyle, appearance.beltToolStyle]);
 
   useFrame((state, rawDelta) => {

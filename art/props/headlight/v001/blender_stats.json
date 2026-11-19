@@ -1,0 +1,18 @@
+{
+  "recipe": "headlight",
+  "kind": "headlight",
+  "collider_hint": "CuboidCollider args=[0.15, 0.17, 0.16]",
+  "triangles": 1116,
+  "vertices": 590,
+  "blender_materials": 1,
+  "bbox_min_zup": [
+    -0.16,
+    -0.114,
+    -0.158
+  ],
+  "bbox_max_zup": [
+    0.16,
+    0.135,
+    0.1675
+  ]
+}

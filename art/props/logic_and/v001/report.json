@@ -1,0 +1,71 @@
+{
+  "spec": {
+    "recipe": "logic_and",
+    "key": "logic_and",
+    "variant": "v001",
+    "seed": 7,
+    "res": 1024,
+    "dims": null,
+    "pivot": "center",
+    "palette": {},
+    "out_dir": "D:\\los-del-desguace\\art\\props\\logic_and\\v001",
+    "glb": "D:\\los-del-desguace\\public\\models\\props\\variants\\logic_and-v001.glb",
+    "dry_run": false
+  },
+  "blender": "Blender 5.2.3 LTS",
+  "mesh": {
+    "recipe": "logic_and",
+    "kind": "logicAnd",
+    "collider_hint": "CuboidCollider args=[0.18, 0.14, 0.18]",
+    "triangles": 1576,
+    "vertices": 796,
+    "blender_materials": 1,
+    "bbox_min_zup": [
+      -0.165,
+      -0.165,
+      -0.115
+    ],
+    "bbox_max_zup": [
+      0.165,
+      0.165,
+      0.1125
+    ]
+  },
+  "glb": {
+    "file": "public/models/props/variants/logic_and-v001.glb",
+    "bytes": 101496,
+    "triangles": 1576,
+    "materials": [
+      "M_Logic_and"
+    ],
+    "double_sided": [
+      false
+    ],
+    "textures": 3,
+    "images": [
+      {
+        "name": "logic_and_normal",
+        "mime": "image/webp",
+        "bytes": 2098
+      },
+      {
+        "name": "logic_and_orm",
+        "mime": "image/webp",
+        "bytes": 31794
+      },
+      {
+        "name": "logic_and_baseColor",
+        "mime": "image/webp",
+        "bytes": 30112
+      }
+    ],
+    "extensions_used": [
+      "EXT_texture_webp",
+      "KHR_mesh_quantization"
+    ],
+    "extensions_required": [
+      "EXT_texture_webp",
+      "KHR_mesh_quantization"
+    ]
+  }
+}

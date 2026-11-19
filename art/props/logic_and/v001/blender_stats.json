@@ -1,0 +1,18 @@
+{
+  "recipe": "logic_and",
+  "kind": "logicAnd",
+  "collider_hint": "CuboidCollider args=[0.18, 0.14, 0.18]",
+  "triangles": 1576,
+  "vertices": 796,
+  "blender_materials": 1,
+  "bbox_min_zup": [
+    -0.165,
+    -0.165,
+    -0.115
+  ],
+  "bbox_max_zup": [
+    0.165,
+    0.165,
+    0.1125
+  ]
+}

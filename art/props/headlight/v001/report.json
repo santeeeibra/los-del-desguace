@@ -1,0 +1,71 @@
+{
+  "spec": {
+    "recipe": "headlight",
+    "key": "headlight",
+    "variant": "v001",
+    "seed": 7,
+    "res": 1024,
+    "dims": null,
+    "pivot": "center",
+    "palette": {},
+    "out_dir": "D:\\los-del-desguace\\art\\props\\headlight\\v001",
+    "glb": "D:\\los-del-desguace\\public\\models\\props\\variants\\headlight-v001.glb",
+    "dry_run": false
+  },
+  "blender": "Blender 5.2.3 LTS",
+  "mesh": {
+    "recipe": "headlight",
+    "kind": "headlight",
+    "collider_hint": "CuboidCollider args=[0.15, 0.17, 0.16]",
+    "triangles": 1116,
+    "vertices": 590,
+    "blender_materials": 1,
+    "bbox_min_zup": [
+      -0.16,
+      -0.114,
+      -0.158
+    ],
+    "bbox_max_zup": [
+      0.16,
+      0.135,
+      0.1675
+    ]
+  },
+  "glb": {
+    "file": "public/models/props/variants/headlight-v001.glb",
+    "bytes": 196348,
+    "triangles": 1116,
+    "materials": [
+      "M_Headlight"
+    ],
+    "double_sided": [
+      false
+    ],
+    "textures": 3,
+    "images": [
+      {
+        "name": "headlight_normal",
+        "mime": "image/webp",
+        "bytes": 6314
+      },
+      {
+        "name": "headlight_orm",
+        "mime": "image/webp",
+        "bytes": 87086
+      },
+      {
+        "name": "headlight_baseColor",
+        "mime": "image/webp",
+        "bytes": 66720
+      }
+    ],
+    "extensions_used": [
+      "EXT_texture_webp",
+      "KHR_mesh_quantization"
+    ],
+    "extensions_required": [
+      "EXT_texture_webp",
+      "KHR_mesh_quantization"
+    ]
+  }
+}

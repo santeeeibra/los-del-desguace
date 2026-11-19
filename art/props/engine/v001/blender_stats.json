@@ -1,0 +1,18 @@
+{
+  "recipe": "engine",
+  "kind": "engine",
+  "collider_hint": "CuboidCollider args=[0.34, 0.28, 0.28]",
+  "triangles": 2814,
+  "vertices": 1482,
+  "blender_materials": 1,
+  "bbox_min_zup": [
+    -0.3148,
+    -0.244,
+    -0.2725
+  ],
+  "bbox_max_zup": [
+    0.3148,
+    0.2075,
+    0.265
+  ]
+}

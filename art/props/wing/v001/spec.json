@@ -1,0 +1,13 @@
+{
+  "recipe": "wing",
+  "key": "wing",
+  "variant": "v001",
+  "seed": 7,
+  "res": 1024,
+  "dims": null,
+  "pivot": "center",
+  "palette": {},
+  "out_dir": "D:\\los-del-desguace\\art\\props\\wing\\v001",
+  "glb": "D:\\los-del-desguace\\public\\models\\props\\variants\\wing-v001.glb",
+  "dry_run": false
+}

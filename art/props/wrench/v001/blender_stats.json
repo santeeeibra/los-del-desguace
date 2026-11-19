@@ -1,0 +1,18 @@
+{
+  "recipe": "wrench",
+  "kind": "wrench",
+  "collider_hint": "CuboidCollider args=[0.08, 0.28, 0.025]",
+  "triangles": 868,
+  "vertices": 448,
+  "blender_materials": 1,
+  "bbox_min_zup": [
+    -0.0678,
+    -0.0155,
+    -0.2804
+  ],
+  "bbox_max_zup": [
+    0.0673,
+    0.0155,
+    0.2809
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "spec": {
+    "recipe": "wing",
+    "key": "wing",
+    "variant": "v001",
+    "seed": 7,
+    "res": 1024,
+    "dims": null,
+    "pivot": "center",
+    "palette": {},
+    "out_dir": "D:\\los-del-desguace\\art\\props\\wing\\v001",
+    "glb": "D:\\los-del-desguace\\public\\models\\props\\variants\\wing-v001.glb",
+    "dry_run": false
+  },
+  "blender": "Blender 5.2.3 LTS",
+  "mesh": {
+    "recipe": "wing",
+    "kind": "wing",
+    "collider_hint": "CuboidCollider args=[0.55, 0.07, 0.24]",
+    "triangles": 788,
+    "vertices": 428,
+    "blender_materials": 1,
+    "bbox_min_zup": [
+      -0.5749,
+      -0.235,
+      -0.082
+    ],
+    "bbox_max_zup": [
+      0.5749,
+      0.2,
+      0.0703
+    ]
+  },
+  "glb": {
+    "file": "public/models/props/variants/wing-v001.glb",
+    "bytes": 161300,
+    "triangles": 788,
+    "materials": [
+      "M_Wing"
+    ],
+    "double_sided": [
+      false
+    ],
+    "textures": 3,
+    "images": [
+      {
+        "name": "wing_normal",
+        "mime": "image/webp",
+        "bytes": 11338
+      },
+      {
+        "name": "wing_orm",
+        "mime": "image/webp",
+        "bytes": 70376
+      },
+      {
+        "name": "wing_baseColor",
+        "mime": "image/webp",
+        "bytes": 51480
+      }
+    ],
+    "extensions_used": [
+      "EXT_texture_webp",
+      "KHR_mesh_quantization"
+    ],
+    "extensions_required": [
+      "EXT_texture_webp",
+      "KHR_mesh_quantization"
+    ]
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "spec": {
+    "recipe": "cargo_rack",
+    "key": "cargo_rack",
+    "variant": "v001",
+    "seed": 7,
+    "res": 1024,
+    "dims": null,
+    "pivot": "center",
+    "palette": {},
+    "out_dir": "D:\\los-del-desguace\\art\\props\\cargo_rack\\v001",
+    "glb": "D:\\los-del-desguace\\public\\models\\props\\variants\\cargo_rack-v001.glb",
+    "dry_run": false
+  },
+  "blender": "Blender 5.2.3 LTS",
+  "mesh": {
+    "recipe": "cargo_rack",
+    "kind": "cargoRack",
+    "collider_hint": "CuboidCollider args=[0.45, 0.12, 0.35]",
+    "triangles": 2756,
+    "vertices": 1400,
+    "blender_materials": 1,
+    "bbox_min_zup": [
+      -0.4472,
+      -0.3372,
+      -0.096
+    ],
+    "bbox_max_zup": [
+      0.4472,
+      0.3372,
+      0.0801
+    ]
+  },
+  "glb": {
+    "file": "public/models/props/variants/cargo_rack-v001.glb",
+    "bytes": 153568,
+    "triangles": 2756,
+    "materials": [
+      "M_Cargo_rack"
+    ],
+    "double_sided": [
+      false
+    ],
+    "textures": 3,
+    "images": [
+      {
+        "name": "cargo_rack_normal",
+        "mime": "image/webp",
+        "bytes": 4642
+      },
+      {
+        "name": "cargo_rack_orm",
+        "mime": "image/webp",
+        "bytes": 42254
+      },
+      {
+        "name": "cargo_rack_baseColor",
+        "mime": "image/webp",
+        "bytes": 37836
+      }
+    ],
+    "extensions_used": [
+      "EXT_texture_webp",
+      "KHR_mesh_quantization"
+    ],
+    "extensions_required": [
+      "EXT_texture_webp",
+      "KHR_mesh_quantization"
+    ]
+  }
+}

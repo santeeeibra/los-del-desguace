@@ -3,7 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { useAfterPhysicsStep, useBeforePhysicsStep, useRapier, type RapierCollider, type RapierRigidBody } from '@react-three/rapier';
 import { Ecctrl, type EcctrlHandle } from 'ecctrl';
 import * as THREE from 'three';
-import { playSpark, playWeldClank, playWireSnap, setEngineHum } from '../audio/sfxEngine';
+import { playSpark, playSuccessChime, playWeldClank, playWireSnap, setEngineHum } from '../audio/sfxEngine';
 import { buildCharacterAppearance } from '../character/characterCustomization';
 import { DustPuffPool, type DustPuffHandle } from '../character/DustPuffPool';
 import { InventorCharacter, type CharacterAnimData } from '../character/InventorCharacter';
@@ -52,6 +52,7 @@ import {
 } from '../logic/blueprintManager';
 import { arenaAndBridgeStore, BRIDGE_SPAN_Z_MAX, BRIDGE_SPAN_Z_MIN } from '../modes/arenaAndBridge';
 import { BOWLING_BARREL_IDS, contractStore } from '../modes/contracts';
+import { isInTowerNutReach } from '../modes/towerMirador';
 import { gameModeStore } from '../modes/gameModes';
 import { multiplayerStore } from '../multiplayer/multiplayerStore';
 import { rotatedHalfHeight, rotatedSupportDistance, wrenchStep, WRENCH_STEP, type WrenchAxis } from '../invention/wrenchRotation';
@@ -80,7 +81,7 @@ const WHEEL_AXIS = new THREE.Vector3(1, 0, 0);
 const ZERO = { x: 0, y: 0, z: 0 };
 const UP = new THREE.Vector3(0, 1, 0);
 const SEAT_LOGIC_KEYS = { KeyW: false, KeyS: false, Space: false };
-const EXIT_OFFSETS = [[1.2, 0], [-1.2, 0], [0, -1.8], [0, 1.8]] as const;
+const EXIT_OFFSETS = [[2.1, 0], [-2.1, 0], [0, -2.0], [0, 2.0], [1.5, 1.5], [-1.5, 1.5]] as const;
 
 export function PlayerRig({
   maxDustPuffs,
@@ -155,6 +156,8 @@ export function PlayerRig({
       ctrl.body.collider(i).setSensor(false);
       ctrl.body.collider(i).setEnabled(true);
     }
+    world.propagateModifiedBodyPositionsToColliders();
+    ctrl.body.wakeUp();
     playerInput.resetAll();
     gameStore.setSeated(false);
   };
@@ -220,7 +223,7 @@ export function PlayerRig({
     } else {
       ctrl.body.setBodyType(rapier.RigidBodyType.KinematicPositionBased, true);
     }
-    playerInput.resetAll();
+    playerInput.resetTouchAndActions();
     clearPendingWire();
     grabbableRegistry.highlightedId = null;
     gameStore.setNearbyTarget(null, null, false, false);
@@ -232,7 +235,7 @@ export function PlayerRig({
     if (!workshopPhysics.isReleased(station)) {
       const rootId = customRootId(station);
       const root = rootId ? grabbableRegistry.getById(rootId)?.getBody() ?? null : cartBodyRef.current;
-      if (root) workshopPhysics.toggleAssembly(station, root, workshop);
+      if (root) workshopPhysics.toggleAssembly(station, root, workshop, true);
     }
   };
 
@@ -255,12 +258,22 @@ export function PlayerRig({
     SEAT_LOGIC_KEYS.KeyS = throttle < -0.05;
     SEAT_LOGIC_KEYS.Space = Boolean(station && enabled && (keys.jump || touch.jump));
     const descend = Boolean(station && enabled && (keys.run || touch.descend));
+    const isFreeFlyer = Boolean(station && !workshop.hasWheels(station));
     stepContraptionLogic(
       dt,
       SEAT_LOGIC_KEYS,
       workshopPhysics.isDrivenWheel,
       station && SEAT_LOGIC_KEYS.Space ? workshop.idsOnStation(station) : undefined,
       (id) => workshop.isMounted(id),
+      (id) => {
+        const partStation = workshop.stationOf(id);
+        if (!partStation) return false;
+        // Nunca aplicar fuerzas de globos/alas/cohetes sobre creaciones fijas en el taller
+        if (partStation !== 'drum' && !workshopPhysics.isReleased(partStation)) return true;
+        // Las creaciones sin ruedas con vuelo libre las gobierna stabilizeAndFlyAssembly
+        if (isCustomStation(partStation) && !workshop.hasWheels(partStation)) return true;
+        return isFreeFlyer && partStation === station;
+      },
     );
     const active = workshopPhysics.updateMotors(workshop, station ? { station, throttle } : undefined);
     if (!active) {
@@ -294,8 +307,10 @@ export function PlayerRig({
     const rootId = customRootId(station);
     const root = rootId ? grabbableRegistry.getById(rootId)?.getBody() ?? null : cartBodyRef.current;
     const steer = enabled ? touch.joystickX || Number(keys.rightward) - Number(keys.leftward) : 0;
-    workshopPhysics.driveAssembly(station, root, throttle, dt, workshop, seatBody);
-    workshopPhysics.steerAssembly(station, root, steer, dt, seatBody, workshop);
+    if (!isFreeFlyer) {
+      workshopPhysics.driveAssembly(station, root, throttle, dt, workshop, seatBody);
+      workshopPhysics.steerAssembly(station, root, steer, dt, seatBody, workshop);
+    }
     workshopPhysics.stabilizeAndFlyAssembly(
       station,
       root,
@@ -1668,9 +1683,9 @@ export function PlayerRig({
       if (cartAction === 'toggle') {
         const wasReleased = workshopPhysics.isReleased(activeStation);
         workshopPhysics.toggleAssembly(activeStation, activeRoot, workshop);
-        if (activeStation === 'cart' && !wasReleased && workshopPhysics.isCartReleased() &&
+        if ((activeStation === 'cart' || isCustomStation(activeStation)) && !wasReleased && workshopPhysics.isReleased(activeStation) &&
             contractStore.getState().brokenWeldsCount === 0) {
-          const snap = captureCartBlueprint('Último armado', workshop, workshopPhysics, contraptionGraph);
+          const snap = captureCartBlueprint('Último armado', workshop, workshopPhysics, contraptionGraph, activeStation);
           if (snap) {
             lastIntactBlueprintRef.current = snap;
             contractStore.setBrokenWelds(0, true);
@@ -1814,7 +1829,7 @@ export function PlayerRig({
       }
     }
 
-    if (!carriedIdRef.current && !aiming) {
+    if (!carriedIdRef.current && (!aiming || !aimedId)) {
       const shapesReady = ensureVolumeShapes();
       void shapesReady;
       const sightRay = dropRayRef.current!;
@@ -1824,12 +1839,13 @@ export function PlayerRig({
         if (gameStore.getState().inventorySlots.some((stored) => stored?.id === item.id)) continue;
         const itemSt = workshop.stationOf(item.id);
         const itemRideable = isRideableMount(item.id, item.kind, workshop);
+        if (aiming && !itemRideable) continue;
         if (cartReleased && itemSt === 'cart' && !itemRideable) continue;
         if (itemSt && isCustomStation(itemSt) && workshopPhysics.isReleased(itemSt) && !itemRideable) continue;
         if (!item.getWorldPos(scratchItemPos.current)) continue;
         scratchToItem.current.subVectors(scratchItemPos.current, scratchPlayerPos.current);
         const dist = scratchToItem.current.length();
-        if (dist > 2.4) continue;
+        if (dist > (itemRideable ? 2.9 : 2.4)) continue;
 
         scratchRayDir.current.set(
           scratchItemPos.current.x - scratchPlayerPos.current.x,
@@ -1842,8 +1858,14 @@ export function PlayerRig({
 
         let lookDot = 0;
         if (isFirstPerson) {
-          lookDot = scratchCamFwd.current.dot(scratchRayDir.current);
-          if (lookDot < 0.1) continue;
+          if (itemRideable) {
+            scratchCandDir.current.set(scratchRayDir.current.x, 0, scratchRayDir.current.z).normalize();
+            lookDot = scratchForward.current.dot(scratchCandDir.current);
+            if (dist > 1.8 && lookDot < 0) continue;
+          } else {
+            lookDot = scratchCamFwd.current.dot(scratchRayDir.current);
+            if (lookDot < 0.1) continue;
+          }
         } else {
           scratchCandDir.current.set(scratchToItem.current.x, 0, scratchToItem.current.z).normalize();
           lookDot = scratchForward.current.dot(scratchCandDir.current);
@@ -1874,6 +1896,7 @@ export function PlayerRig({
               const parent = collider.parent();
               if (!parent) return true;
               if (itemBodyHandle !== null && parent.handle === itemBodyHandle) return false;
+              if (itemRideable && itemSt === 'cart' && parent.handle === cart?.handle) return false;
               const colItemId = (parent.userData as { grabbableId?: string } | undefined)?.grabbableId;
               // Allow line of sight past other nearby loose grabbables (only solid walls/furniture block)
               return !colItemId;
@@ -1883,7 +1906,7 @@ export function PlayerRig({
         }
 
         const weight = isFirstPerson ? 1.35 : 0.7;
-        const score = dist - lookDot * weight;
+        const score = dist - lookDot * weight - (itemRideable && dist <= 2.4 ? 1.25 : 0);
         if (score < bestScore) {
           bestScore = score;
           bestId = item.id;
@@ -1962,13 +1985,13 @@ export function PlayerRig({
       } else if (partAction === 'smart-use' && !carriedIdRef.current && actionTargetId) {
         const entry = grabbableRegistry.getById(actionTargetId);
         const targetStation = workshop.stationOf(actionTargetId);
-        if (entry?.kind === 'switchBox' || entry?.kind === 'crate') {
+        if (entry && targetStation && isRideableMount(actionTargetId, entry.kind, workshop)) {
+          enterSeat(ctrl, actionTargetId, entry, targetStation);
+          return;
+        } else if (entry?.kind === 'switchBox' || entry?.kind === 'crate') {
           const msg = toggleSwitchNode(actionTargetId);
           gameStore.setWireHint(msg);
           playWireSnap();
-        } else if (entry && targetStation && isRideableMount(actionTargetId, entry.kind, workshop)) {
-          enterSeat(ctrl, actionTargetId, entry, targetStation);
-          return;
         } else if (entry) {
           const nodeKind = PART_LOGIC_SPECS[entry.kind]?.nodeKind;
           if (nodeKind === 'thruster' || nodeKind === 'light' || nodeKind === 'magnet' || nodeKind === 'piston') {
@@ -2028,7 +2051,7 @@ export function PlayerRig({
         const pickupId = stored?.id ?? bestId;
         const entry = pickupId ? grabbableRegistry.getById(pickupId) : undefined;
         const station = pickupId ? workshop.stationOf(pickupId) : undefined;
-        if (inventoryPickup === null && !aiming && entry && pickupId && station && isRideableMount(pickupId, entry.kind, workshop)) {
+        if (inventoryPickup === null && entry && pickupId && station && isRideableMount(pickupId, entry.kind, workshop)) {
           enterSeat(ctrl, pickupId, entry, station);
         } else {
         const body = entry?.getBody();
@@ -2226,9 +2249,34 @@ export function PlayerRig({
     const ctrl = ecctrlRef.current;
     if (!ctrl || !ctrl.body) return;
 
+    // Sincronizar el cuerpo del jugador con el asiento DESPUÉS del step físico para que
+    // personaje, cámara y vehículo compartan exactamente la misma posición en el render (cero temblor).
+    const activeSeatId = seatedIdRef.current;
+    if (activeSeatId) {
+      const seatEntry = grabbableRegistry.getById(activeSeatId);
+      const seatBody = seatEntry?.getBody();
+      if (seatBody?.isValid()) {
+        const rotation = seatRotation.current.copy(seatBody.rotation());
+        const [ox, oy, oz] = seatLocalOffset(seatEntry?.kind ?? 'seat');
+        const offset = seatOffset.current.set(ox, oy, oz).applyQuaternion(rotation).add(seatBody.translation());
+        ctrl.body.setTranslation(offset, true);
+        ctrl.body.setNextKinematicTranslation(offset);
+        const forward = seatForward.current.set(0, 0, 1).applyQuaternion(rotation);
+        if (Math.hypot(forward.x, forward.z) > 0.01) {
+          rotation.setFromAxisAngle(UP, Math.atan2(forward.x, forward.z));
+          ctrl.body.setRotation(rotation, true);
+          ctrl.body.setNextKinematicRotation(rotation);
+        }
+      }
+    }
+
     const p = ctrl.body.translation();
     const r = ctrl.body.rotation();
     const v = ctrl.body.linvel();
+    if (enabled && isInTowerNutReach(p) && gameStore.collectTowerNut()) {
+      gameStore.setWireHint('¡Tuerca Dorada! Atardecer del Mirador disponible en el Vestidor');
+      playSuccessChime();
+    }
     const activeContractId = contractStore.getState().activeContractId;
     const hasSeatedContract = Boolean(seatedIdRef.current && activeContractId);
     const shouldTickMode = gameModeStore.getState().mode !== 'sandbox' && (!activeContractId || Boolean(seatedIdRef.current));

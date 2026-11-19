@@ -191,3 +191,33 @@ Aplica a **todo mecanismo sin ruedas** con propulsores o giroscopio (barril, rob
 - **Por qué así:** aplicar el giro o el empuje solo al cuerpo raíz (6 kg) con alas/propulsores colgando de uniones fijas hacía oscilar el conjunto (picos de 20-60 rad/s) y volcaba el barril. `applyImpulseAtCenterOfMass` ahora reparte el impulso entre todas las piezas por masa, y `steerAssembly` ya no aplica par ni velocidad angular a los sin ruedas (solo agarre lateral y arrastre de velocidad).
 - **Ruedas:** los vehículos con ruedas conservan el estabilizador vertical y la dirección anteriores.
 - **Test:** `tests/flightControl.test.ts` (sube, gira a ambos lados, avanza, baja, sin volcarse). Estado: `tsc` = 0, `118/118`, build OK. Sin probar a mano en navegador/móvil.
+
+---
+
+## 9. Arquitectura de Física, Mecánicas y Lógica (Mapa Rápido)
+
+Referencia directa para modificar mecánicas sin tener que releer todo el proyecto:
+
+1. **Bucle físico y sincronización (`src/scene/DesguaceScene.tsx`, `src/physics/PlayerRig.tsx`):**
+   - `<Physics timeStep={1 / 60} interpolate gravity={[0, -18, 0]}>`.
+   - **`useBeforePhysicsStep` (antes de `world.step`):** evalúa `stepContraptionLogic` → `workshopPhysics.updateMotors` → `stepRunning` → si va sentado (`seatedIdRef`), llama `driveAssembly`/`steerAssembly` (solo vehículos con ruedas) y `stabilizeAndFlyAssembly` (vuelo libre o estabilización con giroscopio) y fija `ctrl.body` en `KinematicPositionBased`.
+   - **`useAfterPhysicsStep` (después de `world.step`):** resincroniza `ctrl.body` a `seatBody` para eliminar el desfase de 1 frame (cero temblor personaje/cámara), actualiza modo de juego/contratos (`gameModeStore`, `contractStore`), puente/drones (`arenaAndBridgeStore`), red multijugador y seguridad de pared al cargar objetos.
+   - **`useFrame` (render):** entradas (`playerInput`), rayo láser (`castWrenchBeam`), montar/bajar (`enterSeat`/`leaveSeat`), rotura de soldaduras por choque y datos procedurales de animación (`InventorCharacter`).
+2. **Personaje y Asiento (`src/physics/PlayerRig.tsx`, `Ecctrl`):**
+   - `<Ecctrl canSleep={false} enable={enabled && !seated} type={seated ? 'kinematicPosition' : 'dynamic'} />`.
+   - `enterSeat`: desactiva colliders del jugador (`setSensor(true)` + `setEnabled(false)`), pasa a `KinematicPositionBased`, suelta el ensamblaje si estaba fijo (`toggleAssembly`), guarda snapshot intacto para **Reparar (`H`)**.
+   - `leaveSeat`: busca punto libre en `EXIT_OFFSETS`, vuelve a `Dynamic`, restablece `setGravityScale(1, true)`, reactiva colliders, llama `world.propagateModifiedBodyPositionsToColliders()` y `wakeUp()`.
+3. **Ensamblaje, Juntas y Vuelo (`src/invention/workshopAssembly.ts`, `src/invention/workshopPhysics.ts`):**
+   - **Estaciones:** `'cart'` (chasis principal en `WORKSHOP_ORIGIN`), `'drum'` (`DRUM_STAND_ORIGIN`), `'custom:<rootId>'` (creaciones libres en `FREE_BUILD_ORIGIN = [3.0, 0.08, 8.6]`).
+   - **Juntas:** `attach` y `attachOnPart` usan juntas fijas/revolute de Rapier con `setContactsEnabled(false)`, `setAdditionalSolverIterations(4)` y máscara `ignoreVehicleContacts` para que las piezas del mismo vehículo no colisionen entre sí.
+   - **Vuelo libre (`stabilizeAndFlyAssembly` cuando `!assembly.hasWheels(station)`):** controlador unificado de cuerpo rígido. Calcula orientación objetivo (`heading.yaw`, `pitch`, `bank`), promedia/acota `angvel` por masa (`±4.5 rad/s`), limita velocidad (`15 m/s` horiz, `±10 m/s` vert, zona `±115 m`) y distribuye `angvel`/`linvel` a todas las piezas respecto al centro de masa.
+   - **Vehículos con ruedas:** `driveAssembly` reparte impulso por masa (`applyImpulseAtCenterOfMass`), `steerAssembly` aplica giro + agarre lateral, `stabilizeAndFlyAssembly` aporta estabilización vertical/giroscopio.
+4. **Grafo Lógico y Actuadores (`src/logic/logicGraph.ts`, `src/logic/contraptionRegistry.ts`):**
+   - `PART_LOGIC_SPECS` define el rol de cada `GrabbableKind` (`battery`, `switch`, `key_input`, `timer`, `and`, `motor`, `thruster`, `light`, `magnet`, `piston`, `sensor`).
+   - `stepContraptionLogic` avanza cooldowns, aplica turbo (`Space`), sustentación de `wing` y flotación de `balloon`, rompe cables estirados (`> 10m`) y evalúa `contraptionGraph`.
+   - `skipForcesFor` **siempre** bloquea fuerzas individuales sobre estaciones fijas en taller y sobre creaciones custom sin ruedas (gobernadas por `stabilizeAndFlyAssembly`).
+5. **Props, Planos y Cámara (`src/props/GrabbableProps.tsx`, `src/invention/cartBlueprints.ts`, `src/logic/blueprintManager.ts`, `src/controls/GameCameraRig.tsx`, `src/controls/playerInput.ts`):**
+   - **Masas:** `PHYSICS_PROPS` en `GrabbableProps.tsx` debe coincidir siempre con `tests/presetStability.test.ts` (ej. `crate = 14`, `woodBarrel = 6`).
+   - **Planos:** `captureCartBlueprint` / `restoreCartBlueprint` soportan chasis `'cart'` y creaciones libres (`rootPartId`), restauran juntas/cables y llaman `world.propagateModifiedBodyPositionsToColliders()`.
+   - **Cámara (`GameCameraRig`):** soporta Pointer Lock en PC (`Esc` libera) y pausa el auto-follow `1.4 s` tras mover el ratón manualmente.
+

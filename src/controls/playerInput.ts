@@ -199,6 +199,10 @@ class PlayerInputBus {
 
   resetAll() {
     this.resetKeyboard();
+    this.resetTouchAndActions();
+  }
+
+  resetTouchAndActions() {
     this.touch.joystickX = 0;
     this.touch.joystickY = 0;
     this.touch.jump = false;

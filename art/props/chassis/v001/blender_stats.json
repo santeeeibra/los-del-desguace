@@ -1,0 +1,18 @@
+{
+  "recipe": "chassis",
+  "kind": "chassis",
+  "collider_hint": "CuboidCollider args=[0.63, 0.09, 1.09]",
+  "triangles": 3776,
+  "vertices": 1920,
+  "blender_materials": 1,
+  "bbox_min_zup": [
+    -0.6,
+    -1.0107,
+    -0.07
+  ],
+  "bbox_max_zup": [
+    0.6,
+    1.0107,
+    0.07
+  ]
+}

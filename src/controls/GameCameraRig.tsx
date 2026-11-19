@@ -104,6 +104,7 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
 
   const dragPointerId = useRef<number | null>(null);
   const lastPointer = useRef({ x: 0, y: 0 });
+  const lastManualLookAtRef = useRef(0);
   const keyOrbit = useRef({ left: false, right: false });
   const initialized = useRef(false);
   const rayRef = useRef<InstanceType<typeof rapier.Ray> | null>(null);
@@ -165,6 +166,9 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
     let wasPointerLocked = document.pointerLockElement === dom;
 
     const applyLookDelta = (dx: number, dy: number) => {
+      if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+        lastManualLookAtRef.current = performance.now();
+      }
       const mode = gameStore.getState().cameraMode;
       const limits = mode === 'firstPerson' ? FIRST_PERSON_LIMITS : THIRD_PERSON_PRESETS[mode];
       yawRef.current -= dx * limits.yawSens;
@@ -352,12 +356,13 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
     if (keyOrbit.current.right) yawRef.current -= 1.65 * dt;
 
     const targetSource = targetSourceRef.current;
-    // Al conducir, alinear suavemente la cámara detrás del vehículo para que ◀/▶ y W/S sean 100% intuitivos
+    // Al conducir, alinear suavemente la cámara detrás del vehículo (sin pelear con el ratón libre recién movido)
     if (
       gameStore.getState().seated &&
       dragPointerId.current === null &&
       !keyOrbit.current.left &&
       !keyOrbit.current.right &&
+      performance.now() - lastManualLookAtRef.current > 1400 &&
       targetSource.getVehicleForward?.(vehicleFwd.current)
     ) {
       const fx = vehicleFwd.current.x;

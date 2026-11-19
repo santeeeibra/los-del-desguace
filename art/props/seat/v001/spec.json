@@ -1,0 +1,13 @@
+{
+  "recipe": "seat",
+  "key": "seat",
+  "variant": "v001",
+  "seed": 7,
+  "res": 1024,
+  "dims": null,
+  "pivot": "center",
+  "palette": {},
+  "out_dir": "D:\\los-del-desguace\\art\\props\\seat\\v001",
+  "glb": "D:\\los-del-desguace\\public\\models\\props\\variants\\seat-v001.glb",
+  "dry_run": false
+}

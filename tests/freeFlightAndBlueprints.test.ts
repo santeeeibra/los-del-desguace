@@ -12,6 +12,24 @@ import { grabbableRegistry, type GrabbableKind } from '../src/props/grabbableReg
 import { gameStore } from '../src/state/gameStore';
 
 describe('Vuelo libre, giroscopio, planos sin ruedas y atajos', () => {
+  it('conserva las teclas apretadas al pasar de caminar a pilotear', () => {
+    playerInput.resetAll();
+    try {
+      dispatchGameKeyDown({ code: 'KeyW', key: 'w' });
+      dispatchGameKeyDown({ code: 'KeyD', key: 'd' });
+      playerInput.setTouchJoystick(-1, -1);
+      playerInput.triggerInteract();
+      playerInput.resetTouchAndActions();
+      expect(playerInput.keys.forward).toBe(true);
+      expect(playerInput.keys.rightward).toBe(true);
+      expect(playerInput.touch.joystickX).toBe(0);
+      expect(playerInput.touch.joystickY).toBe(0);
+      expect(playerInput.consumeInteract()).toBe(false);
+    } finally {
+      playerInput.resetAll();
+    }
+  });
+
   afterEach(() => {
     playerInput.resetAll();
     resetContraptionGraph();
@@ -141,6 +159,23 @@ describe('Vuelo libre, giroscopio, planos sin ruedas y atajos', () => {
         world.step();
       }
       expect(barrel.linvel().y).toBeLessThan(0);
+
+      // Responde al acelerador y giro en vuelo libre sin volcar
+      for (let i = 0; i < 30; i++) {
+        physics.stabilizeAndFlyAssembly(
+          'custom:barrel-fly',
+          barrel,
+          { throttle: 1, steer: 0.6, ascend: true, descend: false },
+          1 / 60,
+          assembly,
+        );
+        world.step();
+      }
+      const horizSpeed = Math.hypot(barrel.linvel().x, barrel.linvel().z);
+      const upAfterTurn = new Vector3(0, 1, 0).applyQuaternion(new Quaternion().copy(barrel.rotation()));
+      expect(horizSpeed).toBeGreaterThan(2.0);
+      expect(upAfterTurn.y).toBeGreaterThan(0.9);
+      expect(Math.abs(barrel.angvel().y)).toBeGreaterThan(0.3);
     } finally {
       world.free();
     }

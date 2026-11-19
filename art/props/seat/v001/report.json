@@ -1,0 +1,71 @@
+{
+  "spec": {
+    "recipe": "seat",
+    "key": "seat",
+    "variant": "v001",
+    "seed": 7,
+    "res": 1024,
+    "dims": null,
+    "pivot": "center",
+    "palette": {},
+    "out_dir": "D:\\los-del-desguace\\art\\props\\seat\\v001",
+    "glb": "D:\\los-del-desguace\\public\\models\\props\\variants\\seat-v001.glb",
+    "dry_run": false
+  },
+  "blender": "Blender 5.2.3 LTS",
+  "mesh": {
+    "recipe": "seat",
+    "kind": "seat",
+    "collider_hint": "CuboidCollider args=[0.25, 0.31, 0.26]",
+    "triangles": 796,
+    "vertices": 432,
+    "blender_materials": 1,
+    "bbox_min_zup": [
+      -0.2517,
+      -0.22,
+      -0.2975
+    ],
+    "bbox_max_zup": [
+      0.2517,
+      0.2648,
+      0.3239
+    ]
+  },
+  "glb": {
+    "file": "public/models/props/variants/seat-v001.glb",
+    "bytes": 155300,
+    "triangles": 796,
+    "materials": [
+      "M_Seat"
+    ],
+    "double_sided": [
+      false
+    ],
+    "textures": 3,
+    "images": [
+      {
+        "name": "seat_normal",
+        "mime": "image/webp",
+        "bytes": 4842
+      },
+      {
+        "name": "seat_orm",
+        "mime": "image/webp",
+        "bytes": 72992
+      },
+      {
+        "name": "seat_baseColor",
+        "mime": "image/webp",
+        "bytes": 50028
+      }
+    ],
+    "extensions_used": [
+      "EXT_texture_webp",
+      "KHR_mesh_quantization"
+    ],
+    "extensions_required": [
+      "EXT_texture_webp",
+      "KHR_mesh_quantization"
+    ]
+  }
+}

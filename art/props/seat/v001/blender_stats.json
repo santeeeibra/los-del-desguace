@@ -1,0 +1,18 @@
+{
+  "recipe": "seat",
+  "kind": "seat",
+  "collider_hint": "CuboidCollider args=[0.25, 0.31, 0.26]",
+  "triangles": 796,
+  "vertices": 432,
+  "blender_materials": 1,
+  "bbox_min_zup": [
+    -0.2517,
+    -0.22,
+    -0.2975
+  ],
+  "bbox_max_zup": [
+    0.2517,
+    0.2648,
+    0.3239
+  ]
+}

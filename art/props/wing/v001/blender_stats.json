@@ -1,0 +1,18 @@
+{
+  "recipe": "wing",
+  "kind": "wing",
+  "collider_hint": "CuboidCollider args=[0.55, 0.07, 0.24]",
+  "triangles": 788,
+  "vertices": 428,
+  "blender_materials": 1,
+  "bbox_min_zup": [
+    -0.5749,
+    -0.235,
+    -0.082
+  ],
+  "bbox_max_zup": [
+    0.5749,
+    0.2,
+    0.0703
+  ]
+}

@@ -386,6 +386,7 @@ export function stepContraptionLogic(
   isDrivenWheel: (id: string) => boolean,
   turboParts?: readonly string[],
   isMountedPart?: (id: string) => boolean,
+  skipForcesFor?: (id: string) => boolean,
 ): void {
   tickCooldowns(springCooldowns, dt);
   tickCooldowns(hornCooldowns, dt);
@@ -397,15 +398,16 @@ export function stepContraptionLogic(
       if (!entry) continue;
       const body = entry.getBody();
       if (!body?.isValid() || !body.isEnabled()) continue;
+      const skipForce = Boolean(skipForcesFor?.(id));
       if (entry.kind === 'thruster' || entry.kind === 'canister') {
         activeTurbo.add(id);
-        applyThrust(body, 420 * dt);
+        if (!skipForce) applyThrust(body, 420 * dt);
       } else if (entry.kind === 'fan') {
         activeTurbo.add(id);
-        applyThrust(body, 195 * dt);
+        if (!skipForce) applyThrust(body, 195 * dt);
       } else if (entry.kind === 'spring') {
         activeTurbo.add(id);
-        triggerSpring(id, body);
+        if (!skipForce) triggerSpring(id, body);
       } else if (entry.kind === 'horn') {
         activeTurbo.add(id);
         triggerHorn(id, body, isMountedPart);
@@ -414,6 +416,7 @@ export function stepContraptionLogic(
   }
   // Sustentación aerodinámica pasiva para alas (`wing`) y flotabilidad constante para globos (`balloon`)
   for (const entry of grabbableRegistry.getAll()) {
+    if (skipForcesFor?.(entry.id)) continue;
     if (entry.kind === 'balloon') {
       const body = entry.getBody();
       if (!body || !body.isValid() || !body.isEnabled() || !body.isDynamic()) continue;
@@ -493,11 +496,11 @@ export function stepContraptionLogic(
     const spec = PART_LOGIC_SPECS[entry.kind];
     if (!spec) continue;
     if (entry.kind === 'spring' && sig > 0.5) {
-      triggerSpring(entry.id, body);
+      if (!skipForcesFor?.(entry.id)) triggerSpring(entry.id, body);
     } else if (entry.kind === 'horn' && sig > 0.5) {
       triggerHorn(entry.id, body, isMountedPart);
     } else if (spec.nodeKind === 'thruster' && spec.thrustForce) {
-      if (!activeTurbo.has(entry.id)) {
+      if (!activeTurbo.has(entry.id) && !skipForcesFor?.(entry.id)) {
         applyThrust(body, spec.thrustForce * sig * dt, Boolean(isMountedPart?.(entry.id)));
       }
     } else if (spec.nodeKind === 'motor' && spec.spinTorque && !isDrivenWheel(entry.id)) {

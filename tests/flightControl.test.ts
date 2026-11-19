@@ -118,10 +118,100 @@ describe('Manejo del vuelo libre (barril volador)', () => {
       const yTop = rootBody.translation().y;
       run(120, { ...idle, descend: true });
       expect(rootBody.translation().y, 'Shift/Bajar debe descender').toBeLessThan(yTop - 1.5);
+
+      // Recuperación tras impacto fuerte (como rozar el arco de salida):
+      // un pico angular/lineal en la raíz NO debe amplificarse al resto de piezas ni volcar el barril.
+      run(45, { ...idle, ascend: true });
+      rootBody.setAngvel({ x: 18, y: -12, z: 24 }, true);
+      rootBody.setLinvel({ x: 22, y: 6, z: 18 }, true);
+      run(50, { ...idle, ascend: true });
+      const recoveredQ = rootBody.rotation();
+      const recoveredUp = 1 - 2 * (recoveredQ.x * recoveredQ.x + recoveredQ.z * recoveredQ.z);
+      const recoveredV = rootBody.linvel();
+      expect(recoveredUp, 'debe enderezarse tras un choque fuerte').toBeGreaterThan(0.92);
+      expect(Math.hypot(recoveredV.x, recoveredV.z), 'velocidad horizontal debe quedar acotada').toBeLessThanOrEqual(16);
     } finally {
       for (const part of preset.parts) grabbableRegistry.unregister(part.partId);
       resetContraptionGraph();
       world.free();
+    }
+  });
+
+  it('mantiene estables el Robot con Propulsores y la Silla Voladora con amortiguación real', async () => {
+    await rapier.init();
+    for (const presetId of ['preset-jetpack-robot', 'preset-balloon-chair'] as const) {
+      resetContraptionGraph();
+      const preset = PRESET_BLUEPRINTS.find((p) => p.id === presetId)!;
+      const world = new rapier.World({ x: 0, y: -18, z: 0 });
+      const assembly = new WorkshopAssembly();
+      const physics = createWorkshopPhysics({ rapier, world }, getWiredEngineSignal, getMotorDirection);
+      world.createCollider(rapier.ColliderDesc.cuboid(36, 0.5, 36).setTranslation(0, -0.5, 12));
+      const cart = world.createRigidBody(
+        rapier.RigidBodyDesc.fixed().setTranslation(...WORKSHOP_ORIGIN).setAdditionalSolverIterations(4),
+      );
+      world.createCollider(rapier.ColliderDesc.cuboid(0.65, 0.055, 1.12).setTranslation(0, 0.36, 0).setMass(14), cart);
+
+      const colliders: Partial<Record<GrabbableKind, { desc: () => rapier.ColliderDesc; ld: number; ad: number }>> = {
+        crate: { desc: () => rapier.ColliderDesc.cuboid(0.32, 0.3, 0.32).setMass(14), ld: 0.9, ad: 1.6 },
+        spring: { desc: () => rapier.ColliderDesc.cylinder(0.22, 0.18).setMass(2.6), ld: 0.55, ad: 0.9 },
+        seat: { desc: () => rapier.ColliderDesc.cuboid(0.25, 0.31, 0.26).setMass(3.6), ld: 0.7, ad: 1.1 },
+        gyro: { desc: () => rapier.ColliderDesc.cuboid(0.2, 0.2, 0.2).setMass(2.6), ld: 0.35, ad: 1.6 },
+        headlight: { desc: () => rapier.ColliderDesc.cuboid(0.15, 0.17, 0.16).setMass(2.0), ld: 0.65, ad: 1.0 },
+        thruster: { desc: () => rapier.ColliderDesc.cylinder(0.34, 0.16).setMass(3.8), ld: 0.18, ad: 0.45 },
+        battery: { desc: () => rapier.ColliderDesc.cuboid(0.27, 0.23, 0.23).setMass(4.2), ld: 0.75, ad: 1.1 },
+        magnet: { desc: () => rapier.ColliderDesc.cuboid(0.22, 0.16, 0.22).setMass(3.6), ld: 0.65, ad: 1.0 },
+        horn: { desc: () => rapier.ColliderDesc.cuboid(0.18, 0.16, 0.24).setMass(2.2), ld: 0.65, ad: 0.95 },
+        balloon: { desc: () => rapier.ColliderDesc.cylinder(0.34, 0.28).setMass(0.7), ld: 0.85, ad: 1.4 },
+        fan: { desc: () => rapier.ColliderDesc.cylinder(0.16, 0.26).setMass(3.0), ld: 0.35, ad: 0.7 },
+      };
+
+      try {
+        for (const [i, part] of preset.parts.entries()) {
+          const spec = colliders[part.kind]!;
+          const body = world.createRigidBody(
+            rapier.RigidBodyDesc.dynamic()
+              .setTranslation(i * 2, 1, 0)
+              .setLinearDamping(spec.ld)
+              .setAngularDamping(spec.ad),
+          );
+          const collider = world.createCollider(spec.desc(), body);
+          grabbableRegistry.register({
+            id: part.partId, kind: part.kind, initialPos: [i * 2, 1, 0],
+            getBody: () => body, getCollider: () => collider, getVisualGroup: () => null,
+            getWorldPos: (out) => Boolean(out.copy(body.translation() as never)),
+          });
+        }
+        const err = restoreCartBlueprint(preset, cart, assembly, physics, contraptionGraph, { world, rapier }, new Set());
+        expect(err, presetId).toBeNull();
+        const station = `custom:${preset.rootPartId}` as const;
+        const rootBody = grabbableRegistry.getById(preset.rootPartId!)!.getBody()!;
+        physics.toggleAssembly(station, rootBody, assembly);
+
+        let minUp = 1;
+        for (let f = 0; f < 120; f++) {
+          const ascend = f < 70;
+          const throttle = f >= 30 && f < 90 ? 1 : 0;
+          const steer = f >= 40 && f < 80 ? 1 : 0;
+          stepContraptionLogic(
+            1 / 60,
+            { KeyW: throttle > 0, KeyS: false, Space: ascend },
+            physics.isDrivenWheel,
+            ascend ? assembly.idsOnStation(station) : undefined,
+            (id) => assembly.isMounted(id),
+            (id) => assembly.stationOf(id) === station,
+          );
+          physics.stabilizeAndFlyAssembly(station, rootBody, { throttle, steer, ascend, descend: f >= 90 }, 1 / 60, assembly);
+          world.step();
+          const q = rootBody.rotation();
+          minUp = Math.min(minUp, 1 - 2 * (q.x * q.x + q.z * q.z));
+        }
+        expect(minUp, `${presetId} no debe volcarse en vuelo`).toBeGreaterThan(0.82);
+        expect(rootBody.translation().y, `${presetId} debe despegar del suelo`).toBeGreaterThan(1.5);
+      } finally {
+        for (const part of preset.parts) grabbableRegistry.unregister(part.partId);
+        resetContraptionGraph();
+        world.free();
+      }
     }
   });
 });

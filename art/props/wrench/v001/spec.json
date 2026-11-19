@@ -1,0 +1,13 @@
+{
+  "recipe": "wrench",
+  "key": "wrench",
+  "variant": "v001",
+  "seed": 7,
+  "res": 1024,
+  "dims": null,
+  "pivot": "center",
+  "palette": {},
+  "out_dir": "D:\\los-del-desguace\\art\\props\\wrench\\v001",
+  "glb": "D:\\los-del-desguace\\public\\models\\props\\variants\\wrench-v001.glb",
+  "dry_run": false
+}

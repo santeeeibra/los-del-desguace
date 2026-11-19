@@ -142,21 +142,42 @@ describe('Estabilidad de los presets al subir al asiento', () => {
       // Simular subir al asiento (soltar creación con throttle = 0) y luego acelerar (throttle = 1)
       const station = preset.rootPartId ? (`custom:${preset.rootPartId}` as const) : 'cart';
       const rootBody = preset.rootPartId ? grabbableRegistry.getById(preset.rootPartId)!.getBody()! : cart;
-      physics.toggleAssembly(station, rootBody, assembly);
+      const mountedParts = [...assembly.partsAt(station)].map(({ id }) => grabbableRegistry.getById(id)!.getBody()!);
+      const positions = mountedParts.map((body) => body.translation());
+      for (let f = 0; f < 90; f++) {
+        physics.updateMotors(assembly);
+        world.step();
+      }
+      mountedParts.forEach((body, index) => {
+        const at = body.translation();
+        expect(Math.hypot(at.x - positions[index].x, at.y - positions[index].y, at.z - positions[index].z)).toBeLessThan(0.005);
+      });
+      physics.toggleAssembly(station, rootBody, assembly, true);
+      expect(mountedParts.every((body) => body.isDynamic() && body.mass() > 0)).toBe(true);
+      const canTurn = assembly.hasWheels(station) || assembly.hasFlightPropulsion(station) || assembly.hasGyro(station);
+      const heading = () => {
+        const q = rootBody.rotation();
+        return Math.atan2(2 * (q.w * q.y + q.x * q.z), 1 - 2 * (q.x * q.x + q.y * q.y));
+      };
+      let firstTurnStart = 0;
       let maxY = 0;
       let maxVelY = 0;
       for (let f = 0; f < 180; f++) {
         const throttle = f < 60 ? 0 : 1;
+        const steer = f >= 156 ? 1 : 0;
+        if (f === 156) firstTurnStart = heading();
         stepContraptionLogic(1 / 60, { KeyW: throttle > 0, KeyS: false, Space: false }, physics.isDrivenWheel,
           undefined, (id) => assembly.isMounted(id));
         physics.updateMotors(assembly, { station, throttle });
         physics.stepRunning(cart, f / 60);
-        physics.driveAssembly(station, rootBody, throttle, 1 / 60, assembly);
-        physics.steerAssembly(station, rootBody, 0, 1 / 60, undefined, assembly);
+        if (assembly.hasWheels(station)) {
+          physics.driveAssembly(station, rootBody, throttle, 1 / 60, assembly);
+          physics.steerAssembly(station, rootBody, steer, 1 / 60, undefined, assembly);
+        }
         physics.stabilizeAndFlyAssembly(
           station,
           rootBody,
-          { throttle, steer: 0, ascend: false, descend: false },
+          { throttle, steer, ascend: false, descend: false },
           1 / 60,
           assembly,
         );
@@ -165,6 +186,11 @@ describe('Estabilidad de los presets al subir al asiento', () => {
         const v = rootBody.linvel();
         maxY = Math.max(maxY, t.y);
         maxVelY = Math.max(maxVelY, Math.abs(v.y));
+      }
+      if (canTurn) {
+        const delta = heading() - firstTurnStart;
+        expect(Math.abs(Math.atan2(Math.sin(delta), Math.cos(delta))), `${preset.name} gira desde el primer montaje`)
+          .toBeGreaterThan(0.02);
       }
 
       if (preset.id === 'preset-blimp' || preset.id === 'preset-balloon-chair') {
@@ -176,6 +202,28 @@ describe('Estabilidad de los presets al subir al asiento', () => {
         }
       } else if (preset.id !== 'preset-glider' && preset.id !== 'preset-pulse-jumper' && preset.id !== 'preset-cargo-plane') {
         expect(maxY, `${preset.name} salió volando (maxY=${maxY.toFixed(2)}, maxVelY=${maxVelY.toFixed(2)})`).toBeLessThan(1.5);
+      }
+
+      // La segunda vez que se sube, el invento sigue liberado y ya no cambia de tipo.
+      if (canTurn) {
+        for (const steer of [1, -1]) {
+          const start = heading();
+          for (let frame = 0; frame < 36; frame++) {
+            const input = { throttle: 0.55, steer, ascend: false, descend: false };
+            physics.updateMotors(assembly, { station, throttle: input.throttle });
+            if (assembly.hasWheels(station)) {
+              physics.driveAssembly(station, rootBody, input.throttle, 1 / 60, assembly);
+              physics.steerAssembly(station, rootBody, steer, 1 / 60, undefined, assembly);
+            }
+            physics.stabilizeAndFlyAssembly(station, rootBody, input, 1 / 60, assembly);
+            world.step();
+          }
+          const delta = heading() - start;
+          expect(Math.abs(Math.atan2(Math.sin(delta), Math.cos(delta))), `${preset.name} responde a la dirección`)
+            .toBeGreaterThan(0.02);
+          physics.updateMotors(assembly);
+          for (let frame = 0; frame < 6; frame++) world.step();
+        }
       }
     } finally {
       for (const part of preset.parts) grabbableRegistry.unregister(part.partId);

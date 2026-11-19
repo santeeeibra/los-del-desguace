@@ -11,6 +11,7 @@ import { type CameraTargetSource } from '../controls/ThirdPersonCamera';
 import { ArenaAndBridgeZone } from '../environment/ArenaAndBridgeZone';
 import { ScrapyardWorkshop } from '../environment/ScrapyardWorkshop';
 import { TestTrackAndYard } from '../environment/TestTrackAndYard';
+import { TowerMirador } from '../environment/TowerMirador';
 import { TrackCheckpoints } from '../environment/TrackCheckpoints';
 import { BlueprintHolograms } from '../invention/BlueprintHolograms';
 import { WorkshopChassis, WorkshopDrumStand } from '../invention/WorkshopChassis';
@@ -200,6 +201,7 @@ export function DesguaceScene() {
         <Physics timeStep={1 / 60} interpolate gravity={[0, -18, 0]}>
           <ScrapyardWorkshop extraProps={preset.extraProps} />
           <TestTrackAndYard extraProps={preset.extraProps} />
+          <TowerMirador />
           <ArenaAndBridgeZone resetSignal={resetNonce} playerSourceRef={cameraSourceRef} />
           <TrackCheckpoints />
           <ScrapCart />

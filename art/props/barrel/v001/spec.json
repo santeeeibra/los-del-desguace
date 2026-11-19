@@ -1,0 +1,13 @@
+{
+  "recipe": "barrel",
+  "key": "barrel",
+  "variant": "v001",
+  "seed": 21,
+  "res": 1024,
+  "dims": null,
+  "pivot": "center",
+  "palette": {},
+  "out_dir": "D:\\los-del-desguace\\art\\props\\barrel\\v001",
+  "glb": "D:\\los-del-desguace\\public\\models\\props\\variants\\barrel-v001.glb",
+  "dry_run": false
+}

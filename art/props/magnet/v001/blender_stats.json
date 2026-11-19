@@ -1,0 +1,18 @@
+{
+  "recipe": "magnet",
+  "kind": "magnet",
+  "collider_hint": "CuboidCollider args=[0.22, 0.16, 0.22]",
+  "triangles": 2300,
+  "vertices": 1160,
+  "blender_materials": 1,
+  "bbox_min_zup": [
+    -0.1936,
+    -0.19,
+    -0.15
+  ],
+  "bbox_max_zup": [
+    0.1936,
+    0.19,
+    0.1225
+  ]
+}

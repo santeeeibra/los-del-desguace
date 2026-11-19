@@ -1,0 +1,71 @@
+{
+  "spec": {
+    "recipe": "wrench",
+    "key": "wrench",
+    "variant": "v001",
+    "seed": 7,
+    "res": 1024,
+    "dims": null,
+    "pivot": "center",
+    "palette": {},
+    "out_dir": "D:\\los-del-desguace\\art\\props\\wrench\\v001",
+    "glb": "D:\\los-del-desguace\\public\\models\\props\\variants\\wrench-v001.glb",
+    "dry_run": false
+  },
+  "blender": "Blender 5.2.3 LTS",
+  "mesh": {
+    "recipe": "wrench",
+    "kind": "wrench",
+    "collider_hint": "CuboidCollider args=[0.08, 0.28, 0.025]",
+    "triangles": 868,
+    "vertices": 448,
+    "blender_materials": 1,
+    "bbox_min_zup": [
+      -0.0678,
+      -0.0155,
+      -0.2804
+    ],
+    "bbox_max_zup": [
+      0.0673,
+      0.0155,
+      0.2809
+    ]
+  },
+  "glb": {
+    "file": "public/models/props/variants/wrench-v001.glb",
+    "bytes": 76212,
+    "triangles": 868,
+    "materials": [
+      "M_Wrench"
+    ],
+    "double_sided": [
+      false
+    ],
+    "textures": 3,
+    "images": [
+      {
+        "name": "wrench_normal",
+        "mime": "image/webp",
+        "bytes": 2694
+      },
+      {
+        "name": "wrench_orm",
+        "mime": "image/webp",
+        "bytes": 28548
+      },
+      {
+        "name": "wrench_baseColor",
+        "mime": "image/webp",
+        "bytes": 20774
+      }
+    ],
+    "extensions_used": [
+      "EXT_texture_webp",
+      "KHR_mesh_quantization"
+    ],
+    "extensions_required": [
+      "EXT_texture_webp",
+      "KHR_mesh_quantization"
+    ]
+  }
+}

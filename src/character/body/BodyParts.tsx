@@ -103,7 +103,7 @@ function OverallBib({ m }: { m: CharacterMaterials }) {
   return (
     <group>
       {/* Peto frontal + emblema de engranaje */}
-      <mesh userData={OUTLINE} castShadow material={m.overall} position={[0, bibY, o.bibZ]} rotation={[-0.06, 0, 0]}>
+      <mesh castShadow material={m.overall} position={[0, bibY, o.bibZ]} rotation={[-0.06, 0, 0]}>
         <boxGeometry args={[o.bibWidth, o.bibHeight, 0.08]} />
       </mesh>
       <group position={[0, bibY + 0.005, o.bibZ + 0.044]}>
@@ -142,7 +142,7 @@ export function BeltMeshes({ m }: { m: CharacterMaterials }) {
   const b = G.belt;
   return (
     <>
-      <mesh userData={OUTLINE} castShadow material={m.belt}>
+      <mesh castShadow material={m.belt}>
         <cylinderGeometry args={[b.radius, b.radius + 0.004, b.height, SEG]} />
       </mesh>
       <mesh castShadow material={m.brass} position={[0, 0, b.radius]}>
@@ -183,7 +183,7 @@ export function ForearmZone({ m, outfit, side }: ZoneProps & { side: 1 | -1 }) {
   const r = a.handRadius;
   return (
     <group>
-      <mesh userData={OUTLINE} castShadow material={m.skin} position={[side * h.handOutX * 0.75, forearmY, h.handZ * 0.4]}>
+      <mesh userData={gloves ? undefined : OUTLINE} castShadow material={m.skin} position={[side * h.handOutX * 0.75, forearmY, h.handZ * 0.4]}>
         <capsuleGeometry args={[a.forearmRadius, a.forearmLength, 6, SEG]} />
       </mesh>
       <group position={[side * h.handOutX, h.handY, h.handZ]}>
@@ -239,7 +239,7 @@ export function LegZone({ m, outfit, side }: ZoneProps & { side: 1 | -1 }) {
           <mesh userData={OUTLINE} castShadow receiveShadow material={m.boot} position={[0, l.footY, 0.035]}>
             <boxGeometry args={l.bootSize} />
           </mesh>
-          <mesh userData={OUTLINE} castShadow receiveShadow material={m.sole} position={[0, -0.322, 0.04]}>
+          <mesh castShadow receiveShadow material={m.sole} position={[0, -0.322, 0.04]}>
             <boxGeometry args={l.soleSize} />
           </mesh>
         </>

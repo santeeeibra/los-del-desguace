@@ -1,0 +1,76 @@
+{
+  "spec": {
+    "recipe": "barrel",
+    "key": "barrel",
+    "variant": "v002",
+    "seed": 21,
+    "res": 1024,
+    "dims": null,
+    "pivot": "center",
+    "palette": {
+      "teal": "#e56a20",
+      "teal_dark": "#b34312",
+      "steel": "#8f4526",
+      "rust": "#6e2d14"
+    },
+    "out_dir": "D:\\los-del-desguace\\art\\props\\barrel\\v002",
+    "glb": "D:\\los-del-desguace\\public\\models\\props\\variants\\barrel-v002.glb",
+    "dry_run": false
+  },
+  "blender": "Blender 5.2.3 LTS",
+  "mesh": {
+    "recipe": "barrel",
+    "kind": "canister",
+    "collider_hint": "CylinderCollider args=[0.38, 0.22] (half-height, radio)",
+    "triangles": 3726,
+    "vertices": 1908,
+    "blender_materials": 1,
+    "bbox_min_zup": [
+      -0.2295,
+      -0.2295,
+      -0.38
+    ],
+    "bbox_max_zup": [
+      0.243,
+      0.2295,
+      0.385
+    ]
+  },
+  "glb": {
+    "file": "public/models/props/variants/barrel-v002.glb",
+    "bytes": 195940,
+    "triangles": 3726,
+    "materials": [
+      "M_Barrel"
+    ],
+    "double_sided": [
+      false
+    ],
+    "textures": 3,
+    "images": [
+      {
+        "name": "barrel_normal",
+        "mime": "image/webp",
+        "bytes": 3522
+      },
+      {
+        "name": "barrel_orm",
+        "mime": "image/webp",
+        "bytes": 50566
+      },
+      {
+        "name": "barrel_baseColor",
+        "mime": "image/webp",
+        "bytes": 59718
+      }
+    ],
+    "extensions_used": [
+      "EXT_texture_webp",
+      "KHR_mesh_quantization"
+    ],
+    "extensions_required": [
+      "EXT_texture_webp",
+      "KHR_mesh_quantization"
+    ]
+  }
+}
