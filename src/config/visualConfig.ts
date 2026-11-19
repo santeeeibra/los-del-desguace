@@ -101,8 +101,10 @@ export const CHARACTER_DIMENSIONS = {
 
 interface SharedTextures {
   concreteMap: THREE.CanvasTexture;
+  concreteBumpMap: THREE.CanvasTexture;
   woodMap: THREE.CanvasTexture;
   corrugatedMap: THREE.CanvasTexture;
+  corrugatedBumpMap: THREE.CanvasTexture;
   hazardMap: THREE.CanvasTexture;
   crateStencilMap: THREE.CanvasTexture;
 }
@@ -127,6 +129,21 @@ function finalizeColorTexture(
 ): THREE.CanvasTexture {
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(repeatX, repeatY);
+  tex.anisotropy = 4;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function finalizeLinearTexture(
+  canvas: HTMLCanvasElement,
+  repeatX = 1,
+  repeatY = 1
+): THREE.CanvasTexture {
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.NoColorSpace;
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(repeatX, repeatY);
@@ -160,6 +177,27 @@ export function getSharedTextures(): SharedTextures {
   cCtx.stroke();
   const concreteMap = finalizeColorTexture(cCanvas, 10, 10);
 
+  const [cbCanvas, cbCtx] = makeCanvas(256, 256);
+  cbCtx.fillStyle = '#808080';
+  cbCtx.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 420; i++) {
+    const x = (i * 73) % 256;
+    const y = (i * 137) % 256;
+    const r = 1 + (i % 3);
+    cbCtx.fillStyle = i % 2 === 0 ? '#969696' : '#686868';
+    cbCtx.fillRect(x, y, r, r);
+  }
+  cbCtx.strokeStyle = '#383838';
+  cbCtx.lineWidth = 3;
+  cbCtx.strokeRect(1.5, 1.5, 253, 253);
+  cbCtx.beginPath();
+  cbCtx.moveTo(128, 0);
+  cbCtx.lineTo(128, 256);
+  cbCtx.moveTo(0, 128);
+  cbCtx.lineTo(256, 128);
+  cbCtx.stroke();
+  const concreteBumpMap = finalizeLinearTexture(cbCanvas, 10, 10);
+
   // 2. Warm wood planks
   const [wCanvas, wCtx] = makeCanvas(256, 256);
   wCtx.fillStyle = PALETTE.woodLight;
@@ -188,6 +226,14 @@ export function getSharedTextures(): SharedTextures {
   mCtx.fillStyle = 'rgba(130, 62, 34, 0.12)';
   mCtx.fillRect(0, 96, 256, 32);
   const corrugatedMap = finalizeColorTexture(mCanvas, 2, 1);
+
+  const [mbCanvas, mbCtx] = makeCanvas(256, 64);
+  for (let x = 0; x < 256; x++) {
+    const v = Math.round(128 + Math.sin((x / 16) * Math.PI * 2) * 100);
+    mbCtx.fillStyle = `rgb(${v},${v},${v})`;
+    mbCtx.fillRect(x, 0, 1, 64);
+  }
+  const corrugatedBumpMap = finalizeLinearTexture(mbCanvas, 2, 1);
 
   // 4. Hazard stripes
   const [hCanvas, hCtx] = makeCanvas(128, 128);
@@ -228,8 +274,10 @@ export function getSharedTextures(): SharedTextures {
 
   cachedTextures = {
     concreteMap,
+    concreteBumpMap,
     woodMap,
     corrugatedMap,
+    corrugatedBumpMap,
     hazardMap,
     crateStencilMap,
   };

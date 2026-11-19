@@ -62,12 +62,16 @@ export function TestTrackAndYard({ extraProps }: { extraProps: boolean }) {
       metalTeal: new THREE.MeshStandardMaterial({
         color: PALETTE.metalTeal,
         map: textures.corrugatedMap,
+        bumpMap: textures.corrugatedBumpMap,
+        bumpScale: 0.03,
         roughness: 0.56,
         metalness: 0.28,
       }),
       metalRust: new THREE.MeshStandardMaterial({
         color: PALETTE.metalRust,
         map: textures.corrugatedMap,
+        bumpMap: textures.corrugatedBumpMap,
+        bumpScale: 0.03,
         roughness: 0.68,
         metalness: 0.24,
       }),
@@ -95,6 +99,14 @@ export function TestTrackAndYard({ extraProps }: { extraProps: boolean }) {
         map: bannerTex,
         roughness: 0.75,
         metalness: 0.05,
+      }),
+      stuntHoop: new THREE.MeshStandardMaterial({
+        color: '#ffb703',
+        emissive: '#ff6d00',
+        emissiveIntensity: 1.8,
+        roughness: 0.25,
+        metalness: 0.2,
+        toneMapped: false,
       }),
     }),
     [textures, bannerTex]
@@ -266,14 +278,47 @@ export function TestTrackAndYard({ extraProps }: { extraProps: boolean }) {
           </group>
         )}
 
-        {/* Isla central divisoria entre ida y vuelta (guía visual clara de la curva) */}
-        <CuboidCollider args={[2.4, 0.4, 6.2]} position={[9.3, 0.4, 19.5]} />
-        <mesh castShadow receiveShadow material={materials.dirtMound} position={[9.3, 0.22, 19.5]}>
-          <boxGeometry args={[4.8, 0.44, 12.4]} />
+        {/* Isla central convertida en pista de despegue + Mega Rampa de Acrobacias */}
+        <mesh receiveShadow material={materials.dirtMound} position={[9.5, 0.015, 19.5]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[4.8, 12.6]} />
         </mesh>
-        <mesh castShadow material={materials.hazard} position={[9.3, 0.52, 19.5]}>
-          <boxGeometry args={[4.9, 0.18, 12.5]} />
-        </mesh>
+        {/* Mega Rampa de Acrobacias (inclinada hacia +Z para saltar por el aro luminoso) */}
+        <group position={[9.5, 0.65, 19.5]}>
+          <CuboidCollider args={[1.9, 0.16, 3.1]} rotation={[-0.28, 0, 0]} />
+          <mesh castShadow receiveShadow material={materials.wood} rotation={[-0.28, 0, 0]}>
+            <boxGeometry args={[3.8, 0.32, 6.2]} />
+          </mesh>
+          <mesh receiveShadow material={materials.hazard} position={[0, 0.17, 0]} rotation={[-0.28, 0, 0]}>
+            <boxGeometry args={[3.84, 0.04, 0.65]} />
+          </mesh>
+          {/* Soportes laterales de madera debajo de la parte alta de la rampa */}
+          <mesh castShadow receiveShadow material={materials.woodDark} position={[-1.7, -0.02, 2.3]}>
+            <boxGeometry args={[0.26, 1.32, 0.32]} />
+          </mesh>
+          <mesh castShadow receiveShadow material={materials.woodDark} position={[1.7, -0.02, 2.3]}>
+            <boxGeometry args={[0.26, 1.32, 0.32]} />
+          </mesh>
+          {/* Bordes guía amarillos de la rampa */}
+          <mesh castShadow material={materials.curbYellow} position={[-1.85, 0.22, 0]} rotation={[-0.28, 0, 0]}>
+            <boxGeometry args={[0.14, 0.18, 6.2]} />
+          </mesh>
+          <mesh castShadow material={materials.curbYellow} position={[1.85, 0.22, 0]} rotation={[-0.28, 0, 0]}>
+            <boxGeometry args={[0.14, 0.18, 6.2]} />
+          </mesh>
+        </group>
+
+        {/* Aro luminoso decorativo de acrobacias sobre la rampa */}
+        <group position={[9.5, 4.2, 25.0]}>
+          <mesh castShadow material={materials.stuntHoop}>
+            <torusGeometry args={[2.1, 0.14, 12, 32]} />
+          </mesh>
+          <mesh castShadow material={materials.steel} position={[-2.15, -2.1, 0]}>
+            <cylinderGeometry args={[0.1, 0.14, 4.2, 10]} />
+          </mesh>
+          <mesh castShadow material={materials.steel} position={[2.15, -2.1, 0]}>
+            <cylinderGeometry args={[0.1, 0.14, 4.2, 10]} />
+          </mesh>
+        </group>
 
         {/* Conexión de vuelta al taller desde la recta este (x = 10..18, z = 4..9) */}
         <mesh receiveShadow material={materials.trackSurface} position={[14.2, 0.012, 6.0]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -294,6 +339,9 @@ export function TestTrackAndYard({ extraProps }: { extraProps: boolean }) {
         </mesh>
         <mesh castShadow material={materials.metalYellow} position={[20.5, 0.8, 19.0]}>
           <boxGeometry args={[0.22, 1.6, 34.0]} />
+        </mesh>
+        <mesh castShadow receiveShadow material={materials.metalTeal} position={[15.5, 0.8, 1.5]}>
+          <boxGeometry args={[11.0, 1.6, 0.22]} />
         </mesh>
       </RigidBody>
     </group>

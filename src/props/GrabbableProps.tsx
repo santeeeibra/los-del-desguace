@@ -4,11 +4,16 @@ import {
   CuboidCollider,
   CylinderCollider,
   RigidBody,
+  useRapier,
   type RapierCollider,
   type RapierRigidBody,
 } from '@react-three/rapier';
 import * as THREE from 'three';
 import { getSharedTextures, PALETTE } from '../config/visualConfig';
+import { getPartLogicOutput } from '../logic/contraptionRegistry';
+import { BOWLING_BARREL_IDS } from '../modes/contracts';
+import { gameStore, useGameStore } from '../state/gameStore';
+import { PropEffect } from './CrazyPropEffects';
 import { grabbableRegistry, type GrabbableKind } from './grabbableRegistry';
 import { PropModel } from './PropModels';
 import { PROP_MODEL_URLS, USE_LEGACY_PROP_VISUALS } from './propModelConfig';
@@ -20,6 +25,8 @@ interface SingleGrabbableProps {
   rotation?: [number, number, number];
   resetSignal: number;
 }
+
+const UNROTATED: [number, number, number] = [0, 0, 0];
 
 function GrabBeacon({ visible }: { visible: boolean }) {
   const groupRef = useRef<THREE.Group>(null);
@@ -62,6 +69,175 @@ function GrabBeacon({ visible }: { visible: boolean }) {
   );
 }
 
+const BATTERY_SPARK_COUNT = 8;
+
+function BatterySparks({
+  seed,
+  burstSignalRef,
+  itemId,
+}: {
+  seed: number;
+  burstSignalRef: React.MutableRefObject<number>;
+  itemId: string;
+}) {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  const mat = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: '#ffe66d',
+        emissive: '#ff9b21',
+        emissiveIntensity: 2.2,
+        roughness: 0.2,
+        metalness: 0.1,
+      }),
+    []
+  );
+  const sparks = useMemo(
+    () =>
+      Array.from({ length: BATTERY_SPARK_COUNT }, () => ({
+        age: 1,
+        life: 0.25,
+        pos: new THREE.Vector3(),
+        vel: new THREE.Vector3(),
+      })),
+    []
+  );
+  const timerRef = useRef((seed % 10) * 0.17);
+  const lastSignalRef = useRef(0);
+
+  useEffect(() => () => mat.dispose(), [mat]);
+
+  useFrame((_, rawDelta) => {
+    const mesh = meshRef.current;
+    if (!mesh || gameStore.getState().inventorySlots.some((item) => item?.id === itemId)) return;
+    const dt = Math.min(rawDelta, 0.05);
+    timerRef.current -= dt;
+    const triggered = burstSignalRef.current !== lastSignalRef.current;
+    if (triggered || timerRef.current <= 0) {
+      lastSignalRef.current = burstSignalRef.current;
+      timerRef.current = 0.9 + Math.random() * 1.4;
+      const terminalX = Math.random() < 0.5 ? -0.14 : 0.14;
+      for (const s of sparks) {
+        s.age = 0;
+        s.life = 0.16 + Math.random() * 0.18;
+        s.pos.set(terminalX + (Math.random() - 0.5) * 0.04, 0.24, -0.085 + (Math.random() - 0.5) * 0.04);
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 0.7 + Math.random() * 1.5;
+        s.vel.set(Math.cos(angle) * speed, 1.1 + Math.random() * 1.4, Math.sin(angle) * speed);
+      }
+    }
+    for (let i = 0; i < BATTERY_SPARK_COUNT; i++) {
+      const s = sparks[i];
+      if (s.age >= s.life) {
+        dummy.scale.setScalar(0);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(i, dummy.matrix);
+        continue;
+      }
+      s.age += dt;
+      s.vel.y -= 7.5 * dt;
+      s.pos.addScaledVector(s.vel, dt);
+      const t = 1 - s.age / s.life;
+      dummy.position.copy(s.pos);
+      dummy.scale.setScalar(0.022 * t);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+  });
+
+  return (
+    <instancedMesh ref={meshRef} args={[undefined, undefined, BATTERY_SPARK_COUNT]} frustumCulled={false}>
+      <boxGeometry args={[1, 1, 1]} />
+      <primitive object={mat} attach="material" />
+    </instancedMesh>
+  );
+}
+
+function FanBlades({ id, bladeMat, hubMat }: { id: string; bladeMat: THREE.Material; hubMat: THREE.Material }) {
+  const rotorRef = useRef<THREE.Group>(null);
+  useFrame((_, rawDelta) => {
+    const rotor = rotorRef.current;
+    if (!rotor) return;
+    const dt = Math.min(rawDelta, 0.05);
+    const active = Math.abs(getPartLogicOutput(id)) > 0.05;
+    rotor.rotation.y += (active ? 22 : 2.2) * dt;
+  });
+  return (
+    <group ref={rotorRef}>
+      <mesh castShadow material={hubMat}>
+        <cylinderGeometry args={[0.055, 0.065, 0.14, 10]} />
+      </mesh>
+      {[0, 1, 2, 3].map((idx) => (
+        <group key={idx} rotation={[0, (idx * Math.PI) / 2, 0]}>
+          <mesh castShadow material={bladeMat} position={[0.125, 0, 0]} rotation={[0.42, 0, 0]}>
+            <boxGeometry args={[0.18, 0.018, 0.068]} />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+function GyroVisual({
+  baseMat,
+  brassMat,
+  tealMat,
+}: {
+  baseMat: THREE.Material;
+  brassMat: THREE.Material;
+  tealMat: THREE.Material;
+}) {
+  const outerRingRef = useRef<THREE.Mesh>(null);
+  const innerRingRef = useRef<THREE.Mesh>(null);
+  const coreMat = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: '#ffe066',
+        emissive: '#ffaa1d',
+        emissiveIntensity: 1.4,
+        roughness: 0.25,
+        metalness: 0.2,
+      }),
+    []
+  );
+
+  useEffect(() => () => coreMat.dispose(), [coreMat]);
+
+  useFrame((_, rawDelta) => {
+    const dt = Math.min(rawDelta, 0.05);
+    if (outerRingRef.current) outerRingRef.current.rotation.y += 1.8 * dt;
+    if (innerRingRef.current) {
+      innerRingRef.current.rotation.x += 2.7 * dt;
+      innerRingRef.current.rotation.z += 1.4 * dt;
+    }
+  });
+
+  return (
+    <group>
+      <mesh castShadow receiveShadow material={baseMat} position={[0, -0.15, 0]}>
+        <boxGeometry args={[0.36, 0.08, 0.36]} />
+      </mesh>
+      <mesh castShadow material={baseMat} position={[-0.14, 0, 0]}>
+        <boxGeometry args={[0.05, 0.28, 0.06]} />
+      </mesh>
+      <mesh castShadow material={baseMat} position={[0.14, 0, 0]}>
+        <boxGeometry args={[0.05, 0.28, 0.06]} />
+      </mesh>
+      <mesh ref={outerRingRef} castShadow material={brassMat} position={[0, 0.02, 0]}>
+        <torusGeometry args={[0.145, 0.022, 8, 22]} />
+      </mesh>
+      <mesh ref={innerRingRef} castShadow material={tealMat} position={[0, 0.02, 0]} rotation={[Math.PI / 3, 0, 0]}>
+        <torusGeometry args={[0.105, 0.02, 8, 20]} />
+      </mesh>
+      <mesh material={coreMat} position={[0, 0.02, 0]}>
+        <sphereGeometry args={[0.055, 12, 10]} />
+      </mesh>
+    </group>
+  );
+}
+
 const PHYSICS_PROPS: Record<
   GrabbableKind,
   {
@@ -74,7 +250,7 @@ const PHYSICS_PROPS: Record<
 > = {
   // Cajas: pesadas, fricción alta, casi sin rebote para apilarse con estabilidad
   crate: {
-    mass: 6.0,
+    mass: 14.0,
     linearDamping: 0.9,
     angularDamping: 1.6,
     restitution: 0.03,
@@ -84,8 +260,8 @@ const PHYSICS_PROPS: Record<
   wheel: {
     mass: 3.4,
     linearDamping: 0.22,
-    angularDamping: 0.15,
-    restitution: 0.36,
+    angularDamping: 0.25,
+    restitution: 0.14,
     friction: 0.95,
   },
   // Bidones: cilíndricos altos, fáciles de tumbar y rodar de costado
@@ -104,20 +280,56 @@ const PHYSICS_PROPS: Record<
     restitution: 0.08,
     friction: 1.0,
   },
+  battery: { mass: 4.2, linearDamping: 0.75, angularDamping: 1.1, restitution: 0.08, friction: 1.0 },
+  woodBarrel: { mass: 6, linearDamping: 0.5, angularDamping: 0.35, restitution: 0.09, friction: 0.82 },
+  wing: { mass: 2.8, linearDamping: 0.12, angularDamping: 0.8, restitution: 0.05, friction: 0.7 },
+  headlight: { mass: 2.0, linearDamping: 0.65, angularDamping: 1.0, restitution: 0.08, friction: 0.9 },
+  seat: { mass: 3.6, linearDamping: 0.7, angularDamping: 1.1, restitution: 0.06, friction: 0.95 },
+  thruster: { mass: 3.8, linearDamping: 0.18, angularDamping: 0.45, restitution: 0.1, friction: 0.85 },
+  chassis: { mass: 12, linearDamping: 0.75, angularDamping: 1.1, restitution: 0.06, friction: 0.9 },
+  cargoRack: { mass: 4.5, linearDamping: 0.7, angularDamping: 1.0, restitution: 0.08, friction: 0.9 },
+  timerBox: { mass: 2.2, linearDamping: 0.7, angularDamping: 1.0, restitution: 0.05, friction: 0.95 },
+  switchBox: { mass: 2.0, linearDamping: 0.7, angularDamping: 1.0, restitution: 0.05, friction: 0.95 },
+  logicAnd: { mass: 2.1, linearDamping: 0.7, angularDamping: 1.0, restitution: 0.05, friction: 0.95 },
+  magnet: { mass: 3.6, linearDamping: 0.65, angularDamping: 1.0, restitution: 0.06, friction: 0.95 },
+  spring: { mass: 2.6, linearDamping: 0.55, angularDamping: 0.9, restitution: 0.35, friction: 0.85 },
+  balloon: { mass: 0.7, linearDamping: 0.85, angularDamping: 1.4, restitution: 0.25, friction: 0.45 },
+  fan: { mass: 3.0, linearDamping: 0.35, angularDamping: 0.7, restitution: 0.08, friction: 0.85 },
+  horn: { mass: 2.2, linearDamping: 0.65, angularDamping: 0.95, restitution: 0.08, friction: 0.9 },
+  gyro: { mass: 2.6, linearDamping: 0.35, angularDamping: 1.6, restitution: 0.08, friction: 0.9 },
 };
+
+function PropVisual({ kind, fallback, scale = 1 }: {
+  kind: GrabbableKind;
+  fallback: React.ReactNode;
+  scale?: number | [number, number, number];
+}) {
+  const url = PROP_MODEL_URLS[kind];
+  if (USE_LEGACY_PROP_VISUALS || !url) return fallback;
+  return (
+    <Suspense fallback={fallback}>
+      <group scale={scale}><PropModel url={url} /></group>
+    </Suspense>
+  );
+}
 
 function GrabbableItem({
   id,
   kind,
   position,
-  rotation = [0, 0, 0],
+  rotation = UNROTATED,
   resetSignal,
 }: SingleGrabbableProps) {
+  const { rapier } = useRapier();
   const bodyRef = useRef<RapierRigidBody>(null);
+  const appliedSpawn = useRef<{ body: RapierRigidBody; key: string } | null>(null);
   const colliderRef = useRef<RapierCollider>(null);
   const visualGroupRef = useRef<THREE.Group>(null);
   const highlightGroupRef = useRef<THREE.Group>(null);
+  const cyanGlowRef = useRef<THREE.Group>(null);
   const beaconHolderRef = useRef<THREE.Group>(null);
+  const sparkBurstRef = useRef(0);
+  const idSeed = useMemo(() => id.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0), [id]);
   const textures = useMemo(() => getSharedTextures(), []);
 
   const materials = useMemo(
@@ -203,7 +415,7 @@ function GrabbableItem({
       getVisualGroup: () => visualGroupRef.current,
       getWorldPos: (out: THREE.Vector3) => {
         const b = bodyRef.current;
-        if (!b) return false;
+        if (!b || !b.isValid()) return false;
         const t = b.translation();
         posVec.set(t.x, t.y, t.z);
         out.copy(posVec);
@@ -219,8 +431,12 @@ function GrabbableItem({
     const b = bodyRef.current;
     const c = colliderRef.current;
     if (!b) return;
+    const key = [resetSignal, ...position, ...rotation].join(',');
+    if (appliedSpawn.current?.body === b && appliedSpawn.current.key === key) return;
+    appliedSpawn.current = { body: b, key };
     const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(...rotation));
     b.setEnabled(true);
+    b.setBodyType(rapier.RigidBodyType.Dynamic, true);
     b.setTranslation({ x: position[0], y: position[1], z: position[2] }, true);
     b.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true);
     b.setLinvel({ x: 0, y: 0, z: 0 }, true);
@@ -233,13 +449,29 @@ function GrabbableItem({
       visualGroupRef.current.position.set(position[0], position[1], position[2]);
       visualGroupRef.current.quaternion.copy(q);
     }
-  }, [resetSignal, position, rotation]);
+  }, [resetSignal, position, rotation, rapier]);
 
   useFrame((state) => {
     const isCarried = grabbableRegistry.carriedId === id;
-    const isTarget = grabbableRegistry.highlightedId === id && grabbableRegistry.carriedId === null;
+    const isStored = gameStore.getState().inventorySlots.some((item) => item?.id === id);
+    const isTarget = !isStored && grabbableRegistry.highlightedId === id && grabbableRegistry.carriedId === null;
+
+    if (!isCarried && !isStored && bodyRef.current?.isValid() && bodyRef.current.isEnabled() && bodyRef.current.isDynamic()) {
+      const b = bodyRef.current;
+      const t = b.translation();
+      if (t.y > 65) {
+        const lv = b.linvel();
+        b.setTranslation({ x: t.x, y: 64, z: t.z }, true);
+        if (lv.y > 0) b.setLinvel({ x: lv.x, y: 0, z: lv.z }, true);
+      } else if (t.y < -10 || Math.abs(t.x) > 150 || Math.abs(t.z) > 150 || !Number.isFinite(t.x) || !Number.isFinite(t.y) || !Number.isFinite(t.z)) {
+        b.setTranslation({ x: position[0], y: position[1], z: position[2] }, true);
+        b.setLinvel({ x: 0, y: 0, z: 0 }, true);
+        b.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      }
+    }
 
     if (visualGroupRef.current) {
+      visualGroupRef.current.visible = !isStored;
       if (isCarried) {
         visualGroupRef.current.position.copy(grabbableRegistry.carriedVisualPos);
         visualGroupRef.current.quaternion.copy(grabbableRegistry.carriedVisualQuat);
@@ -262,6 +494,19 @@ function GrabbableItem({
       if (isTarget) {
         const pulse = 1 + Math.sin(state.clock.elapsedTime * 7) * 0.06;
         highlightGroupRef.current.scale.set(pulse, 1, pulse);
+      }
+    }
+
+    if (cyanGlowRef.current) {
+      const hud = gameStore.getState();
+      const isWiringTarget =
+        hud.pendingWireFrom === id ||
+        (hud.wrenchAiming && hud.pendingWireFrom !== null && grabbableRegistry.highlightedId === id);
+      const isCyanActive = !isStored && (hud.rotatingTargetId === id || isWiringTarget);
+      cyanGlowRef.current.visible = isCyanActive;
+      if (isCyanActive) {
+        const pulse = 1 + Math.sin(state.clock.elapsedTime * 10) * 0.1;
+        cyanGlowRef.current.scale.set(pulse, 1, pulse);
       }
     }
   });
@@ -333,27 +578,44 @@ function GrabbableItem({
         colliders={false}
         userData={{ ecctrl: { excludeRay: true }, grabbableId: id }}
         name={`grabbable-${id}`}
+        onCollisionEnter={() => {
+          if (kind === 'battery' && bodyRef.current) {
+            const v = bodyRef.current.linvel();
+            if (Math.hypot(v.x, v.y, v.z) > 0.65) {
+              sparkBurstRef.current += 1;
+            }
+          }
+        }}
       >
         {kind === 'crate' && <CuboidCollider ref={colliderRef} args={[0.32, 0.3, 0.32]} />}
+        {(kind === 'timerBox' || kind === 'switchBox' || kind === 'logicAnd') && (
+          <CuboidCollider ref={colliderRef} args={[0.18, 0.14, 0.18]} />
+        )}
+        {kind === 'magnet' && <CuboidCollider ref={colliderRef} args={[0.22, 0.16, 0.22]} />}
         {kind === 'wheel' && (
           <CylinderCollider ref={colliderRef} args={[0.14, 0.38]} rotation={[0, 0, Math.PI / 2]} />
         )}
         {kind === 'canister' && <CylinderCollider ref={colliderRef} args={[0.38, 0.22]} />}
-        {kind === 'part' && <CuboidCollider ref={colliderRef} args={[0.27, 0.23, 0.23]} />}
+        {kind === 'woodBarrel' && <CylinderCollider ref={colliderRef} args={[0.48, 0.36]} />}
+        {(kind === 'part' || kind === 'battery') && <CuboidCollider ref={colliderRef} args={[0.27, 0.23, 0.23]} />}
+        {kind === 'wing' && <CuboidCollider ref={colliderRef} args={[0.55, 0.07, 0.24]} />}
+        {kind === 'headlight' && <CuboidCollider ref={colliderRef} args={[0.15, 0.17, 0.16]} />}
+        {kind === 'seat' && <CuboidCollider ref={colliderRef} args={[0.25, 0.31, 0.26]} />}
+        {kind === 'thruster' && <CylinderCollider ref={colliderRef} args={[0.34, 0.16]} />}
+        {kind === 'chassis' && <CuboidCollider ref={colliderRef} args={[0.55, 0.08, 0.95]} />}
+        {kind === 'cargoRack' && <CuboidCollider ref={colliderRef} args={[0.46, 0.12, 0.36]} />}
+        {kind === 'spring' && <CylinderCollider ref={colliderRef} args={[0.22, 0.18]} />}
+        {kind === 'balloon' && <CylinderCollider ref={colliderRef} args={[0.34, 0.28]} />}
+        {kind === 'fan' && <CylinderCollider ref={colliderRef} args={[0.16, 0.26]} />}
+        {kind === 'horn' && <CuboidCollider ref={colliderRef} args={[0.18, 0.16, 0.24]} />}
+        {kind === 'gyro' && <CuboidCollider ref={colliderRef} args={[0.2, 0.2, 0.2]} />}
       </RigidBody>
 
       {/* Decoupled visual mesh: syncs to Rapier body when free, and directly to carryAnchor when carried */}
       <group ref={visualGroupRef} position={position} rotation={rotation}>
-        {kind === 'crate' &&
-          (USE_LEGACY_PROP_VISUALS ? (
-            legacyCrate
-          ) : (
-            <Suspense fallback={legacyCrate}>
-              <PropModel url={PROP_MODEL_URLS.crate} />
-            </Suspense>
-          ))}
+        {kind === 'crate' && <PropVisual kind={kind} fallback={legacyCrate} />}
 
-        {kind === 'wheel' && (
+        {kind === 'wheel' && <PropVisual kind={kind} scale={0.98} fallback={
           <group>
             <mesh castShadow receiveShadow material={materials.rubber} rotation={[0, 0, Math.PI / 2]}>
               <cylinderGeometry args={[0.38, 0.38, 0.26, 20]} />
@@ -378,18 +640,11 @@ function GrabbableItem({
               <cylinderGeometry args={[0.075, 0.075, 0.31, 10]} />
             </mesh>
           </group>
-        )}
+        } />}
 
-        {kind === 'canister' &&
-          (USE_LEGACY_PROP_VISUALS ? (
-            legacyCanister
-          ) : (
-            <Suspense fallback={legacyCanister}>
-              <PropModel url={PROP_MODEL_URLS.canister} />
-            </Suspense>
-          ))}
+        {kind === 'canister' && <PropVisual kind={kind} scale={[0.93, 1, 0.96]} fallback={legacyCanister} />}
 
-        {kind === 'part' && (
+        {kind === 'part' && <PropVisual kind={kind} scale={0.84} fallback={
           <group>
             <mesh castShadow receiveShadow material={materials.redPaint}>
               <boxGeometry args={[0.52, 0.42, 0.44]} />
@@ -407,15 +662,262 @@ function GrabbableItem({
               <boxGeometry args={[0.36, 0.2, 0.04]} />
             </mesh>
           </group>
+        } />}
+        {kind === 'battery' && (
+          <>
+            <PropVisual kind={kind} fallback={
+              <mesh castShadow receiveShadow material={materials.bracket}>
+                <boxGeometry args={[0.54, 0.46, 0.46]} />
+              </mesh>
+            } />
+            <BatterySparks seed={idSeed} burstSignalRef={sparkBurstRef} itemId={id} />
+          </>
         )}
-
+        {kind === 'woodBarrel' && <PropVisual kind={kind} scale={[0.98, 1, 0.98]} fallback={
+          <mesh castShadow receiveShadow material={materials.woodTrim}>
+            <cylinderGeometry args={[0.36, 0.36, 0.96, 16]} />
+          </mesh>
+        } />}
+        {kind === 'wing' && <PropVisual kind={kind} fallback={
+          <mesh castShadow receiveShadow material={materials.canisterTeal}>
+            <boxGeometry args={[1.1, 0.12, 0.46]} />
+          </mesh>
+        } />}
+        {kind === 'headlight' && <PropVisual kind={kind} fallback={
+          <mesh castShadow receiveShadow material={materials.rimYellow}>
+            <cylinderGeometry args={[0.14, 0.14, 0.24, 14]} />
+          </mesh>
+        } />}
+        {kind === 'seat' && <PropVisual kind={kind} fallback={
+          <mesh castShadow receiveShadow material={materials.redPaint}>
+            <boxGeometry args={[0.48, 0.58, 0.48]} />
+          </mesh>
+        } />}
+        {kind === 'thruster' && <PropVisual kind={kind} fallback={
+          <mesh castShadow receiveShadow material={materials.redPaint}>
+            <cylinderGeometry args={[0.16, 0.16, 0.66, 14]} />
+          </mesh>
+        } />}
+        {kind === 'timerBox' && <PropVisual kind={kind} fallback={
+          <group>
+            <mesh castShadow receiveShadow material={materials.bracket}>
+              <boxGeometry args={[0.36, 0.24, 0.36]} />
+            </mesh>
+            <mesh castShadow material={materials.rimYellow} position={[0, 0.14, 0]}>
+              <cylinderGeometry args={[0.1, 0.12, 0.06, 12]} />
+            </mesh>
+          </group>
+        } />}
+        {kind === 'switchBox' && <PropVisual kind={kind} fallback={
+          <group>
+            <mesh castShadow receiveShadow material={materials.bracket}>
+              <boxGeometry args={[0.36, 0.22, 0.36]} />
+            </mesh>
+            <mesh castShadow material={materials.redPaint} position={[0, 0.16, 0]} rotation={[0.35, 0, 0]}>
+              <boxGeometry args={[0.06, 0.18, 0.06]} />
+            </mesh>
+          </group>
+        } />}
+        {kind === 'logicAnd' && <PropVisual kind={kind} fallback={
+          <group>
+            <mesh castShadow receiveShadow material={materials.canisterTeal}>
+              <boxGeometry args={[0.36, 0.22, 0.36]} />
+            </mesh>
+            <mesh castShadow material={materials.brass} position={[-0.08, 0.13, 0]}>
+              <cylinderGeometry args={[0.04, 0.04, 0.05, 10]} />
+            </mesh>
+            <mesh castShadow material={materials.brass} position={[0.08, 0.13, 0]}>
+              <cylinderGeometry args={[0.04, 0.04, 0.05, 10]} />
+            </mesh>
+          </group>
+        } />}
+        {kind === 'magnet' && <PropVisual kind={kind} fallback={
+          <group>
+            <mesh castShadow receiveShadow material={materials.redPaint}>
+              <boxGeometry args={[0.42, 0.24, 0.42]} />
+            </mesh>
+            <mesh castShadow material={materials.copper} position={[0, 0.14, 0]}>
+              <cylinderGeometry args={[0.16, 0.18, 0.08, 16]} />
+            </mesh>
+          </group>
+        } />}
+        {kind === 'chassis' && <PropVisual kind={kind} scale={[0.92, 1, 0.94]} fallback={
+          <group>
+            <mesh castShadow receiveShadow material={materials.bracket}>
+              <boxGeometry args={[0.96, 0.09, 1.88]} />
+            </mesh>
+            <mesh castShadow receiveShadow material={materials.rimYellow} position={[-0.49, 0.01, 0]}>
+              <boxGeometry args={[0.11, 0.12, 1.9]} />
+            </mesh>
+            <mesh castShadow receiveShadow material={materials.rimYellow} position={[0.49, 0.01, 0]}>
+              <boxGeometry args={[0.11, 0.12, 1.9]} />
+            </mesh>
+            <mesh castShadow material={materials.canisterTeal} position={[0, -0.02, 0.86]}>
+              <boxGeometry args={[1.08, 0.1, 0.16]} />
+            </mesh>
+            <mesh castShadow material={materials.canisterTeal} position={[0, -0.02, -0.86]}>
+              <boxGeometry args={[1.08, 0.1, 0.16]} />
+            </mesh>
+          </group>
+        } />}
+        {kind === 'cargoRack' && <PropVisual kind={kind} fallback={
+          <group>
+            <mesh castShadow receiveShadow material={materials.bracket} position={[0, -0.07, 0]}>
+              <boxGeometry args={[0.9, 0.06, 0.7]} />
+            </mesh>
+            <mesh castShadow material={materials.rimYellow} position={[-0.42, 0.03, 0]}>
+              <boxGeometry args={[0.06, 0.16, 0.7]} />
+            </mesh>
+            <mesh castShadow material={materials.rimYellow} position={[0.42, 0.03, 0]}>
+              <boxGeometry args={[0.06, 0.16, 0.7]} />
+            </mesh>
+            <mesh castShadow material={materials.rimYellow} position={[0, 0.03, -0.32]}>
+              <boxGeometry args={[0.9, 0.16, 0.06]} />
+            </mesh>
+          </group>
+        } />}
+        {kind === 'spring' && <PropVisual kind={kind} fallback={
+          <group>
+            {/* Base plate */}
+            <mesh castShadow receiveShadow material={materials.bracket} position={[0, -0.19, 0]}>
+              <cylinderGeometry args={[0.18, 0.19, 0.06, 16]} />
+            </mesh>
+            {/* Central guide rod */}
+            <mesh castShadow material={materials.steel} position={[0, 0, 0]}>
+              <cylinderGeometry args={[0.045, 0.045, 0.38, 10]} />
+            </mesh>
+            {/* Coiled brass/steel rings */}
+            {[-0.12, -0.04, 0.04, 0.12].map((y, idx) => (
+              <mesh
+                key={idx}
+                castShadow
+                material={idx % 2 === 0 ? materials.brass : materials.steel}
+                position={[0, y, 0]}
+                rotation={[Math.PI / 2, 0, 0]}
+              >
+                <torusGeometry args={[0.135, 0.026, 8, 18]} />
+              </mesh>
+            ))}
+            {/* Red jump cap */}
+            <mesh castShadow receiveShadow material={materials.redPaint} position={[0, 0.19, 0]}>
+              <cylinderGeometry args={[0.19, 0.17, 0.065, 16]} />
+            </mesh>
+            <mesh castShadow material={materials.rimYellow} position={[0, 0.228, 0]}>
+              <cylinderGeometry args={[0.1, 0.12, 0.018, 14]} />
+            </mesh>
+          </group>
+        } />}
+        {kind === 'balloon' && <PropVisual kind={kind} fallback={
+          <group>
+            {/* Main rounded balloon sphere */}
+            <mesh castShadow receiveShadow material={materials.redPaint} position={[0, 0.12, 0]} scale={[1, 1.14, 1]}>
+              <sphereGeometry args={[0.27, 18, 14]} />
+            </mesh>
+            {/* Bright yellow equatorial stripe */}
+            <mesh castShadow material={materials.rimYellow} position={[0, 0.12, 0]} rotation={[Math.PI / 2, 0, 0]}>
+              <torusGeometry args={[0.268, 0.032, 8, 22]} />
+            </mesh>
+            {/* Balloon knot */}
+            <mesh castShadow material={materials.redPaint} position={[0, -0.19, 0]} rotation={[Math.PI, 0, 0]}>
+              <coneGeometry args={[0.055, 0.08, 10]} />
+            </mesh>
+            {/* Basket tether */}
+            <mesh castShadow material={materials.woodTrim} position={[0, -0.27, 0]}>
+              <cylinderGeometry args={[0.014, 0.014, 0.14, 8]} />
+            </mesh>
+            {/* Mini wooden basket / brass collar */}
+            <mesh castShadow receiveShadow material={materials.brass} position={[0, -0.32, 0]}>
+              <cylinderGeometry args={[0.085, 0.065, 0.07, 12]} />
+            </mesh>
+          </group>
+        } />}
+        {kind === 'fan' && <PropVisual kind={kind} fallback={
+          <group>
+            {/* Teal circular duct */}
+            <mesh castShadow receiveShadow material={materials.canisterTeal}>
+              <cylinderGeometry args={[0.26, 0.26, 0.24, 20, 1, true]} />
+            </mesh>
+            {/* Top and bottom brass duct rings */}
+            <mesh castShadow material={materials.brass} position={[0, 0.12, 0]} rotation={[Math.PI / 2, 0, 0]}>
+              <torusGeometry args={[0.255, 0.026, 8, 22]} />
+            </mesh>
+            <mesh castShadow material={materials.brass} position={[0, -0.12, 0]} rotation={[Math.PI / 2, 0, 0]}>
+              <torusGeometry args={[0.255, 0.026, 8, 22]} />
+            </mesh>
+            {/* Mounting cross struts */}
+            <mesh castShadow material={materials.bracket} position={[0, -0.09, 0]}>
+              <boxGeometry args={[0.48, 0.025, 0.04]} />
+            </mesh>
+            <mesh castShadow material={materials.bracket} position={[0, -0.09, 0]}>
+              <boxGeometry args={[0.04, 0.025, 0.48]} />
+            </mesh>
+            {/* Angled spinning blades */}
+            <FanBlades id={id} bladeMat={materials.rimYellow} hubMat={materials.brass} />
+          </group>
+        } />}
+        {kind === 'horn' && <PropVisual kind={kind} fallback={
+          <group>
+            {/* Steel mounting base */}
+            <mesh castShadow receiveShadow material={materials.bracket} position={[0, -0.11, -0.02]}>
+              <boxGeometry args={[0.16, 0.08, 0.22]} />
+            </mesh>
+            {/* Brass megaphone cone pointing +Z */}
+            <mesh castShadow receiveShadow material={materials.brass} position={[0, 0.02, 0.06]} rotation={[-Math.PI / 2, 0, 0]}>
+              <cylinderGeometry args={[0.16, 0.045, 0.3, 16]} />
+            </mesh>
+            {/* Flared brass rim */}
+            <mesh castShadow material={materials.rimYellow} position={[0, 0.02, 0.21]}>
+              <torusGeometry args={[0.158, 0.022, 8, 18]} />
+            </mesh>
+            {/* Brass neck */}
+            <mesh castShadow material={materials.copper} position={[0, 0.02, -0.11]} rotation={[Math.PI / 2, 0, 0]}>
+              <cylinderGeometry args={[0.036, 0.036, 0.08, 10]} />
+            </mesh>
+            {/* Red rubber squeeze bulb */}
+            <mesh castShadow receiveShadow material={materials.redPaint} position={[0, 0.02, -0.19]} scale={[1, 1, 1.25]}>
+              <sphereGeometry args={[0.085, 14, 12]} />
+            </mesh>
+          </group>
+        } />}
+        {kind === 'gyro' && <PropVisual kind={kind} fallback={
+          <GyroVisual
+            baseMat={materials.bracket}
+            brassMat={materials.brass}
+            tealMat={materials.canisterTeal}
+          />
+        } />}
         <group ref={highlightGroupRef} visible={false} position={[0, -0.28, 0]}>
           <mesh material={materials.highlightRing} rotation={[-Math.PI / 2, 0, 0]}>
             <ringGeometry args={[0.42, 0.5, 24]} />
           </mesh>
         </group>
+
+        <group ref={cyanGlowRef} visible={false}>
+          <mesh position={[0, 0.05, 0]}>
+            <sphereGeometry args={[0.42, 14, 10]} />
+            <meshBasicMaterial
+              color="#5ce1ff"
+              transparent
+              opacity={0.18}
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+            />
+          </mesh>
+          <mesh position={[0, -0.26, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[0.36, 0.54, 24]} />
+            <meshBasicMaterial
+              color="#5ce1ff"
+              transparent
+              opacity={0.85}
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+        </group>
       </group>
 
+      <PropEffect id={id} kind={kind} />
       <group ref={beaconHolderRef} visible={false}>
         <GrabBeacon visible />
       </group>
@@ -423,31 +925,62 @@ function GrabbableItem({
   );
 }
 
+const GRABBABLE_SPAWNS: Omit<SingleGrabbableProps, 'resetSignal'>[] = [
+  { id: 'crate-1', kind: 'crate', position: [-0.4, 0.35, 1.4] },
+  { id: 'crate-2', kind: 'crate', position: [-0.4, 0.96, 1.4] },
+  { id: 'crate-3', kind: 'crate', position: [6.1, 1.45, 2.2] },
+  { id: 'wheel-1', kind: 'wheel', position: [1.25, 0.4, 2.1], rotation: [0, 0.3, 0] },
+  { id: 'wheel-2', kind: 'wheel', position: [-3.3, 0.4, -4.4], rotation: [0, -0.5, 0] },
+  { id: 'canister-1', kind: 'canister', position: [-1.55, 0.4, -3.2] },
+  { id: 'canister-2', kind: 'canister', position: [-2.9, 0.4, 3.3] },
+  { id: 'part-1', kind: 'part', position: [-4.2, 1.22, -6.1] },
+  { id: 'crate-4', kind: 'crate', position: [-15.2, 0.35, 2.2] },
+  { id: 'crate-5', kind: 'crate', position: [-15.9, 0.35, 2.9] },
+  { id: 'wheel-3', kind: 'wheel', position: [-13.2, 0.4, 5.2], rotation: [0, 0.8, 0] },
+  { id: 'canister-3', kind: 'canister', position: [-14.5, 0.4, -0.6] },
+  { id: 'part-2', kind: 'part', position: [-16.8, 0.78, -2.5] },
+  { id: 'wheel-4', kind: 'wheel', position: [0.45, 0.4, 7.1], rotation: [0, 0.2, 0] },
+  { id: 'canister-4', kind: 'canister', position: [-2.55, 0.4, 7.05] },
+  { id: 'part-3', kind: 'part', position: [-3.85, 0.26, 7.05] },
+  { id: 'battery-1', kind: 'battery', position: [-1.18, 0.25, 6.95] },
+  { id: 'wood-barrel-1', kind: 'woodBarrel', position: [-4.42, 0.5, 6.35] },
+  { id: 'wing-1', kind: 'wing', position: [4.2, 0.15, 4.6] },
+  { id: 'wing-2', kind: 'wing', position: [4.2, 0.15, 5.4] },
+  { id: 'headlight-1', kind: 'headlight', position: [3.6, 0.22, 6.8] },
+  { id: 'seat-1', kind: 'seat', position: [2.8, 0.36, 3.6] },
+  { id: 'thruster-1', kind: 'thruster', position: [4.8, 0.4, 6.5] },
+  { id: 'chassis-1', kind: 'chassis', position: [5.4, 0.25, 3.2] },
+  { id: 'rack-1', kind: 'cargoRack', position: [4, 0.25, 3.25] },
+  { id: 'timer-1', kind: 'timerBox', position: [-0.8, 0.2, 5.2] },
+  { id: 'switch-1', kind: 'switchBox', position: [-1.4, 0.2, 5.2] },
+  { id: 'and-1', kind: 'logicAnd', position: [-2.0, 0.2, 5.2] },
+  { id: 'magnet-1', kind: 'magnet', position: [5.4, 0.22, 5.2] },
+  { id: 'spring-1', kind: 'spring', position: [3.2, 0.3, 4.4] },
+  { id: 'spring-2', kind: 'spring', position: [3.8, 0.3, 4.4] },
+  { id: 'balloon-1', kind: 'balloon', position: [1.0, 0.5, 4.2] },
+  { id: 'balloon-2', kind: 'balloon', position: [1.6, 0.5, 4.2] },
+  { id: 'fan-1', kind: 'fan', position: [4.6, 0.3, 4.8] },
+  { id: 'fan-2', kind: 'fan', position: [4.2, 0.3, 6.2] },
+  { id: 'horn-1', kind: 'horn', position: [2.4, 0.3, 4.2] },
+  { id: 'gyro-1', kind: 'gyro', position: [0.15, 0.28, 4.8] },
+  { id: 'thruster-2', kind: 'thruster', position: [5.35, 0.4, 6.5] },
+  // Mini 3-barrel bowling pyramid near [3.0, 0.5, 26.5]
+  { id: BOWLING_BARREL_IDS[0], kind: 'woodBarrel', position: [2.58, 0.5, 26.5] },
+  { id: BOWLING_BARREL_IDS[1], kind: 'woodBarrel', position: [3.42, 0.5, 26.5] },
+  { id: BOWLING_BARREL_IDS[2], kind: 'woodBarrel', position: [3.0, 1.48, 26.5] },
+];
+
 export function GrabbableProps({ resetSignal }: { resetSignal: number }) {
+  const spawnedProps = useGameStore((s) => s.spawnedProps);
+
   return (
     <group name="grabbable-props">
-      {/* Cajas apilables cerca del taller y muelle de carga */}
-      <GrabbableItem id="crate-1" kind="crate" position={[-0.4, 0.35, 1.4]} resetSignal={resetSignal} />
-      <GrabbableItem id="crate-2" kind="crate" position={[-0.4, 0.96, 1.4]} resetSignal={resetSignal} />
-      <GrabbableItem id="crate-3" kind="crate" position={[6.1, 1.45, 2.2]} resetSignal={resetSignal} />
-
-      {/* Ruedas apoyadas en vertical listas para rodar */}
-      <GrabbableItem id="wheel-1" kind="wheel" position={[1.25, 0.4, 2.1]} rotation={[0, 0.3, 0]} resetSignal={resetSignal} />
-      <GrabbableItem id="wheel-2" kind="wheel" position={[-3.3, 0.4, -4.4]} rotation={[0, -0.5, 0]} resetSignal={resetSignal} />
-
-      {/* Bidones tumbables */}
-      <GrabbableItem id="canister-1" kind="canister" position={[-1.55, 0.4, -3.2]} resetSignal={resetSignal} />
-      <GrabbableItem id="canister-2" kind="canister" position={[-2.9, 0.4, 3.3]} resetSignal={resetSignal} />
-
-      {/* Pieza de repuesto */}
-      <GrabbableItem id="part-1" kind="part" position={[-4.2, 1.22, -6.1]} resetSignal={resetSignal} />
-
-      {/* Objetos adicionales en el Patio de Chatarra (Zona Oeste) */}
-      <GrabbableItem id="crate-4" kind="crate" position={[-15.2, 0.35, 2.2]} resetSignal={resetSignal} />
-      <GrabbableItem id="crate-5" kind="crate" position={[-15.9, 0.35, 2.9]} resetSignal={resetSignal} />
-      <GrabbableItem id="wheel-3" kind="wheel" position={[-13.2, 0.4, 5.2]} rotation={[0, 0.8, 0]} resetSignal={resetSignal} />
-      <GrabbableItem id="canister-3" kind="canister" position={[-14.5, 0.4, -0.6]} resetSignal={resetSignal} />
-      <GrabbableItem id="part-2" kind="part" position={[-16.8, 0.78, -2.5]} resetSignal={resetSignal} />
+      {GRABBABLE_SPAWNS.map((spawn) => (
+        <GrabbableItem key={spawn.id} {...spawn} resetSignal={resetSignal} />
+      ))}
+      {spawnedProps.map((item) => (
+        <GrabbableItem key={item.id} {...item} resetSignal={resetSignal} />
+      ))}
     </group>
   );
 }

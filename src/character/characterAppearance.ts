@@ -38,6 +38,7 @@ export interface CharacterAppearanceConfig {
   backpackStyle: BackpackStyle;
   beltToolStyle: BeltToolStyle;
   palette: CharacterPalette;
+  usePaletteForOutfit?: boolean;
 }
 
 /**

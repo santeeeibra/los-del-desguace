@@ -3,6 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { useRapier } from '@react-three/rapier';
 import * as THREE from 'three';
 import type { CameraTargetSource } from './ThirdPersonCamera';
+import { playerInput } from './playerInput';
 import { gameStore, useGameStore, type CameraViewMode } from '../state/gameStore';
 
 interface GameCameraRigProps {
@@ -99,6 +100,7 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
   const sideAxis = useRef(new THREE.Vector3());
   const desiredCamPos = useRef(new THREE.Vector3());
   const lookTarget = useRef(new THREE.Vector3());
+  const vehicleFwd = useRef(new THREE.Vector3());
 
   const dragPointerId = useRef<number | null>(null);
   const lastPointer = useRef({ x: 0, y: 0 });
@@ -158,10 +160,63 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
 
   useEffect(() => {
     const dom = gl.domElement;
+    let aimPointerId: number | null = null;
+    let leftTap: { id: number; x: number; y: number; time: number } | null = null;
+    let wasPointerLocked = document.pointerLockElement === dom;
+
+    const applyLookDelta = (dx: number, dy: number) => {
+      const mode = gameStore.getState().cameraMode;
+      const limits = mode === 'firstPerson' ? FIRST_PERSON_LIMITS : THIRD_PERSON_PRESETS[mode];
+      yawRef.current -= dx * limits.yawSens;
+      pitchRef.current = THREE.MathUtils.clamp(
+        pitchRef.current + dy * limits.pitchSens,
+        limits.minPitch,
+        limits.maxPitch
+      );
+    };
+
+    const onPointerLockChange = () => {
+      const locked = document.pointerLockElement === dom;
+      if (wasPointerLocked && !locked) {
+        playerInput.lastPointerLockExitAt = performance.now();
+      }
+      wasPointerLocked = locked;
+      gameStore.setPointerLocked(locked);
+      if (locked) {
+        dragPointerId.current = null;
+        leftTap = null;
+      }
+    };
 
     const onPointerDown = (e: PointerEvent) => {
       if (e.target !== dom) return;
       if (e.button !== 0 && e.button !== 2 && e.pointerType === 'mouse') return;
+      dom.focus({ preventScroll: true });
+      if (e.pointerType === 'mouse' && document.pointerLockElement === dom) {
+        if (e.button === 0 && !playerInput.menuOpen) {
+          playerInput.triggerInteract();
+          return;
+        }
+        if (e.button === 2 && gameStore.getState().wrenchEquipped) {
+          aimPointerId = e.pointerId;
+          gameStore.setWrenchAiming(true);
+          return;
+        }
+      }
+      if (e.pointerType === 'mouse' && e.button === 2 && gameStore.getState().wrenchEquipped) {
+        aimPointerId = e.pointerId;
+        gameStore.setWrenchAiming(true);
+      }
+      if (e.pointerType === 'mouse' && e.button === 0 && !playerInput.menuOpen) {
+        leftTap = { id: e.pointerId, x: e.clientX, y: e.clientY, time: performance.now() };
+        if (gameStore.getState().mouseLookMode === 'pointerLock' && document.pointerLockElement !== dom) {
+          try {
+            Promise.resolve(dom.requestPointerLock?.()).catch(() => {});
+          } catch {
+            // Fallback to drag if pointer lock is blocked
+          }
+        }
+      }
       if (dragPointerId.current !== null) return;
       dragPointerId.current = e.pointerId;
       lastPointer.current.x = e.clientX;
@@ -174,24 +229,39 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
     };
 
     const onPointerMove = (e: PointerEvent) => {
+      if (aimPointerId === e.pointerId && (e.buttons & 2) === 0) {
+        aimPointerId = null;
+        gameStore.setWrenchAiming(false);
+      }
+      if (document.pointerLockElement === dom) return;
       if (dragPointerId.current !== e.pointerId) return;
       const dx = e.clientX - lastPointer.current.x;
       const dy = e.clientY - lastPointer.current.y;
       lastPointer.current.x = e.clientX;
       lastPointer.current.y = e.clientY;
+      applyLookDelta(dx, dy);
+    };
 
-      const mode = gameStore.getState().cameraMode;
-      const limits = mode === 'firstPerson' ? FIRST_PERSON_LIMITS : THIRD_PERSON_PRESETS[mode];
-
-      yawRef.current -= dx * limits.yawSens;
-      pitchRef.current = THREE.MathUtils.clamp(
-        pitchRef.current + dy * limits.pitchSens,
-        limits.minPitch,
-        limits.maxPitch
-      );
+    const onMouseMove = (e: MouseEvent) => {
+      if (document.pointerLockElement !== dom || playerInput.menuOpen) return;
+      const dx = e.movementX;
+      const dy = e.movementY;
+      if (Math.abs(dx) > 180 || Math.abs(dy) > 180) return;
+      applyLookDelta(dx, dy);
     };
 
     const releaseDrag = (e: PointerEvent) => {
+      if (leftTap && leftTap.id === e.pointerId) {
+        const moved = Math.hypot(e.clientX - leftTap.x, e.clientY - leftTap.y);
+        if (moved < 6 && performance.now() - leftTap.time < 260 && gameStore.getState().wrenchAiming && !playerInput.menuOpen) {
+          playerInput.triggerInteract();
+        }
+        leftTap = null;
+      }
+      if (aimPointerId === e.pointerId) {
+        aimPointerId = null;
+        gameStore.setWrenchAiming(false);
+      }
       if (dragPointerId.current !== e.pointerId) return;
       dragPointerId.current = null;
       try {
@@ -234,13 +304,20 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
       if (e.code === 'KeyC') keyOrbit.current.right = false;
     };
     const onBlur = () => {
+      aimPointerId = null;
+      leftTap = null;
+      gameStore.setWrenchAiming(false);
+      gameStore.setPointerLocked(false);
       dragPointerId.current = null;
       keyOrbit.current.left = false;
       keyOrbit.current.right = false;
     };
 
+    document.addEventListener('pointerlockchange', onPointerLockChange);
     dom.addEventListener('pointerdown', onPointerDown);
+    dom.addEventListener('lostpointercapture', releaseDrag);
     window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('pointerup', releaseDrag);
     window.addEventListener('pointercancel', releaseDrag);
     dom.addEventListener('wheel', onWheel, { passive: false });
@@ -250,8 +327,13 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
     window.addEventListener('blur', onBlur);
 
     return () => {
+      if (aimPointerId !== null) gameStore.setWrenchAiming(false);
+      gameStore.setPointerLocked(false);
+      document.removeEventListener('pointerlockchange', onPointerLockChange);
       dom.removeEventListener('pointerdown', onPointerDown);
+      dom.removeEventListener('lostpointercapture', releaseDrag);
       window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('pointerup', releaseDrag);
       window.removeEventListener('pointercancel', releaseDrag);
       dom.removeEventListener('wheel', onWheel);
@@ -268,6 +350,24 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
     const dt = Math.min(rawDelta, 0.05);
     if (keyOrbit.current.left) yawRef.current += 1.65 * dt;
     if (keyOrbit.current.right) yawRef.current -= 1.65 * dt;
+
+    const targetSource = targetSourceRef.current;
+    // Al conducir, alinear suavemente la cámara detrás del vehículo para que ◀/▶ y W/S sean 100% intuitivos
+    if (
+      gameStore.getState().seated &&
+      dragPointerId.current === null &&
+      !keyOrbit.current.left &&
+      !keyOrbit.current.right &&
+      targetSource.getVehicleForward?.(vehicleFwd.current)
+    ) {
+      const fx = vehicleFwd.current.x;
+      const fz = vehicleFwd.current.z;
+      if (Math.hypot(fx, fz) > 0.05) {
+        const behindYaw = Math.atan2(-fx, -fz);
+        const diff = Math.atan2(Math.sin(behindYaw - yawRef.current), Math.cos(behindYaw - yawRef.current));
+        yawRef.current += diff * (1 - Math.exp(-5.5 * dt));
+      }
+    }
 
     if (appliedModeRef.current !== cameraMode && camera instanceof THREE.PerspectiveCamera) {
       appliedModeRef.current = cameraMode;
@@ -286,7 +386,6 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
       }
     }
 
-    const targetSource = targetSourceRef.current;
     if (!targetSource.getTargetPosition(rawTarget.current)) return;
 
     if (!rayRef.current) {
@@ -299,6 +398,9 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
       const parentBody = collider.parent();
       if (!parentBody) return true;
       if (excludedPlayerHandle !== null && parentBody.handle === excludedPlayerHandle) {
+        return false;
+      }
+      if (targetSource.isExcludedBody?.(parentBody.handle)) {
         return false;
       }
       const userData = parentBody.userData as

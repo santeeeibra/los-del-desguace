@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { CHARACTER_DIMENSIONS } from '../config/visualConfig';
 import { CARRY_PROFILES, type GrabbableKind } from '../props/grabbableRegistry';
 import { CabezaBaseModel } from './CabezaBaseModel';
+import { MagicWrench } from './MagicWrench';
 import { BASE_BODY_PROFILE as BODY, BODY_SOCKETS } from './body/bodyProfile';
 import { BeltMeshes, ForearmZone, LegZone, ShoulderZone, TorsoZone } from './body/BodyParts';
 import { useCharacterMaterials } from './characterMaterials';
@@ -15,6 +16,7 @@ import {
   type CharacterAppearanceConfig,
   type CharacterExpression,
 } from './characterAppearance';
+import { EMOTE_BY_ID, type EmoteId } from './characterCustomization';
 import {
   FaceRigController,
   resolveAnchorPosition,
@@ -52,6 +54,10 @@ interface InventorCharacterProps {
   /** Id de `OUTFITS`. */
   outfitId?: string;
   firstPersonHideHead?: boolean;
+  wrenchEquipped?: boolean;
+  seated?: boolean;
+  wrenchTipRef?: React.RefObject<THREE.Group | null>;
+  activeEmote?: EmoteId | null;
 }
 
 // Accesorios de cabeza (casco): medidas propias del accesorio, no del cuerpo.
@@ -67,6 +73,10 @@ export function InventorCharacter({
   headShape = 'base',
   outfitId,
   firstPersonHideHead = false,
+  wrenchEquipped = false,
+  seated = false,
+  wrenchTipRef,
+  activeEmote = null,
 }: InventorCharacterProps) {
   const rootRef = useRef<THREE.Group>(null);
   const bodyPivotRef = useRef<THREE.Group>(null);
@@ -75,6 +85,7 @@ export function InventorCharacter({
 
   // Decorative-only attachment anchor refs (non-colliding)
   const headAnchorRef = useRef<THREE.Group>(null);
+  const hairRef = useRef<THREE.Group>(null);
   const gogglesAnchorRef = useRef<THREE.Group>(null);
   const backpackAnchorRef = useRef<THREE.Group>(null);
   const beltAnchorRef = useRef<THREE.Group>(null);
@@ -119,15 +130,15 @@ export function InventorCharacter({
   const headTransform = useMemo(() => resolveHeadTransform(headVariant), [headVariant]);
   const outfit = getOutfit(outfitId);
   const pal = useMemo(
-    () => (outfit.palette ? { ...appearance.palette, ...outfit.palette } : appearance.palette),
-    [appearance.palette, outfit.palette]
+    () => (outfit.palette && !appearance.usePaletteForOutfit ? { ...appearance.palette, ...outfit.palette } : appearance.palette),
+    [appearance.palette, appearance.usePaletteForOutfit, outfit.palette]
   );
   const materials = useCharacterMaterials(pal);
 
   // Contorno del cuerpo (la cabeza trae el suyo en el GLB).
   useEffect(() => {
     if (bodyPivotRef.current) applyBodyOutline(bodyPivotRef.current);
-  }, [outfit, materials, appearance]);
+  }, [outfit, appearance.hatStyle, appearance.gogglesStyle, appearance.backpackStyle, appearance.beltToolStyle]);
 
   useFrame((state, rawDelta) => {
     const dt = Math.min(rawDelta, 0.05);
@@ -171,12 +182,12 @@ export function InventorCharacter({
     wobbleAngle.current = THREE.MathUtils.clamp(wobbleAngle.current + wobbleVel.current * dt, -0.4, 0.4);
 
     // 3. Smooth locomotion state blends (idle / walk / run / stop / carry / air)
-    const horizSpeed = anim.speed;
+    const horizSpeed = seated ? 0 : anim.speed;
     const targetGait =
       anim.isOnGround && horizSpeed > 0.22 ? THREE.MathUtils.clamp(horizSpeed / 4.2, 0.2, 1.0) : 0;
     const targetRun = anim.isOnGround && anim.isRunning && horizSpeed > 4.4 ? 1 : 0;
     const targetCarry = anim.isCarrying ? 1 : 0;
-    const targetAir = anim.isOnGround ? 0 : 1;
+    const targetAir = anim.isOnGround || seated ? 0 : 1;
 
     gaitBlend.current = THREE.MathUtils.lerp(gaitBlend.current, targetGait, 1 - Math.exp(-13 * dt));
     runBlend.current = THREE.MathUtils.lerp(runBlend.current, targetRun, 1 - Math.exp(-9 * dt));
@@ -204,7 +215,7 @@ export function InventorCharacter({
 
     // 5. Body pivot squash, dip on landing, and breathing
     let airStretch = 1;
-    if (!anim.isOnGround) {
+    if (!anim.isOnGround && !seated) {
       airStretch = anim.verticalSpeed > 0 ? 1.09 : 0.96;
     }
     const finalScaleY = squashY.current * airStretch;
@@ -242,8 +253,8 @@ export function InventorCharacter({
       const airLegL = anim.verticalSpeed > -1.0 ? -0.52 : -0.22;
       const airLegR = anim.verticalSpeed > -1.0 ? -0.44 : 0.18;
 
-      leftLegRef.current.rotation.x = THREE.MathUtils.lerp(groundLegL, airLegL, airBlend.current);
-      rightLegRef.current.rotation.x = THREE.MathUtils.lerp(groundLegR, airLegR, airBlend.current);
+      leftLegRef.current.rotation.x = seated ? -1.27 : THREE.MathUtils.lerp(groundLegL, airLegL, airBlend.current);
+      rightLegRef.current.rotation.x = seated ? -1.27 : THREE.MathUtils.lerp(groundLegR, airLegR, airBlend.current);
     }
 
     // 7. Carry anchor & size-aware + clearance-aware arm poses
@@ -278,7 +289,9 @@ export function InventorCharacter({
           : -0.48;
 
       const freeArmXL = THREE.MathUtils.lerp(walkRotXL, airArmX, airBlend.current);
-      const freeArmXR = THREE.MathUtils.lerp(walkRotXR, airArmX, airBlend.current);
+      const freeArmXR = wrenchEquipped
+        ? (firstPersonHideHead ? -0.9 : -0.65) + idleArm
+        : THREE.MathUtils.lerp(walkRotXR, airArmX, airBlend.current);
       const freeArmZL = THREE.MathUtils.lerp(firstPersonHideHead ? -0.18 : -0.14, airArmZ, airBlend.current);
       const freeArmZR = THREE.MathUtils.lerp(firstPersonHideHead ? 0.18 : 0.14, -airArmZ, airBlend.current);
 
@@ -370,9 +383,69 @@ export function InventorCharacter({
       headRef.current.rotation.x = THREE.MathUtils.lerp(headRef.current.rotation.x, lookPitch, 1 - Math.exp(-8 * dt));
     }
 
+    // 8b. Procedural Emote Pose Overrides (7 workshop gestures)
+    if (activeEmote && !anim.isCarrying && !firstPersonHideHead && leftArmRef.current && rightArmRef.current) {
+      const leftArm = leftArmRef.current;
+      const rightArm = rightArmRef.current;
+      const head = headRef.current;
+
+      switch (activeEmote) {
+        case 'wave':
+          rightArm.rotation.x = -2.45;
+          rightArm.rotation.z = 0.35 + Math.sin(t * 12) * 0.35;
+          if (head) head.rotation.z = 0.14;
+          break;
+        case 'thumbsUp':
+          rightArm.rotation.x = -1.45;
+          rightArm.rotation.z = -0.12;
+          if (head) head.rotation.x = Math.sin(t * 8) * 0.12;
+          break;
+        case 'celebrate':
+          leftArm.rotation.x = -2.55;
+          leftArm.rotation.z = -0.45;
+          rightArm.rotation.x = -2.55;
+          rightArm.rotation.z = 0.45;
+          if (!seated && bodyPivotRef.current) {
+            bodyPivotRef.current.position.y += Math.abs(Math.sin(t * 11)) * 0.09;
+          }
+          break;
+        case 'facepalm':
+          rightArm.rotation.x = -2.05;
+          rightArm.rotation.z = -0.58;
+          if (head) {
+            head.rotation.x = 0.36;
+            head.rotation.y = Math.sin(t * 9) * 0.18;
+          }
+          break;
+        case 'think':
+          rightArm.rotation.x = -1.75;
+          rightArm.rotation.z = -0.52;
+          leftArm.rotation.x = -0.85;
+          leftArm.rotation.z = 0.48;
+          if (head) {
+            head.rotation.x = -0.16;
+            head.rotation.z = 0.18;
+          }
+          break;
+        case 'wrenchSpin':
+          rightArm.rotation.x = -1.7;
+          rightArm.rotation.z = 0.24 + Math.sin(t * 15) * 0.28;
+          break;
+        case 'panic':
+          leftArm.rotation.x = -2.25;
+          leftArm.rotation.z = 0.42;
+          rightArm.rotation.x = -2.25;
+          rightArm.rotation.z = -0.42;
+          if (head) head.rotation.y = Math.sin(t * 24) * 0.16;
+          break;
+      }
+    }
+
     // 9. Facial expression state ("alegre", "esfuerzo", "sorpresa", "decepcion")
     let expr: CharacterExpression = 'happy';
-    if (surpriseExprTimer.current > 0 || (!anim.isOnGround && anim.verticalSpeed < -4.2)) {
+    if (activeEmote && EMOTE_BY_ID[activeEmote]) {
+      expr = EMOTE_BY_ID[activeEmote].expression;
+    } else if (surpriseExprTimer.current > 0 || (!anim.isOnGround && anim.verticalSpeed < -4.2)) {
       expr = 'surprise';
     } else if (disappointExprTimer.current > 0) {
       expr = 'disappointed';
@@ -400,6 +473,9 @@ export function InventorCharacter({
         const sx = ((fit.hat_band_width * headTransform.scale) / 2 + HAT_CLEARANCE) / HARDHAT_RADIUS;
         const sz = ((fit.hat_band_depth * headTransform.scale) / 2 + HAT_CLEARANCE) / HARDHAT_RADIUS;
         headAnchorRef.current.scale.set(sx, (sx + sz) / 2, sz);
+        if (hairRef.current) {
+          hairRef.current.position.y = ((fit.head_top - p.y) * headTransform.scale - 0.045) / ((sx + sz) / 2);
+        }
         headAnchorRef.current.rotation.x = HARDHAT_TILT_X * 0.5;
       }
     }
@@ -482,13 +558,20 @@ export function InventorCharacter({
               <ShoulderZone m={materials} outfit={outfit} side={1} />
             </group>
             <ForearmZone m={materials} outfit={outfit} side={1} />
+            {(wrenchEquipped || activeEmote === 'wrenchSpin') && (
+              <group position={S.handR}>
+                <MagicWrench tipRef={wrenchTipRef} />
+              </group>
+            )}
           </group>
 
           {/* CABEZA: pivote en el socket del cuello; el registro resuelve escala/offset por variante */}
           <group ref={headRef} position={headTransform.pivot}>
             <Suspense fallback={null}>
               <group scale={headTransform.scale} position={headTransform.offset}>
-                <CabezaBaseModel bindingsRef={faceBindingsRef} url={headVariant.modelUrl} />
+                <CabezaBaseModel bindingsRef={faceBindingsRef} url={headVariant.modelUrl}
+                  skinColor={appearance.usePaletteForOutfit ? pal.skin : undefined}
+                  browColor={appearance.usePaletteForOutfit ? pal.hairShadow : undefined} />
               </group>
             </Suspense>
 
@@ -506,6 +589,16 @@ export function InventorCharacter({
                   {/* Front visor brim (+Z!) */}
                   <mesh castShadow material={materials.hardhat} position={[0, 0.015, 0.24]} rotation={[0.14, 0, 0]}>
                     <boxGeometry args={[0.32, 0.036, 0.16]} />
+                  </mesh>
+                </group>
+              )}
+              {appearance.hatStyle === 'none' && appearance.usePaletteForOutfit && (
+                <group ref={hairRef} position={[0, 0.17, -0.025]}>
+                  <mesh castShadow material={materials.hairShadow} scale={[0.205, 0.073, 0.19]} position={[0, -0.012, -0.02]}>
+                    <sphereGeometry args={[1, 16, 10]} />
+                  </mesh>
+                  <mesh castShadow material={materials.hair} scale={[0.157, 0.068, 0.139]} position={[0.025, 0.021, 0.012]} rotation={[0, 0, -0.28]}>
+                    <sphereGeometry args={[1, 16, 10]} />
                   </mesh>
                 </group>
               )}

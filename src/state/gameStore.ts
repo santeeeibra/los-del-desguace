@@ -1,9 +1,43 @@
 import { useSyncExternalStore } from 'react';
+import { playImpact } from '../audio/sfxEngine';
+import {
+  EMOTE_BY_ID,
+  loadCharacterCustomization,
+  saveCharacterCustomization,
+  type CharacterCustomizationConfig,
+  type EmoteId,
+} from '../character/characterCustomization';
+import { listBlueprints, type ContraptionBlueprint } from '../logic/blueprintManager';
 import type { QualityLevel } from '../config/visualConfig';
+import { WRENCH_AXES, type WrenchAxis } from '../invention/wrenchRotation';
 import type { GrabbableKind } from '../props/grabbableRegistry';
+import { emptyInventory, INVENTORY_SIZE, placeInInventory, type InventoryItem, type InventorySlots } from './inventory';
 
 export type TouchOverlayMode = 'auto' | 'on' | 'off';
 export type CameraViewMode = 'firstPerson' | 'thirdPersonClose' | 'thirdPersonWide';
+export type MouseLookMode = 'pointerLock' | 'drag';
+
+const MOUSE_LOOK_STORAGE_KEY = 'los-del-desguace.mouselook.v1';
+
+function loadSavedMouseLookMode(): MouseLookMode {
+  if (typeof window === 'undefined') return 'pointerLock';
+  try {
+    const raw = window.localStorage.getItem(MOUSE_LOOK_STORAGE_KEY);
+    if (raw === 'pointerLock' || raw === 'drag') return raw;
+  } catch {
+    // Ignore storage unavailability
+  }
+  return 'pointerLock';
+}
+
+function saveMouseLookMode(mode: MouseLookMode) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(MOUSE_LOOK_STORAGE_KEY, mode);
+  } catch {
+    // Ignore storage quota/privacy mode errors
+  }
+}
 
 export const CAMERA_VIEW_ORDER: readonly CameraViewMode[] = [
   'firstPerson',
@@ -41,19 +75,59 @@ function saveCameraMode(mode: CameraViewMode) {
   }
 }
 
+export interface SpawnedPropEntry {
+  id: string;
+  kind: GrabbableKind;
+  position: [number, number, number];
+  spawnIndex: number;
+}
+
+export const MAX_EXTRA_PROPS = 24;
+
 export interface GameHudState {
+  blueprints: ContraptionBlueprint[];
   quality: QualityLevel;
   touchMode: TouchOverlayMode;
   isTouchDevice: boolean;
+  mouseLookMode: MouseLookMode;
+  pointerLocked: boolean;
   cameraMode: CameraViewMode;
   cameraBanner: string | null;
   nearbyTargetId: string | null;
   nearbyTargetKind: GrabbableKind | null;
+  nearbyTargetMounted: boolean;
+  nearbyTargetRideable: boolean;
+  workshopSlot: string | null;
+  aimedWorkshopSlot: string | null;
+  laserHint: string | null;
+  wireHint: string | null;
+  pendingWireFrom: string | null;
+  laserPlacementReady: boolean;
+  partMountReady: boolean;
+  workshopStatus: string | null;
+  cartMode: 'fixed' | 'free' | null;
+  activeStationType: 'cart' | 'custom' | null;
+  canUndoMount: boolean;
+  seated: boolean;
+  seatedFlightMode: boolean;
+  wrenchEquipped: boolean;
+  wrenchAiming: boolean;
+  wrenchAimLocked: boolean;
+  wrenchAxis: WrenchAxis;
+  wrenchTarget: 'piece' | 'base' | null;
+  rotatingTargetId: string | null;
   carriedId: string | null;
   carriedKind: GrabbableKind | null;
+  inventorySlots: InventorySlots;
+  inventorySelection: number;
+  activeGuideIndex: number;
+  spawnedProps: SpawnedPropEntry[];
+  characterConfig: CharacterCustomizationConfig;
+  activeEmote: EmoteId | null;
+  activeEmoteNonce: number;
   impactFeedback: 'land' | 'bump' | null;
   impactNonce: number;
-  dropBlockedHint: boolean;
+  dropBlockedHint: 'drop' | 'mount' | 'rotate' | 'move' | 'inventory' | 'laser' | 'wired' | null;
   resetNonce: number;
   showHelp: boolean;
   sceneReady: boolean;
@@ -63,19 +137,60 @@ const initialIsTouch =
   typeof window !== 'undefined' &&
   ('ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 820);
 
+function starterInventory(): InventorySlots {
+  const slots = [...emptyInventory()];
+  slots[INVENTORY_SIZE - 1] = {
+    id: 'guide-blueprint',
+    kind: 'blueprint',
+    rotation: [0, 0, 0, 1],
+  };
+  return slots;
+}
+
 let state: GameHudState = {
+  blueprints: listBlueprints(),
   quality: 'high',
   touchMode: 'auto',
   isTouchDevice: initialIsTouch,
+  mouseLookMode: loadSavedMouseLookMode(),
+  pointerLocked: false,
   cameraMode: loadSavedCameraMode(),
   cameraBanner: null,
   nearbyTargetId: null,
   nearbyTargetKind: null,
+  nearbyTargetMounted: false,
+  nearbyTargetRideable: false,
+  workshopSlot: null,
+  aimedWorkshopSlot: null,
+  laserHint: null,
+  wireHint: null,
+  pendingWireFrom: null,
+  laserPlacementReady: false,
+  partMountReady: false,
+  workshopStatus: null,
+  cartMode: null,
+  activeStationType: null,
+  canUndoMount: false,
+  seated: false,
+  seatedFlightMode: false,
+  wrenchEquipped: false,
+  wrenchAiming: false,
+  wrenchAimLocked: false,
+  wrenchAxis: 'vertical',
+  wrenchTarget: null,
+  rotatingTargetId: null,
   carriedId: null,
   carriedKind: null,
+  inventorySlots: starterInventory(),
+  inventorySelection: 0,
+  activeGuideIndex: 0,
+  spawnedProps: [],
+  characterConfig: loadCharacterCustomization(),
+  activeEmote: null,
+  activeEmoteNonce: 0,
   impactFeedback: null,
   impactNonce: 0,
-  dropBlockedHint: false,
+  dropBlockedHint: null,
   resetNonce: 0,
   showHelp: true,
   sceneReady: false,
@@ -86,6 +201,10 @@ const listeners = new Set<() => void>();
 let impactClearTimer: number | null = null;
 let dropHintClearTimer: number | null = null;
 let cameraBannerClearTimer: number | null = null;
+let wireHintClearTimer: number | null = null;
+let emoteClearTimer: ReturnType<typeof setTimeout> | null = null;
+let clearExtraPartsRequested = false;
+let nextExtraPartId = 0;
 
 function emit() {
   for (const listener of listeners) {
@@ -111,6 +230,20 @@ export const gameStore = {
   setTouchMode(touchMode: TouchOverlayMode) {
     if (state.touchMode === touchMode) return;
     state = { ...state, touchMode };
+    emit();
+  },
+  setMouseLookMode(mouseLookMode: MouseLookMode) {
+    if (state.mouseLookMode === mouseLookMode) return;
+    saveMouseLookMode(mouseLookMode);
+    if (mouseLookMode === 'drag' && typeof document !== 'undefined' && document.pointerLockElement) {
+      document.exitPointerLock?.();
+    }
+    state = { ...state, mouseLookMode };
+    emit();
+  },
+  setPointerLocked(pointerLocked: boolean) {
+    if (state.pointerLocked === pointerLocked) return;
+    state = { ...state, pointerLocked };
     emit();
   },
   setCameraMode(cameraMode: CameraViewMode, announce = true) {
@@ -139,9 +272,157 @@ export const gameStore = {
     const next = CAMERA_VIEW_ORDER[(idx + 1) % CAMERA_VIEW_ORDER.length];
     this.setCameraMode(next, true);
   },
-  setNearbyTarget(id: string | null, kind: GameHudState['nearbyTargetKind']) {
-    if (state.nearbyTargetId === id && state.nearbyTargetKind === kind) return;
-    state = { ...state, nearbyTargetId: id, nearbyTargetKind: kind };
+  setNearbyTarget(id: string | null, kind: GameHudState['nearbyTargetKind'], mounted = false, rideable = false) {
+    if (
+      state.nearbyTargetId === id &&
+      state.nearbyTargetKind === kind &&
+      state.nearbyTargetMounted === mounted &&
+      state.nearbyTargetRideable === rideable
+    ) return;
+    state = { ...state, nearbyTargetId: id, nearbyTargetKind: kind, nearbyTargetMounted: mounted, nearbyTargetRideable: rideable };
+    emit();
+  },
+  setWorkshopSlot(workshopSlot: GameHudState['workshopSlot']) {
+    if (state.workshopSlot === workshopSlot) return;
+    state = { ...state, workshopSlot };
+    emit();
+  },
+  refreshBlueprints() {
+    state = { ...state, blueprints: listBlueprints() };
+    emit();
+  },
+  setSeated(seated: boolean, flightMode = false) {
+    if (state.seated === seated && (!seated || state.seatedFlightMode === flightMode)) return;
+    state = seated ? {
+      ...state,
+      seated,
+      seatedFlightMode: flightMode,
+      nearbyTargetId: null,
+      nearbyTargetKind: null,
+      nearbyTargetMounted: false,
+      nearbyTargetRideable: false,
+      workshopSlot: null,
+      aimedWorkshopSlot: null,
+      laserHint: null,
+      laserPlacementReady: false,
+      partMountReady: false,
+      wrenchAiming: false,
+      wrenchAimLocked: false,
+      wrenchTarget: null,
+      cartMode: null,
+      activeStationType: null,
+      workshopStatus: null,
+    } : { ...state, seated, seatedFlightMode: false };
+    emit();
+  },
+  setLaserInteraction(aimedWorkshopSlot: string | null, laserHint: string | null, laserPlacementReady: boolean, partMountReady = false) {
+    if (state.aimedWorkshopSlot === aimedWorkshopSlot && state.laserHint === laserHint &&
+      state.laserPlacementReady === laserPlacementReady && state.partMountReady === partMountReady) return;
+    state = { ...state, aimedWorkshopSlot, laserHint, laserPlacementReady, partMountReady };
+    emit();
+  },
+  setWireHint(wireHint: string | null) {
+    if (wireHintClearTimer !== null) {
+      window.clearTimeout(wireHintClearTimer);
+      wireHintClearTimer = null;
+    }
+    if (state.wireHint !== wireHint) {
+      state = { ...state, wireHint };
+      emit();
+    }
+    if (wireHint !== null) {
+      wireHintClearTimer = window.setTimeout(() => {
+        wireHintClearTimer = null;
+        state = { ...state, wireHint: null };
+        emit();
+      }, 2600);
+    }
+  },
+  setPendingWireFrom(pendingWireFrom: string | null) {
+    if (state.pendingWireFrom === pendingWireFrom) return;
+    state = { ...state, pendingWireFrom };
+    emit();
+  },
+  triggerRotatingTarget(id: string) {
+    state = { ...state, rotatingTargetId: id };
+    emit();
+    window.setTimeout(() => {
+      if (state.rotatingTargetId === id) {
+        state = { ...state, rotatingTargetId: null };
+        emit();
+      }
+    }, 900);
+  },
+  setWorkshopStatus(workshopStatus: string | null) {
+    if (state.workshopStatus === workshopStatus) return;
+    state = { ...state, workshopStatus };
+    emit();
+  },
+  setCartMode(cartMode: GameHudState['cartMode'], stationType: GameHudState['activeStationType'] = null) {
+    const nextStationType = cartMode ? (stationType ?? 'cart') : null;
+    if (state.cartMode === cartMode && state.activeStationType === nextStationType) return;
+    state = { ...state, cartMode, activeStationType: nextStationType };
+    emit();
+  },
+  setCanUndoMount(canUndoMount: boolean) {
+    if (state.canUndoMount === canUndoMount) return;
+    state = { ...state, canUndoMount };
+    emit();
+  },
+  toggleWrench() {
+    if (wireHintClearTimer !== null) {
+      window.clearTimeout(wireHintClearTimer);
+      wireHintClearTimer = null;
+    }
+    state = {
+      ...state, wrenchEquipped: !state.wrenchEquipped, wrenchAiming: false, wrenchAimLocked: false, wrenchTarget: null,
+      aimedWorkshopSlot: null, laserHint: null, laserPlacementReady: false, partMountReady: false, wireHint: null, pendingWireFrom: null,
+    };
+    emit();
+  },
+  toggleWrenchAimLock() {
+    if (!state.wrenchEquipped) {
+      state = {
+        ...state,
+        wrenchEquipped: true,
+        wrenchAimLocked: true,
+        wrenchAiming: true,
+      };
+      emit();
+      return;
+    }
+    const nextLocked = !state.wrenchAimLocked;
+    state = nextLocked
+      ? { ...state, wrenchAimLocked: true, wrenchAiming: true }
+      : {
+          ...state,
+          wrenchAimLocked: false,
+          wrenchAiming: false,
+          wrenchTarget: null,
+          aimedWorkshopSlot: null,
+          laserHint: null,
+          laserPlacementReady: false,
+          partMountReady: false,
+        };
+    emit();
+  },
+  setWrenchAiming(aiming: boolean) {
+    const wrenchAiming = (aiming || state.wrenchAimLocked) && state.wrenchEquipped;
+    if (state.wrenchAiming === wrenchAiming) return;
+    state = wrenchAiming
+      ? { ...state, wrenchAiming }
+      : { ...state, wrenchAiming, wrenchTarget: null, aimedWorkshopSlot: null, laserHint: null, laserPlacementReady: false, partMountReady: false };
+    emit();
+  },
+  cycleWrenchAxis() {
+    if (!state.wrenchEquipped || (!state.carriedId && state.wrenchTarget !== 'piece')) return;
+    const next = (WRENCH_AXES.indexOf(state.wrenchAxis) + 1) % WRENCH_AXES.length;
+    state = { ...state, wrenchAxis: WRENCH_AXES[next] };
+    emit();
+  },
+  setWrenchTarget(wrenchTarget: GameHudState['wrenchTarget']) {
+    if (state.wrenchTarget === wrenchTarget) return;
+    state = { ...state, wrenchTarget };
     emit();
   },
   setCarried(id: string | null, kind: GameHudState['carriedKind']) {
@@ -149,7 +430,32 @@ export const gameStore = {
     state = { ...state, carriedId: id, carriedKind: kind };
     emit();
   },
+  selectInventory(index: number) {
+    if (index < 0 || index >= INVENTORY_SIZE || state.inventorySelection === index) return;
+    state = { ...state, inventorySelection: index };
+    emit();
+  },
+  setActiveGuideIndex(activeGuideIndex: number) {
+    if (state.activeGuideIndex === activeGuideIndex) return;
+    state = { ...state, activeGuideIndex };
+    emit();
+  },
+  storeInventory(item: InventoryItem, index: number, exact = false) {
+    const result = placeInInventory(state.inventorySlots, item, index, exact);
+    if (!result) return false;
+    state = { ...state, inventorySlots: result.slots, inventorySelection: result.index };
+    emit();
+    return true;
+  },
+  removeInventory(index: number) {
+    if (!state.inventorySlots[index]) return;
+    const slots = [...state.inventorySlots];
+    slots[index] = null;
+    state = { ...state, inventorySlots: slots };
+    emit();
+  },
   triggerImpact(kind: 'land' | 'bump') {
+    playImpact(kind === 'land' ? 0.4 : 0.6);
     if (impactClearTimer !== null) {
       window.clearTimeout(impactClearTimer);
     }
@@ -161,21 +467,58 @@ export const gameStore = {
       emit();
     }, 550);
   },
-  triggerDropBlocked() {
+  triggerDropBlocked(reason: NonNullable<GameHudState['dropBlockedHint']> = 'drop') {
     if (dropHintClearTimer !== null) {
       window.clearTimeout(dropHintClearTimer);
     }
-    state = { ...state, dropBlockedHint: true };
+    state = { ...state, dropBlockedHint: reason };
     emit();
     dropHintClearTimer = window.setTimeout(() => {
       dropHintClearTimer = null;
-      state = { ...state, dropBlockedHint: false };
+      state = { ...state, dropBlockedHint: null };
       emit();
     }, 1400);
   },
   triggerReset() {
-    state = { ...state, resetNonce: state.resetNonce + 1 };
+    clearExtraPartsRequested = false;
+    state = { ...state, resetNonce: state.resetNonce + 1, inventorySlots: starterInventory(), inventorySelection: 0, spawnedProps: [] };
     emit();
+  },
+  spawnExtraPart(kind: GrabbableKind): SpawnedPropEntry | null {
+    if (state.spawnedProps.length >= MAX_EXTRA_PROPS) return null;
+    const occupied = new Set(state.spawnedProps.map(({ spawnIndex }) => spawnIndex));
+    let idx = 0;
+    while (occupied.has(idx)) idx++;
+    const angle = idx * 1.15;
+    const radius = 2.6 + (idx % 4) * 0.48;
+    const entry: SpawnedPropEntry = {
+      id: `extra-${kind}-${++nextExtraPartId}`,
+      kind,
+      spawnIndex: idx,
+      position: [
+        Number((2.05 + Math.cos(angle) * radius).toFixed(2)),
+        1.15,
+        Number((5.9 + Math.sin(angle) * radius).toFixed(2)),
+      ],
+    };
+    state = { ...state, spawnedProps: [...state.spawnedProps, entry] };
+    emit();
+    return entry;
+  },
+  requestClearExtraParts() {
+    clearExtraPartsRequested = true;
+  },
+  clearExtraParts(canRemove: (entry: SpawnedPropEntry) => boolean) {
+    if (!clearExtraPartsRequested) return;
+    clearExtraPartsRequested = false;
+    const spawnedProps = state.spawnedProps.filter((entry) =>
+      state.carriedId === entry.id || state.inventorySlots.some((item) => item?.id === entry.id) || !canRemove(entry)
+    );
+    if (spawnedProps.length === state.spawnedProps.length) return 0;
+    const removed = state.spawnedProps.length - spawnedProps.length;
+    state = { ...state, spawnedProps };
+    emit();
+    return removed;
   },
   toggleHelp() {
     state = { ...state, showHelp: !state.showHelp };
@@ -185,6 +528,29 @@ export const gameStore = {
     if (state.sceneReady === ready) return;
     state = { ...state, sceneReady: ready };
     emit();
+  },
+  setCharacterConfig(patch: Partial<CharacterCustomizationConfig>) {
+    const next: CharacterCustomizationConfig = { ...state.characterConfig, ...patch };
+    saveCharacterCustomization(next);
+    state = { ...state, characterConfig: next };
+    emit();
+  },
+  triggerEmote(emote: EmoteId) {
+    if (emoteClearTimer !== null) {
+      clearTimeout(emoteClearTimer);
+    }
+    const spec = EMOTE_BY_ID[emote];
+    state = {
+      ...state,
+      activeEmote: emote,
+      activeEmoteNonce: state.activeEmoteNonce + 1,
+    };
+    emit();
+    emoteClearTimer = setTimeout(() => {
+      emoteClearTimer = null;
+      state = { ...state, activeEmote: null };
+      emit();
+    }, Math.round((spec?.durationSec ?? 2.2) * 1000));
   },
 };
 

@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { Suspense, useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { CuboidCollider, CylinderCollider, RigidBody } from '@react-three/rapier';
 import * as THREE from 'three';
 import { getSharedTextures, PALETTE } from '../config/visualConfig';
+import { PropModel } from '../props/PropModels';
+import { USE_LEGACY_PROP_VISUALS, WORKSHOP_BARREL_MODELS } from '../props/propModelConfig';
 
 interface ScrapyardWorkshopProps {
   extraProps: boolean;
@@ -66,6 +68,8 @@ export function ScrapyardWorkshop({ extraProps }: ScrapyardWorkshopProps) {
       }),
       concrete: new THREE.MeshStandardMaterial({
         map: textures.concreteMap,
+        bumpMap: textures.concreteBumpMap,
+        bumpScale: 0.015,
         roughness: 0.9,
         metalness: 0.02,
       }),
@@ -87,12 +91,16 @@ export function ScrapyardWorkshop({ extraProps }: ScrapyardWorkshopProps) {
       metalTeal: new THREE.MeshStandardMaterial({
         color: PALETTE.metalTeal,
         map: textures.corrugatedMap,
+        bumpMap: textures.corrugatedBumpMap,
+        bumpScale: 0.03,
         roughness: 0.56,
         metalness: 0.28,
       }),
       metalRust: new THREE.MeshStandardMaterial({
         color: PALETTE.metalRust,
         map: textures.corrugatedMap,
+        bumpMap: textures.corrugatedBumpMap,
+        bumpScale: 0.03,
         roughness: 0.68,
         metalness: 0.24,
       }),
@@ -169,8 +177,8 @@ export function ScrapyardWorkshop({ extraProps }: ScrapyardWorkshopProps) {
     </group>
   );
 
-  const renderBarrel = (x: number, y: number, z: number, mat: THREE.Material) => (
-    <group position={[x, y, z]}>
+  const renderBarrel = (x: number, y: number, z: number, mat: THREE.Material, model: keyof typeof WORKSHOP_BARREL_MODELS) => {
+    const fallback = <>
       <mesh castShadow receiveShadow material={mat}>
         <cylinderGeometry args={[0.36, 0.36, 0.96, 14]} />
       </mesh>
@@ -180,8 +188,19 @@ export function ScrapyardWorkshop({ extraProps }: ScrapyardWorkshopProps) {
       <mesh material={materials.steel} position={[0, -0.22, 0]}>
         <cylinderGeometry args={[0.375, 0.375, 0.05, 14]} />
       </mesh>
-    </group>
-  );
+    </>;
+    return (
+      <group position={[x, y, z]}>
+        {USE_LEGACY_PROP_VISUALS ? fallback : (
+          <Suspense fallback={fallback}>
+            <group scale={[1.48, 1.25, 1.55]}>
+              <PropModel url={WORKSHOP_BARREL_MODELS[model]} />
+            </group>
+          </Suspense>
+        )}
+      </group>
+    );
+  };
 
   return (
     <group name="scrapyard-workshop">
@@ -391,20 +410,20 @@ export function ScrapyardWorkshop({ extraProps }: ScrapyardWorkshopProps) {
       <RigidBody type="fixed" colliders={false} position={[1.4, 0, -5.9]}>
         <CylinderCollider args={[0.48, 0.36]} position={[0, 0.48, 0]} />
         <CylinderCollider args={[0.48, 0.36]} position={[0.85, 0.48, 0.2]} />
-        {renderBarrel(0, 0.48, 0, materials.metalRed)}
-        {renderBarrel(0.85, 0.48, 0.2, materials.metalYellow)}
+        {renderBarrel(0, 0.48, 0, materials.metalRed, 'rust')}
+        {renderBarrel(0.85, 0.48, 0.2, materials.metalYellow, 'orange')}
       </RigidBody>
 
       {/* Dynamic bumpable barrel & tire stack to test bump/collision reaction! */}
-      <RigidBody type="dynamic" mass={14} linearDamping={1.2} angularDamping={1.5} position={[-1.8, 0.5, 2.2]}>
+      <RigidBody type="dynamic" colliders={false} mass={14} linearDamping={1.2} angularDamping={1.5} position={[-1.8, 0.5, 2.2]}>
         <CylinderCollider args={[0.48, 0.36]} />
-        {renderBarrel(0, 0, 0, materials.metalTeal)}
+        {renderBarrel(0, 0, 0, materials.metalTeal, 'teal')}
       </RigidBody>
 
       {extraProps && (
-        <RigidBody type="dynamic" mass={12} linearDamping={1.2} angularDamping={1.5} position={[-2.6, 0.5, 2.5]}>
+        <RigidBody type="dynamic" colliders={false} mass={12} linearDamping={1.2} angularDamping={1.5} position={[-2.6, 0.5, 2.5]}>
           <CylinderCollider args={[0.48, 0.36]} />
-          {renderBarrel(0, 0, 0, materials.metalRust)}
+          {renderBarrel(0, 0, 0, materials.metalRust, 'orange')}
         </RigidBody>
       )}
 

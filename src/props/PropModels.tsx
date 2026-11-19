@@ -43,6 +43,5 @@ export function PropModel({ url }: { url: string }) {
 }
 
 if (!USE_LEGACY_PROP_VISUALS) {
-  useGLTF.preload(PROP_MODEL_URLS.crate, false, false);
-  useGLTF.preload(PROP_MODEL_URLS.canister, false, false);
+  for (const url of Object.values(PROP_MODEL_URLS)) useGLTF.preload(url, false, false);
 }

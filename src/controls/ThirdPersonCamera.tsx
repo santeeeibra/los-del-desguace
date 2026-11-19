@@ -6,6 +6,8 @@ import * as THREE from 'three';
 export interface CameraTargetSource {
   getTargetPosition: (out: THREE.Vector3) => boolean;
   getExcludedBodyHandle: () => number | null;
+  isExcludedBody?: (handle: number) => boolean;
+  getVehicleForward?: (out: THREE.Vector3) => boolean;
   getShakeIntensity: () => number;
 }
 
@@ -177,6 +179,9 @@ export function ThirdPersonCamera({ targetSourceRef, resetSignal }: ThirdPersonC
           const parentBody = collider.parent();
           if (!parentBody) return true;
           if (excludedPlayerHandle !== null && parentBody.handle === excludedPlayerHandle) {
+            return false;
+          }
+          if (targetSource.isExcludedBody?.(parentBody.handle)) {
             return false;
           }
           const userData = parentBody.userData as
