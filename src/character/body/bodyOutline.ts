@@ -11,6 +11,8 @@ import { toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.j
 /** Mismo tono que `M_outline` de la cabeza (lineal 0.0123, 0.0086, 0.0070 → sRGB). */
 const OUTLINE_COLOR = new THREE.Color(0.0123, 0.0086, 0.007);
 const OUTLINE_WIDTH = 0.0065;
+/** Tope por distancia a la cámara: de cerca (primera persona) la línea no engorda. */
+const OUTLINE_NEAR_RATIO = 0.008;
 const HULL_FLAG = '__bodyOutlineHull';
 
 let sharedMaterial: THREE.MeshBasicMaterial | null = null;
@@ -25,7 +27,7 @@ function outlineMaterial() {
         '#include <project_vertex>',
         // La matriz inversa transpuesta corrige la normal incluso con escalas y rotaciones anidadas.
         `#include <project_vertex>
-        mvPosition.xyz += normalize(normalMatrix * normal) * outlineWidth;
+        mvPosition.xyz += normalize(normalMatrix * normal) * min(outlineWidth, ${OUTLINE_NEAR_RATIO.toFixed(4)} * max(-mvPosition.z, 0.0));
         gl_Position = projectionMatrix * mvPosition;`
       );
   };
