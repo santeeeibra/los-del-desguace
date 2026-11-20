@@ -11,8 +11,8 @@ Entorno: Chromium headless con render por software (SwiftShader), sin GPU. A vie
 - Movimiento: W avanza (telemetría `px/pz` cambia, `isOnGround` true), Espacio salta. Sin errores de consola.
 - Agarre: `E` junto a una caja → `carriedKind = crate`; caminar con carga funciona; `E` de nuevo la suelta (`carriedKind` vacío).
 - Primera persona: `V` x3 (3ª Cerca → 3ª Amplia → 1ªP). Capturas `juego_primera_persona_*.png`.
-- Observación sin resolver: en primera persona con la caja cargada, la caja ocupa la parte baja de la pantalla y tapa las manos (`juego_primera_persona_con_caja.png`). No hay línea base para saber si es el diseño previsto; queda para criterio humano.
-- A bajo fps (3 fps) el personaje rebotaba (py 0.65↔1.0); a 8 fps quedó estable en 0.861. Se atribuye al render por software, no al código.
+- **Pendiente de revisión visual:** en primera persona con la caja cargada, la caja ocupa la parte baja de la pantalla y tapa las manos (`juego_primera_persona_con_caja.png`). No hay línea base para saber si es el diseño previsto. No se modificó.
+- **Causa sin confirmar:** a bajo fps (3 fps) el personaje rebotaba (py 0.65↔1.0); a 8 fps quedó estable en 0.861. Es compatible con el render por software, pero no se verificó. Repetir con GPU real (PC/iPhone) antes de descartar un problema de código.
 
 ## No probado
 - iPhone 11 real (táctil, rendimiento, contorno en pantalla chica, atuendos en movimiento).
