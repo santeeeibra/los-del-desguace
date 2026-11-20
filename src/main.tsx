@@ -12,6 +12,9 @@ if (import.meta.env.DEV && new URLSearchParams(window.location.search).get('lab'
       root.render(<CharacterLab combos={LAB_COMBOS} />)
     },
   )
+} else if (import.meta.env.DEV && new URLSearchParams(window.location.search).get('lab') === 'net') {
+  // Prueba mínima de red: solo en desarrollo (ver tools/net-relay/README.md).
+  import('./dev/netLab/NetLab.tsx').then(({ NetLab }) => root.render(<NetLab />))
 } else {
   root.render(
     <StrictMode>

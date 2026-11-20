@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "relay": "node tools/net-relay/relay.ts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",
