@@ -178,7 +178,7 @@ describe('ropa modular sin intersecciones', () => {
 
   it('mangas y piernas cubren el cuerpo con holgura', () => {
     expect(G.sleeve.shoulderRadius - P.arm.shoulderRadius).toBeGreaterThanOrEqual(GARMENT_CLEARANCE);
-    expect(G.sleeve.radiusBottom - P.arm.upperRadius).toBeGreaterThan(0);
+    expect(G.sleeve.radiusBottom - P.arm.upperRadius).toBeGreaterThanOrEqual(GARMENT_CLEARANCE - 1e-3);
     expect(G.leg.radius - P.leg.radius).toBeGreaterThanOrEqual(GARMENT_CLEARANCE);
   });
 

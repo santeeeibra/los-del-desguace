@@ -104,7 +104,7 @@ export function deriveGarmentGeometry(ref: BodyReference = BODY_REFERENCE): Garm
     sleeve: {
       shoulderRadius: layerRadius(ref.arm.shoulderRadius, 1),
       radiusTop: layerRadius(ref.arm.upperRadius, 1),
-      radiusBottom: layerRadius(ref.arm.upperRadius, 1) - 0.004,
+      radiusBottom: layerRadius(ref.arm.upperRadius, 1),
       length: ref.arm.upperLength,
     },
     leg: { radius: layerRadius(ref.leg.radius, 1) },
