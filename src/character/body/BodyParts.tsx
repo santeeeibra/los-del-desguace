@@ -166,7 +166,7 @@ export function ShoulderZone({ m, outfit, side }: ZoneProps & { side: 1 | -1 }) 
         <capsuleGeometry args={[a.upperRadius, a.upperLength * 0.6, 6, SEG]} />
       </mesh>
       {sleeve && (
-        <mesh castShadow material={m.shirt} position={[side * 0.016, upperY * 0.8, 0]} rotation={[0, 0, -side * 0.15]}>
+        <mesh castShadow material={m.shirt} position={[side * 0.02, upperY * 0.8, 0]} rotation={[0, 0, -side * 0.15]}>
           <cylinderGeometry args={[G.sleeve.radiusTop, G.sleeve.radiusBottom, G.sleeve.length, SEG]} />
         </mesh>
       )}
