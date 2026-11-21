@@ -116,7 +116,7 @@ describe('Mesa de Corte Láser — triciclo desde cero', () => {
     };
     let heading = 0;
     let last = 0;
-    const drive = (steps: number, steer: number) => {
+    const drive = (steps: number, steer: number, throttle = 1) => {
       const dt = 1 / 60;
       for (let i = 0; i < steps; i++) {
         const now = yaw();
@@ -125,7 +125,7 @@ describe('Mesa de Corte Láser — triciclo desde cero', () => {
         if (d < -Math.PI) d += 2 * Math.PI;
         heading += d;
         last = now;
-        physics.driveAssembly(station, platform, 1, dt, workshop);
+        physics.driveAssembly(station, platform, throttle, dt, workshop);
         physics.steerAssembly(station, platform, steer, dt, null, workshop);
         world.timestep = dt;
         world.step();
@@ -137,12 +137,12 @@ describe('Mesa de Corte Láser — triciclo desde cero', () => {
       heading += d;
       last = now;
     };
-    drive(60, 0);
+    drive(30, 0);
     last = yaw();
     const startBlocked = heading;
-    drive(90, 1);
+    drive(120, 1, 0.3);
     const turnBlocked = Math.abs(heading - startBlocked);
-    expect(turnBlocked).toBeLessThan(0.45);
+    expect(turnBlocked).toBeLessThan(0.6);
 
     // Volver al taller, recortar la nariz desde la mesa y probar de nuevo.
     physics.toggleAssembly(station, platform, workshop);
@@ -165,18 +165,26 @@ describe('Mesa de Corte Láser — triciclo desde cero', () => {
     physics.toggleAssembly(station, platform, workshop);
     for (let i = 0; i < 30; i++) world.step();
     last = yaw();
-    drive(60, 0);
+    drive(30, 0);
     const start = heading;
-    drive(90, 1);
+    drive(120, 1, 0.3);
     const angle = physics.steerInfo('rueda-frente')!.angle;
     expect(angle).toBeLessThan(-0.3); // derecha = giro horario visto desde arriba
     const turned = heading - start;
-    expect(Math.abs(turned)).toBeGreaterThan(0.5);
-    expect(Math.abs(turned)).toBeGreaterThan(turnBlocked * 3);
+    expect(Math.abs(turned)).toBeGreaterThan(1);
+    expect(Math.abs(turned)).toBeGreaterThan(turnBlocked * 4);
     // Doblar a la derecha (D) hace girar el rumbo en sentido horario visto desde arriba.
     expect(turned).toBeLessThan(0);
     const up = new Vector3(0, 1, 0).applyQuaternion(new Quaternion().copy(platform.rotation()));
     expect(up.y).toBeGreaterThan(0.8);
+    // Y también dobla a la izquierda (A), sin volcar.
+    drive(60, 0, 0);
+    const beforeLeft = heading;
+    drive(120, -1, 0.3);
+    const leftTurn = heading - beforeLeft;
+    expect(leftTurn).toBeGreaterThan(1);
+    const upLeft = new Vector3(0, 1, 0).applyQuaternion(new Quaternion().copy(platform.rotation()));
+    expect(upLeft.y).toBeGreaterThan(0.8);
     world.free();
   });
 

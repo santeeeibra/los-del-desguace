@@ -26,8 +26,10 @@ interface MountRecord {
 
 /** Recorrido por defecto de una rueda de dirección cuando nada la estorba. */
 export const STEER_DEFAULT = 0.6;
-const STEER_STIFFNESS = 900;
-const STEER_DAMPING = 60;
+const STEER_STIFFNESS = 24000;
+const STEER_DAMPING = 1400;
+/** Aceleración lateral máxima que pide la dirección (m/s²): a más velocidad, curva más abierta. */
+const STEER_MAX_LATERAL = 9;
 const steerScratch = new Quaternion();
 const steerScratch2 = new Quaternion();
 
@@ -407,11 +409,15 @@ export function createWorkshopPhysics(
      * Gira en el lugar una pieza soldada (sin hijos) alrededor de su centro y la vuelve a soldar.
      * Sirve para reorientar el empuje de una hélice sin desarmar nada.
      */
+    canRotateMountedPart(id: string): boolean {
+      const record = mounts.get(id);
+      if (!record?.parentBody?.isValid() || !record.localPose || record.localPose.axis || record.knuckle) return false;
+      return ![...mounts.values()].some((other) => other.parentBody === record.body);
+    },
     rotateMountedPart(id: string, worldAxis: { x: number; y: number; z: number }, angle: number): boolean {
       const record = mounts.get(id);
       const parent = record?.parentBody;
-      if (!record || !parent?.isValid() || !record.localPose || record.localPose.axis || record.knuckle) return false;
-      if ([...mounts.values()].some((other) => other.parentBody === record.body)) return false;
+      if (!record || !parent?.isValid() || !record.localPose || !this.canRotateMountedPart(id)) return false;
       const parentRot = new Quaternion().copy(parent.rotation());
       const localAxis = new Vector3(worldAxis.x, worldAxis.y, worldAxis.z).applyQuaternion(parentRot.clone().invert()).normalize();
       record.localPose.rotation.premultiply(new Quaternion().setFromAxisAngle(localAxis, angle)).normalize();
@@ -570,7 +576,8 @@ export function createWorkshopPhysics(
         let wheelbase = steerZ - rearZ;
         if (Math.abs(wheelbase) < 0.3) wheelbase = wheelbase < 0 ? -0.3 : 0.3;
         const along = vel.x * rootFwd.x + vel.z * rootFwd.z;
-        const yawRate = Math.max(-3, Math.min(3, along * Math.tan(angle) / wheelbase));
+        const yawLimit = Math.min(3, STEER_MAX_LATERAL / Math.max(0.5, Math.abs(along)));
+        const yawRate = Math.max(-yawLimit, Math.min(yawLimit, along * Math.tan(angle) / wheelbase));
         const nextYaw = av.y + (yawRate - av.y) * Math.min(1, dt * 14);
         root.setAngvel({ x: av.x, y: nextYaw, z: av.z }, true);
         const v2 = root.linvel();

@@ -42,7 +42,7 @@ import {
 import { createWorkshopPhysics, getWorkshopSlotPose, LEVEL_ROTATION, qualifiesForSteering } from '../invention/workshopPhysics';
 import { platformStore, type ReleasedPart } from '../invention/platformStore';
 import { laserTableBridge, type PlatformChildInfo } from '../invention/laserTableBridge';
-import { cutFromEdge, validateOutline } from '../invention/platformShape';
+import { cutFromEdge, gridBounds, rasterize, validateOutline } from '../invention/platformShape';
 import { steerLimitsOnPlatform, unsupportedAfterCut } from '../invention/platformRules';
 import { resolvePrimaryInteract } from '../invention/interactResolution';
 import {
@@ -107,6 +107,8 @@ const SPAWN_POS: [number, number, number] = [-0.6, 1.15, 4.2];
 const ENABLED_ROTATIONS: [boolean, boolean, boolean] = [false, true, false];
 const BEAM_UP = new THREE.Vector3(0, 1, 0);
 const WHEEL_AXIS = new THREE.Vector3(1, 0, 0);
+/** Altura de trabajo de una plataforma recién fabricada (radio de rueda + margen). */
+const PLATFORM_WORK_HEIGHT = 0.46;
 const WRENCH_AXIS_VECTORS = {
   vertical: new THREE.Vector3(0, 1, 0),
   lateral: new THREE.Vector3(1, 0, 0),
@@ -745,9 +747,41 @@ export function PlayerRig({
         const fwd = scratchRayDir.current.set(0, 0, -1).applyQuaternion(camera.quaternion).setY(0);
         if (fwd.lengthSq() < 1e-4) fwd.set(0, 0, 1);
         fwd.normalize();
-        const entry = gameStore.spawnExtraPart('platform', [at.x + fwd.x * 1.9, Math.max(0.6, at.y + 0.3), at.z + fwd.z * 1.9]);
+        // Buscar un lugar libre cerca (adelante, a los costados o en la zona de creación libre).
+        const b = gridBounds(rasterize(outline));
+        const probe = new rapier.Cuboid((b.maxX - b.minX) / 2 + 0.1, 0.25, (b.maxZ - b.minZ) / 2 + 0.1);
+        const side = { x: fwd.z, z: -fwd.x };
+        const candidates = [
+          [at.x + fwd.x * 2.2, at.z + fwd.z * 2.2], [at.x + side.x * 2.2, at.z + side.z * 2.2],
+          [at.x - side.x * 2.2, at.z - side.z * 2.2], [at.x + fwd.x * 3.6, at.z + fwd.z * 3.6],
+          [FREE_BUILD_ORIGIN[0], FREE_BUILD_ORIGIN[2]], [FREE_BUILD_ORIGIN[0] + 2.5, FREE_BUILD_ORIGIN[2]],
+        ];
+        const yaw = new THREE.Quaternion().setFromAxisAngle(UP, Math.atan2(fwd.x, fwd.z));
+        let spot = candidates[0];
+        for (const c of candidates) {
+          const hit = world.intersectionWithShape({ x: c[0], y: 0.42, z: c[1] }, yaw, probe,
+            rapier.QueryFilterFlags.EXCLUDE_SENSORS, undefined, undefined, ctrl?.body ?? undefined);
+          if (!hit) { spot = c; break; }
+        }
+        const entry = gameStore.spawnExtraPart('platform', [spot[0], PLATFORM_WORK_HEIGHT, spot[1]]);
         if (!entry) return { error: 'El dispensador está lleno: retirá piezas extra' };
         platformStore.create(entry.id, template, outline);
+        // Sale de la mesa sostenida a altura de trabajo (como sobre caballetes) para poder soldarle
+        // ruedas a los costados y adelante sin que choquen con el piso. Al agarrarla vuelve a ser suelta.
+        let tries = 0;
+        const holdAtWorkHeight = () => {
+          const body = grabbableRegistry.getById(entry.id)?.getBody();
+          if (body?.isValid()) {
+            body.setTranslation({ x: spot[0], y: PLATFORM_WORK_HEIGHT, z: spot[1] }, true);
+            body.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
+            body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+            body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+            body.setBodyType(rapier.RigidBodyType.Fixed, true);
+            return;
+          }
+          if (++tries < 60) requestAnimationFrame(holdAtWorkHeight);
+        };
+        requestAnimationFrame(holdAtWorkHeight);
         lastPlatformRef.current = entry.id;
         playWeldClank();
         return { id: entry.id };
@@ -873,6 +907,120 @@ export function PlayerRig({
     });
     return () => { offRebuilt(); offBridge(); };
   }, [enabled, workshop, workshopPhysics, rapier, world, camera]);
+
+  // Gancho solo de desarrollo para pruebas automáticas: usa las funciones reales de agarrar y
+  // soldar, simulando únicamente hacia dónde apunta el láser. No existe en el build publicado.
+  useEffect(() => {
+    if (!import.meta.env.DEV || !enabled) return;
+    const dev = {
+      teleport(x: number, y: number, z: number) {
+        const b = ecctrlRef.current?.body;
+        b?.setTranslation({ x, y, z }, true);
+        b?.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      },
+      bodyPose(id: string) {
+        const b = grabbableRegistry.getById(id)?.getBody();
+        if (!b?.isValid()) return null;
+        return { t: b.translation(), r: b.rotation(), v: b.linvel(), av: b.angvel(), type: b.bodyType() };
+      },
+      ids(kind?: string) {
+        return [...grabbableRegistry.getAll()].filter((e) => !kind || e.kind === kind).map((e) => e.id);
+      },
+      steer(id: string) { return workshopPhysics.steerInfo(id); },
+      rotateMounted(id: string, axis: { x: number; y: number; z: number }, angle: number) {
+        return workshopPhysics.rotateMountedPart(id, axis, angle);
+      },
+      seated() { return seatedIdRef.current; },
+      highlighted() { return grabbableRegistry.highlightedId; },
+      free(x: number, z: number, hx: number, hz: number) {
+        const shape = new rapier.Cuboid(hx, 0.6, hz);
+        return !world.intersectionWithShape({ x, y: 0.75, z }, { x: 0, y: 0, z: 0, w: 1 }, shape,
+          rapier.QueryFilterFlags.EXCLUDE_SENSORS);
+      },
+      /** Lleva la creación fija a (x, z) con rumbo yaw (mismas funciones que mover/girar base). */
+      place(id: string, x: number, z: number, yaw: number) {
+        const st = workshop.stationOf(id);
+        const rootId = st ? customRootId(st) : undefined;
+        const root = rootId ? grabbableRegistry.getById(rootId)?.getBody() : null;
+        if (!st || !root?.isValid() || workshopPhysics.isReleased(st)) return 'suelta o inexistente';
+        const t = root.translation();
+        if (!workshopPhysics.moveAssembly(st, root, { x: x - t.x, y: 0.46 - t.y, z: z - t.z })) return 'lugar ocupado';
+        const target = new THREE.Quaternion().setFromAxisAngle(UP, yaw);
+        const delta = target.multiply(new THREE.Quaternion().copy(root.rotation()).invert()).normalize();
+        if (delta.w < 0) { delta.x = -delta.x; delta.y = -delta.y; delta.z = -delta.z; delta.w = -delta.w; }
+        const angle = 2 * Math.acos(Math.min(1, delta.w));
+        if (angle > 1e-3) {
+          const sinHalf = Math.sqrt(Math.max(1e-9, 1 - delta.w * delta.w));
+          const axis = new THREE.Vector3(delta.x / sinHalf, delta.y / sinHalf, delta.z / sinHalf);
+          if (!workshopPhysics.rotateAssembly(st, root, angle, axis)) return 'no pudo girar';
+        }
+        return 'ok';
+      },
+      ray(ox: number, oy: number, oz: number, dx: number, dy: number, dz: number) {
+        const hit = world.castRayAndGetNormal(new rapier.Ray({ x: ox, y: oy, z: oz }, { x: dx, y: dy, z: dz }), 4, true);
+        if (!hit) return null;
+        return { toi: hit.timeOfImpact, n: hit.normal, id: (hit.collider.parent()?.userData as { grabbableId?: string } | undefined)?.grabbableId ?? null };
+      },
+      colliders(id: string) {
+        const b = grabbableRegistry.getById(id)?.getBody();
+        if (!b?.isValid()) return null;
+        const out = [];
+        for (let i = 0; i < b.numColliders(); i++) {
+          const c = b.collider(i);
+          out.push({ en: c.isEnabled(), sensor: c.isSensor(), t: c.translation(), g: c.collisionGroups(), he: (c.shape as unknown as { halfExtents?: unknown }).halfExtents });
+        }
+        return out;
+      },
+      toggle(id: string) {
+        const st = workshop.stationOf(id);
+        const rootId = st ? customRootId(st) : undefined;
+        const root = rootId ? grabbableRegistry.getById(rootId)?.getBody() : null;
+        if (!st || !root) return null;
+        workshopPhysics.toggleAssembly(st, root, workshop);
+        return workshopPhysics.isReleased(st);
+      },
+      station(id: string) { return workshop.stationOf(id) ?? null; },
+      released(id: string) { const st = workshop.stationOf(id); return st ? workshopPhysics.isReleased(st) : null; },
+      /** Agarra `partId` y lo suelda sobre `parentId` como si el láser pegara en `localPoint` con normal `localNormal`. */
+      weld(partId: string, parentId: string, localPoint: { x: number; y: number; z: number },
+        localNormal: { x: number; y: number; z: number }, rot?: { x: number; y: number; z: number; w: number }) {
+        const entry = grabbableRegistry.getById(partId);
+        const parentBody = grabbableRegistry.getById(parentId)?.getBody();
+        const body = entry?.getBody();
+        const col = entry?.getCollider();
+        if (!entry || !body || !col || !parentBody?.isValid()) return 'pieza o base inexistente';
+        col.setSensor(true);
+        col.setEnabled(false);
+        body.setEnabled(false);
+        carriedIdRef.current = partId;
+        carriedKindRef.current = entry.kind;
+        carriedRotationRef.current.identity();
+        grabbableRegistry.carriedId = partId;
+        gameStore.setCarried(partId, entry.kind);
+        const parentRot = new THREE.Quaternion().copy(parentBody.rotation());
+        const hitPoint = new THREE.Vector3(localPoint.x, localPoint.y, localPoint.z).applyQuaternion(parentRot).add(parentBody.translation());
+        const normal = new THREE.Vector3(localNormal.x, localNormal.y, localNormal.z).applyQuaternion(parentRot).normalize();
+        carryExactQuatRef.current.copy(parentRot).multiply(new THREE.Quaternion(
+          rot?.x ?? 0, rot?.y ?? 0, rot?.z ?? 0, rot?.w ?? 1));
+        wrenchDirection.current.copy(normal).negate();
+        wrenchStart.current.copy(hitPoint).addScaledVector(normal, 1);
+        world.propagateModifiedBodyPositionsToColliders();
+        const ray = new rapier.Ray(wrenchStart.current, wrenchDirection.current);
+        const hit = world.castRayAndGetNormal(ray, 2, true, undefined, undefined, undefined, undefined,
+          (c) => c.parent()?.handle === parentBody.handle);
+        if (!hit) return 'el láser no pega en la base';
+        const type = workshopPartTypeForKind(entry.kind);
+        const axle = alignWeldAxle(hit, parentBody, type);
+        if (!prepareLaserPlacement(hit, axle ? partRotation.current : undefined)) {
+          return 'lugar ocupado';
+        }
+        mountCarriedItemOnPart(parentId, parentBody, axle);
+        return workshop.isMounted(partId) ? 'ok' : 'no se soldó';
+      },
+    };
+    (window as unknown as Record<string, unknown>).__desguaceDev = dev;
+    return () => { delete (window as unknown as Record<string, unknown>).__desguaceDev; };
+  });
 
   // Teleport character safely when exiting vehicle or moving between modes
   useEffect(() => {
@@ -2215,7 +2363,8 @@ export function PlayerRig({
     if (rotatesPiece) rotateCarriedItem(wrenchAxis, direction, ctrl);
     if (usingWrench && isRotateAction && !rotatesPiece && aimedLoosePiece) {
       rotateAimedItem(aimedLoosePiece, wrenchAxis, direction);
-    } else if (usingWrench && isRotateAction && !rotatesPiece && aimedId && workshop.isMounted(aimedId) && !aimedBase) {
+    } else if (usingWrench && isRotateAction && !rotatesPiece && aimedId && workshop.isMounted(aimedId) &&
+      aimedId !== aimedCustomRootId && workshopPhysics.canRotateMountedPart(aimedId)) {
       // Girar en el lugar una pieza ya soldada (p. ej. orientar el empuje de una hélice).
       const mountedBody = grabbableRegistry.getById(aimedId)?.getBody();
       if (mountedBody?.isValid()) {
@@ -2244,7 +2393,9 @@ export function PlayerRig({
         }
       }
       if (cartAction === 'push') workshopPhysics.pushAssembly(activeStation, activeRoot, scratchPlayerPos.current);
-      const requestsBaseRotation = (isRotateAction && !rotatesPiece && (!aiming || aimedBase)) ||
+      const rotatedMountedPart = Boolean(usingWrench && aimedId && aimedId !== aimedCustomRootId &&
+        workshop.isMounted(aimedId) && workshopPhysics.canRotateMountedPart(aimedId));
+      const requestsBaseRotation = (isRotateAction && !rotatesPiece && !rotatedMountedPart && (!aiming || aimedBase)) ||
         cartAction.startsWith('rotate-base');
       if (requestsBaseRotation && !activeReleased) {
         const step = usingWrench ? WRENCH_STEP : Math.PI / 4;
