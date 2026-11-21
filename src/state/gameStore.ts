@@ -132,6 +132,8 @@ export interface GameHudState {
   wrenchEquipped: boolean;
   /** Soldadora equipada (implica el rayo láser de la llave). */
   welderEquipped: boolean;
+  /** Amoladora equipada (corta soldaduras). Implica el rayo láser de la llave. */
+  grinderEquipped: boolean;
   /** Avance (0–1) de la soldadura que se está haciendo con la soldadora. */
   weldProgress: number;
   wrenchAiming: boolean;
@@ -204,6 +206,7 @@ let state: GameHudState = {
   seatedFlightMode: false,
   wrenchEquipped: false,
   welderEquipped: false,
+  grinderEquipped: false,
   weldProgress: 0,
   wrenchAiming: false,
   wrenchAimLocked: false,
@@ -468,21 +471,22 @@ export const gameStore = {
       wireHintClearTimer = null;
     }
     state = {
-      ...state, wrenchEquipped: !state.wrenchEquipped, welderEquipped: false, wrenchAiming: false, wrenchAimLocked: false, wrenchTarget: null,
+      ...state, wrenchEquipped: !state.wrenchEquipped, welderEquipped: false, grinderEquipped: false, wrenchAiming: false, wrenchAimLocked: false, wrenchTarget: null,
       aimedWorkshopSlot: null, laserHint: null, laserPlacementReady: false, partMountReady: false, wireHint: null, pendingWireFrom: null, wiringActive: false,
     };
     emit();
   },
-  /** Equipa o guarda la soldadora (Shift+X). Usa el mismo rayo de apuntado que la llave. */
+  /** Shift+X: llave → soldadora → amoladora → guardar. Las dos usan el mismo rayo de apuntado que la llave. */
   toggleWelder() {
     if (buildToolsLocked() && !state.wrenchEquipped) return;
     if (wireHintClearTimer !== null) {
       window.clearTimeout(wireHintClearTimer);
       wireHintClearTimer = null;
     }
-    const equip = !state.welderEquipped;
+    const next = state.welderEquipped ? 'grinder' : state.grinderEquipped ? 'none' : 'welder';
     state = {
-      ...state, wrenchEquipped: equip, welderEquipped: equip, wrenchAiming: false, wrenchAimLocked: false, wrenchTarget: null,
+      ...state, wrenchEquipped: next !== 'none', welderEquipped: next === 'welder', grinderEquipped: next === 'grinder',
+      wrenchAiming: false, wrenchAimLocked: false, wrenchTarget: null, weldProgress: 0,
       aimedWorkshopSlot: null, laserHint: null, laserPlacementReady: false, partMountReady: false, wireHint: null, pendingWireFrom: null, wiringActive: false,
     };
     emit();

@@ -108,6 +108,8 @@ const ENABLED_ROTATIONS: [boolean, boolean, boolean] = [false, true, false];
 const BEAM_UP = new THREE.Vector3(0, 1, 0);
 /** Segundos que hay que mantener la tecla para soldar con la soldadora. */
 const WELD_SECONDS = 0.7;
+/** Segundos que hay que mantener la tecla para cortar una soldadura con la amoladora. */
+const GRIND_SECONDS = 0.9;
 const AIM_PROJECTED = new THREE.Vector3();
 const WHEEL_AXIS = new THREE.Vector3(1, 0, 0);
 /** Altura de trabajo de una plataforma recién fabricada (radio de rueda + margen). */
@@ -166,6 +168,7 @@ export function PlayerRig({
   const cameraMode = useGameStore((s) => s.cameraMode);
   const wrenchEquipped = useGameStore((s) => s.wrenchEquipped);
   const welderEquipped = useGameStore((s) => s.welderEquipped);
+  const grinderEquipped = useGameStore((s) => s.grinderEquipped);
   const characterConfig = useGameStore((s) => s.characterConfig);
   const activeEmote = useGameStore((s) => s.activeEmote);
   const customAppearance = useMemo(
@@ -200,6 +203,8 @@ export function PlayerRig({
   const weldArmedRef = useRef(false);
   const weldChargeRef = useRef(0);
   const weldSparkClockRef = useRef(0);
+  const grindChargeRef = useRef(0);
+  const grindTargetRef = useRef<string | null>(null);
   const seated = useGameStore((s) => s.seated);
   const seatOffset = useRef(new THREE.Vector3());
   const seatRotation = useRef(new THREE.Quaternion());
@@ -2908,6 +2913,58 @@ export function PlayerRig({
       }
     }
 
+    // Amoladora: mantener E/F apuntando a una pieza soldada la corta; la pieza cae sola.
+    const usingGrinder = gameStore.getState().grinderEquipped;
+    let grindTargetId: string | null = null;
+    if (usingGrinder && aiming && !carriedIdRef.current && actionTargetId && !buildToolsLocked()) {
+      const grindStation = workshop.stationOf(actionTargetId);
+      if (grindStation && workshop.isMounted(actionTargetId) && customRootId(grindStation) !== actionTargetId &&
+        !workshopPhysics.isReleased(grindStation)) grindTargetId = actionTargetId;
+    }
+    if (grindTargetId && (playerInput.interactHeld || playerInput.weldHeld)) {
+      if (grindTargetRef.current !== grindTargetId) {
+        grindTargetRef.current = grindTargetId;
+        grindChargeRef.current = 0;
+      }
+      grindChargeRef.current += dt / GRIND_SECONDS;
+      weldSparkClockRef.current -= dt;
+      const dotPos = wrenchDotRef.current?.position;
+      if (weldSparkClockRef.current <= 0 && dotPos) {
+        weldSparkClockRef.current = 0.06;
+        dustPoolRef.current?.spawnBurst(dotPos.x, dotPos.y + 0.03, dotPos.z, 'spark');
+        playSpark();
+      }
+      if (grindChargeRef.current >= 1) {
+        grindChargeRef.current = 0;
+        grindTargetRef.current = null;
+        gameStore.setWeldProgress(0);
+        const cutEntry = grabbableRegistry.getById(grindTargetId);
+        const cutBody = cutEntry?.getBody();
+        for (const removedId of workshop.remove(grindTargetId)) {
+          workshopPhysics.detach(removedId);
+          const remBody = grabbableRegistry.getById(removedId)?.getBody();
+          if (remBody && remBody.isValid()) {
+            if (remBody.bodyType() === rapier.RigidBodyType.Fixed) remBody.setBodyType(rapier.RigidBodyType.Dynamic, true);
+            remBody.wakeUp();
+          }
+        }
+        workshopPhysics.updateMotors(workshop);
+        gameStore.setCanUndoMount(workshop.canUndo());
+        if (cutBody && cutBody.isValid()) {
+          const mass = Math.max(0.5, cutBody.mass());
+          cutBody.applyImpulse({ x: scratchCamFwd.current.x * mass * 0.6, y: mass * 1.1, z: scratchCamFwd.current.z * mass * 0.6 }, true);
+          const at = cutBody.translation();
+          dustPoolRef.current?.spawnBurst(at.x, at.y + 0.1, at.z, 'spark');
+        }
+        playWeldClank();
+        gameStore.celebrate('¡Soldadura cortada!');
+      } else gameStore.setWeldProgress(grindChargeRef.current);
+    } else if (grindChargeRef.current > 0) {
+      grindChargeRef.current = 0;
+      grindTargetRef.current = null;
+      gameStore.setWeldProgress(0);
+    }
+
     const partAction = playerInput.consumePartAction();
     let unmountTarget: string | null = null;
     if (partAction === 'unmount' && !carriedIdRef.current) {
@@ -2987,7 +3044,7 @@ export function PlayerRig({
     );
 
     // 6. Handle Grab / Drop interaction trigger
-    const primaryInteract = interact && !primaryWire;
+    const primaryInteract = interact && !primaryWire && !grindTargetId;
     const resolvedInteract = primaryInteract && interactReq && inventoryAction === null
       ? resolvePrimaryInteract(interactReq, {
           isCarrying: Boolean(carriedIdRef.current),
@@ -3580,6 +3637,7 @@ export function PlayerRig({
             firstPersonHideHead={cameraMode === 'firstPerson'}
             wrenchEquipped={wrenchEquipped}
             welderEquipped={welderEquipped}
+            grinderEquipped={grinderEquipped}
             seated={seated}
             alignToGround
             wrenchTipRef={wrenchTipRef}
