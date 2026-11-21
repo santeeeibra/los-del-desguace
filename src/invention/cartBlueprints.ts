@@ -77,6 +77,7 @@ export function captureCartBlueprint(
         localPos: pose.position.toArray(),
         localRot: pose.rotation.toArray(),
         axle: axle ? { x: axle.x, y: axle.y, z: axle.z } : undefined,
+        ...(physics.isSteerable(id) ? { steer: true } : {}),
       });
     }
   } else {
@@ -100,6 +101,7 @@ export function captureCartBlueprint(
         partId: id, kind: entry.kind, slotId: mount.id, parentId: mount.parentId,
         localPos: pose.position.toArray(), localRot: pose.rotation.toArray(),
         axle: axle ? { x: axle.x, y: axle.y, z: axle.z } : undefined,
+        ...(physics.isSteerable(id) ? { steer: true } : {}),
       });
     }
   }
@@ -142,6 +144,7 @@ interface PlannedPart {
   freeOnCart: boolean;
   isRoot: boolean;
   axis?: Vector3;
+  steer?: boolean;
 }
 
 export function restoreCartBlueprint(
@@ -251,7 +254,7 @@ export function restoreCartBlueprint(
       rotation = new Quaternion().copy(pose.rotation);
     }
     const shapeRotation = part.kind === 'wheel' ? rotation.clone().multiply(wheelColliderRotation) : rotation;
-    planned.set(part.partId, { body, collider, position, rotation, shapeRotation, slot, axis, freeOnCart, isRoot });
+    planned.set(part.partId, { body, collider, position, rotation, shapeRotation, slot, axis, freeOnCart, isRoot, steer: part.steer });
     movingHandles.add(body.handle);
   }
 
@@ -404,10 +407,10 @@ export function restoreCartBlueprint(
       const parentEntry = grabbableRegistry.getById(parentId);
       const parentType = parentEntry ? workshopPartTypeForKind(parentEntry.kind) : 'fixture';
       const mount = assembly.mountOnPart(id, parentId, type, axis, parentType)!;
-      physics.attachOnPart(id, mount, body, parent.body, position, rotation, axis);
+      physics.attachOnPart(id, mount, body, parent.body, position, rotation, axis, { steer: part.steer });
     } else if (part.freeOnCart) {
       const mount = assembly.mountFreeOnCart(id, type, axis)!;
-      physics.attachOnPart(id, mount, body, cart, position, rotation, axis);
+      physics.attachOnPart(id, mount, body, cart, position, rotation, axis, { steer: part.steer });
     }
   }
   for (const node of blueprint.logic.nodes) {

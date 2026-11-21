@@ -12,6 +12,8 @@ export interface BlueprintPartEntry {
   localPos: readonly [number, number, number];
   localRot: readonly [number, number, number, number];
   axle?: { x: number; y: number; z: number };
+  /** Rueda de dirección (se soldó con unión de pivote vertical). */
+  steer?: boolean;
 }
 
 export interface ContraptionBlueprint {
@@ -637,6 +639,7 @@ export function createBlueprint(
     parts: parts.map((p) => ({
       ...p, localPos: [...p.localPos], localRot: [...p.localRot],
       axle: p.axle ? { ...p.axle } : undefined,
+      ...(p.steer ? { steer: true } : {}),
     })),
     logic: graph.toJSON(),
   };
@@ -768,7 +771,8 @@ export function decodeBlueprintCode(raw: string): ContraptionBlueprint | null {
         Math.abs(Math.hypot(...part.localRot) - 1) < 0.03 &&
         (part.axle === undefined || (part.axle &&
           [part.axle.x, part.axle.y, part.axle.z].every(Number.isFinite) &&
-          Math.abs(Math.hypot(part.axle.x, part.axle.y, part.axle.z) - 1) < 0.03))
+          Math.abs(Math.hypot(part.axle.x, part.axle.y, part.axle.z) - 1) < 0.03)) &&
+        (part.steer === undefined || typeof part.steer === 'boolean')
     );
     if (!validParts || new Set(parsed.p.map(({ partId }) => partId)).size !== parsed.p.length) return null;
     const nodeIds = new Set<string>();

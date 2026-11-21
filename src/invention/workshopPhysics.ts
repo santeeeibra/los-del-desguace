@@ -2,9 +2,42 @@ import type { RapierCollider, RapierRigidBody, useRapier } from '@react-three/ra
 import { Euler, Quaternion, Vector3 } from 'three';
 import type { WorkshopAssembly, WorkshopMount, WorkshopSlot, WorkshopStation } from './workshopAssembly';
 import { isCustomStation } from './workshopAssembly';
+import { steerPivotLocal } from './platformShape';
 
 type PhysicsContext = ReturnType<typeof useRapier>;
 type ImpulseJoint = ReturnType<PhysicsContext['world']['createImpulseJoint']>;
+
+export type MountLocalPose = { position: Vector3; rotation: Quaternion; axis?: Vector3 };
+
+interface MountRecord {
+  slot: WorkshopMount;
+  joint: ImpulseJoint;
+  createJoint: () => ImpulseJoint;
+  body: RapierRigidBody;
+  axleMount?: RapierRigidBody;
+  /** Mangueta de una rueda de dirección (pivote vertical entre la pieza madre y el eje). */
+  knuckle?: RapierRigidBody;
+  parentBody?: RapierRigidBody;
+  steer?: { joint: ImpulseJoint; min: number; max: number; target: number };
+  speed: number;
+  braking?: boolean;
+  localPose?: MountLocalPose;
+}
+
+/** Recorrido por defecto de una rueda de dirección cuando nada la estorba. */
+export const STEER_DEFAULT = 0.6;
+const STEER_STIFFNESS = 900;
+const STEER_DAMPING = 60;
+const steerScratch = new Quaternion();
+const steerScratch2 = new Quaternion();
+
+/**
+ * Regla general de montaje: una rueda soldada con eje lateral (izquierda-derecha de su pieza madre)
+ * y adelante del centro de esa pieza se suelda con mangueta y dirige.
+ */
+export function qualifiesForSteering(localPoint: { x: number; z: number }, localAxis: { x: number; y: number; z: number }) {
+  return Math.abs(localAxis.x) > 0.9 && localPoint.z > 0.12;
+}
 
 const CENTER = { x: 0, y: 0, z: 0 };
 export const LEVEL_ROTATION = { x: 0, y: 0, z: 0, w: 1 };
@@ -38,18 +71,29 @@ export function createWorkshopPhysics(
   { world, rapier }: Pick<PhysicsContext, 'world' | 'rapier'>,
   engineSignal?: (id: string) => number | undefined,
   motorDirection?: (id: string) => number,
+  steerLimits?: (id: string, mount: WorkshopMount, pose: MountLocalPose) => { min: number; max: number } | undefined,
 ) {
   let anchor: RapierRigidBody | null = null;
-  const mounts = new Map<string, {
-    slot: WorkshopMount;
-    joint: ImpulseJoint;
-    createJoint: () => ImpulseJoint;
-    body: RapierRigidBody;
-    axleMount?: RapierRigidBody;
-    speed: number;
-    braking?: boolean;
-    localPose?: { position: Vector3; rotation: Quaternion; axis?: Vector3 };
-  }>();
+  const mounts = new Map<string, MountRecord>();
+
+  function applySteerLimits(record: MountRecord, limits: { min: number; max: number }) {
+    const steer = record.steer;
+    if (!steer || !steer.joint.isValid()) return;
+    steer.min = Math.min(0, limits.min);
+    steer.max = Math.max(0, limits.max);
+    const joint = steer.joint as InstanceType<typeof rapier.RevoluteImpulseJoint>;
+    // Con recorrido nulo la mangueta queda trabada en el centro.
+    joint.setLimits(steer.min - 1e-3, steer.max + 1e-3);
+    steer.target = Math.max(steer.min, Math.min(steer.max, steer.target));
+    joint.configureMotorPosition(steer.target, STEER_STIFFNESS, STEER_DAMPING);
+  }
+
+  function steerAngle(record: MountRecord): number {
+    if (!record.knuckle?.isValid() || !record.parentBody?.isValid()) return 0;
+    const rel = steerScratch.copy(record.parentBody.rotation()).invert()
+      .multiply(steerScratch2.copy(record.knuckle.rotation()));
+    return 2 * Math.atan2(rel.y, rel.w);
+  }
   const releasedStations = new Set<WorkshopStation>();
   const parkedParts = new Set<RapierRigidBody>();
   let bench: { root: RapierRigidBody; rotors: Set<string>; motors: Set<string> } | null = null;
@@ -100,6 +144,9 @@ export function createWorkshopPhysics(
     if (owner === undefined) vehicleGroups.delete(station);
   }
   const driveDirection = new Vector3();
+  const steerForward = new Vector3();
+  const steerLocal = new Vector3();
+  const steerInvRoot = new Quaternion();
   const driveRotation = new Quaternion();
   const upVector = new Vector3();
   const targetUp = new Vector3();
@@ -131,6 +178,7 @@ export function createWorkshopPhysics(
       if (mount.slot.station !== station) continue;
       if (mount.body.isValid()) bodies.push(mount.body);
       if (mount.axleMount?.isValid()) bodies.push(mount.axleMount);
+      if (mount.knuckle?.isValid()) bodies.push(mount.knuckle);
     }
     return bodies;
   }
@@ -251,6 +299,7 @@ export function createWorkshopPhysics(
       worldPosition: { x: number; y: number; z: number },
       worldRotation: { x: number; y: number; z: number; w: number },
       worldAxis?: { x: number; y: number; z: number },
+      options: { steer?: boolean } = {},
     ) {
       const parentInvRot = new Quaternion().copy(parentBody.rotation()).invert();
       const parentPos = parentBody.translation();
@@ -265,9 +314,28 @@ export function createWorkshopPhysics(
       const localAxis = worldAxis
         ? new Vector3(worldAxis.x, worldAxis.y, worldAxis.z).applyQuaternion(parentInvRot).normalize()
         : undefined;
+      const pose = { position: localPoint, rotation: localRot, axis: localAxis };
       const wheelAxis = localAxis?.clone().applyQuaternion(localRot.clone().invert());
+      const steer = Boolean(options.steer && mount.type === 'wheel' && localAxis);
       let axleMount: RapierRigidBody | undefined;
-      if (localAxis && wheelAxis && localAxis.dot(wheelAxis) < 0.9999) {
+      let knuckle: RapierRigidBody | undefined;
+      let steerJoint: ImpulseJoint | undefined;
+      let knuckleOffset: Vector3 | undefined;
+      if (steer && localAxis) {
+        // Mangueta: pivote vertical (eje Y de la pieza madre) en el punto de soldadura de la rueda.
+        const pivot = new Vector3().copy(steerPivotLocal(localPoint, localAxis));
+        knuckleOffset = localPoint.clone().sub(pivot);
+        const pivotWorld = pivot.clone().applyQuaternion(parentBody.rotation()).add(parentPos);
+        knuckle = world.createRigidBody(rapier.RigidBodyDesc.dynamic()
+          .setTranslation(pivotWorld.x, pivotWorld.y, pivotWorld.z)
+          .setRotation(parentBody.rotation())
+          .setAdditionalMassProperties(0.8, CENTER, { x: 0.06, y: 0.06, z: 0.06 }, LEVEL_ROTATION)
+          .setAdditionalSolverIterations(4));
+        steerJoint = world.createImpulseJoint(
+          rapier.JointData.revolute(pivot, CENTER, VERTICAL), parentBody, knuckle, true);
+        steerJoint.setContactsEnabled(false);
+      }
+      if (localAxis && wheelAxis && (steer || localAxis.dot(wheelAxis) < 0.9999)) {
         // Rapier uses the same local axis in both bodies of a revolute joint.
         axleMount = world.createRigidBody(rapier.RigidBodyDesc.dynamic()
           .setTranslation(worldPosition.x, worldPosition.y, worldPosition.z)
@@ -275,7 +343,10 @@ export function createWorkshopPhysics(
           .setAdditionalMassProperties(1, CENTER, { x: 0.08, y: 0.08, z: 0.08 }, LEVEL_ROTATION)
           .setAdditionalSolverIterations(4));
         world.createImpulseJoint(
-          rapier.JointData.fixed(localPoint, localRot, CENTER, LEVEL_ROTATION), parentBody, axleMount, true);
+          knuckle
+            ? rapier.JointData.fixed(knuckleOffset!, localRot, CENTER, LEVEL_ROTATION)
+            : rapier.JointData.fixed(localPoint, localRot, CENTER, LEVEL_ROTATION),
+          knuckle ?? parentBody, axleMount, true);
       }
       ignoreVehicleContacts(mount.station, parentBody, body);
       body.setAdditionalSolverIterations(4);
@@ -283,19 +354,77 @@ export function createWorkshopPhysics(
       if (mount.type === 'wheel') setWheelFriction(body, WHEEL_MOUNTED_FRICTION);
       const createJoint = () => {
         const descriptor = localAxis
-          ? rapier.JointData.revolute(axleMount ? CENTER : localPoint, CENTER, axleMount ? wheelAxis! : localAxis)
-          : rapier.JointData.fixed(localPoint, localRot, CENTER, LEVEL_ROTATION);
+          ? rapier.JointData.revolute(axleMount ? CENTER : pose.position, CENTER, axleMount ? wheelAxis! : localAxis)
+          : rapier.JointData.fixed(pose.position, pose.rotation, CENTER, LEVEL_ROTATION);
         const joint = world.createImpulseJoint(descriptor, axleMount ?? parentBody, body, true);
         joint.setContactsEnabled(false);
         return joint;
       };
-      mounts.set(id, {
-        slot: mount, joint: createJoint(), createJoint, body, axleMount, speed: 0,
-        localPose: { position: localPoint, rotation: localRot, axis: localAxis },
-      });
+      const record: MountRecord = {
+        slot: mount, joint: createJoint(), createJoint, body, axleMount, speed: 0, localPose: pose,
+        parentBody,
+      };
+      if (knuckle && steerJoint) {
+        record.knuckle = knuckle;
+        record.steer = { joint: steerJoint, min: -STEER_DEFAULT, max: STEER_DEFAULT, target: 0 };
+        const limits = steerLimits?.(id, mount, pose);
+        applySteerLimits(record, limits ?? { min: -STEER_DEFAULT, max: STEER_DEFAULT });
+      }
+      mounts.set(id, record);
     },
     getLocalAttachment(id: string) {
       return mounts.get(id)?.localPose;
+    },
+    isSteerable(id: string) {
+      return Boolean(mounts.get(id)?.steer);
+    },
+    /** Recorrido libre, objetivo y ángulo real de una rueda de dirección. */
+    steerInfo(id: string) {
+      const record = mounts.get(id);
+      if (!record?.steer) return null;
+      return { min: record.steer.min, max: record.steer.max, target: record.steer.target, angle: steerAngle(record) };
+    },
+    /** Vuelve a pedir los topes de dirección (p. ej. después de recortar la pieza madre). */
+    refreshSteerLimits(parentId?: string) {
+      for (const [id, record] of mounts) {
+        if (!record.steer || !record.localPose) continue;
+        if (parentId !== undefined && record.slot.parentId !== parentId) continue;
+        applySteerLimits(record, steerLimits?.(id, record.slot, record.localPose) ?? { min: -STEER_DEFAULT, max: STEER_DEFAULT });
+        record.knuckle?.wakeUp();
+      }
+    },
+    /** Reaplica el grupo de colisión del vehículo a todos los colisionadores actuales de un cuerpo. */
+    refreshBodyContacts(body: RapierRigidBody) {
+      for (const record of mounts.values()) {
+        if (record.body === body && record.parentBody?.isValid()) {
+          ignoreVehicleContacts(record.slot.station, record.parentBody, body);
+        } else if (record.parentBody === body && record.body.isValid()) {
+          ignoreVehicleContacts(record.slot.station, body, record.body);
+        }
+      }
+    },
+    /**
+     * Gira en el lugar una pieza soldada (sin hijos) alrededor de su centro y la vuelve a soldar.
+     * Sirve para reorientar el empuje de una hélice sin desarmar nada.
+     */
+    rotateMountedPart(id: string, worldAxis: { x: number; y: number; z: number }, angle: number): boolean {
+      const record = mounts.get(id);
+      const parent = record?.parentBody;
+      if (!record || !parent?.isValid() || !record.localPose || record.localPose.axis || record.knuckle) return false;
+      if ([...mounts.values()].some((other) => other.parentBody === record.body)) return false;
+      const parentRot = new Quaternion().copy(parent.rotation());
+      const localAxis = new Vector3(worldAxis.x, worldAxis.y, worldAxis.z).applyQuaternion(parentRot.clone().invert()).normalize();
+      record.localPose.rotation.premultiply(new Quaternion().setFromAxisAngle(localAxis, angle)).normalize();
+      if (record.joint.isValid()) world.removeImpulseJoint(record.joint, true);
+      const worldRot = parentRot.multiply(record.localPose.rotation);
+      const worldPos = record.localPose.position.clone().applyQuaternion(new Quaternion().copy(parent.rotation())).add(parent.translation());
+      record.body.setTranslation(worldPos, true);
+      record.body.setRotation(worldRot, true);
+      record.body.setLinvel(CENTER, true);
+      record.body.setAngvel(CENTER, true);
+      record.joint = record.createJoint();
+      world.propagateModifiedBodyPositionsToColliders();
+      return true;
     },
     detach(id: string) {
       const mount = mounts.get(id);
@@ -304,6 +433,10 @@ export function createWorkshopPhysics(
       if (mount.axleMount) {
         parkedParts.delete(mount.axleMount);
         if (mount.axleMount.isValid()) world.removeRigidBody(mount.axleMount);
+      }
+      if (mount.knuckle) {
+        parkedParts.delete(mount.knuckle);
+        if (mount.knuckle.isValid()) world.removeRigidBody(mount.knuckle);
       }
       unparkPart(mount.body);
       if (mount.slot.type === 'wheel') setWheelFriction(mount.body, WHEEL_LOOSE_FRICTION);
@@ -390,6 +523,62 @@ export function createWorkshopPhysics(
           const cosA = Math.cos(turnAngle);
           const sinA = Math.sin(turnAngle);
           root.setLinvel({ x: vel.x * cosA + vel.z * sinA, y: vel.y, z: -vel.x * sinA + vel.z * cosA }, true);
+        }
+        return;
+      }
+      // Ruedas de dirección reales: el giro sale del ángulo que de verdad alcanzó la mangueta
+      // (modelo de bicicleta). Si la chapa le traba el recorrido, la máquina no dobla.
+      const steerers: MountRecord[] = [];
+      const fixedWheels: MountRecord[] = [];
+      for (const record of mounts.values()) {
+        if (record.slot.station !== station || record.slot.type !== 'wheel' || !record.body.isValid()) continue;
+        if (record.steer && record.knuckle?.isValid()) steerers.push(record);
+        else fixedWheels.push(record);
+      }
+      if (steerers.length) {
+        const rootRot = driveRotation.copy(root.rotation());
+        const rootFwd = steerForward.set(0, 0, 1).applyQuaternion(rootRot);
+        rootFwd.y = 0;
+        if (rootFwd.lengthSq() < 1e-4) return;
+        rootFwd.normalize();
+        const driverSign = fwd.lengthSq() > 1e-4 && fwd.dot(rootFwd) < 0 ? -1 : 1;
+        const invRoot = steerInvRoot.copy(rootRot).invert();
+        const rootPos = root.translation();
+        const localZ = (body: RapierRigidBody) => {
+          const t = body.translation();
+          return steerLocal.set(t.x - rootPos.x, t.y - rootPos.y, t.z - rootPos.z).applyQuaternion(invRoot).z;
+        };
+        let angle = 0;
+        let steerZ = 0;
+        for (const record of steerers) {
+          const steerState = record.steer!;
+          const target = Math.max(steerState.min, Math.min(steerState.max, -steer * STEER_DEFAULT * driverSign));
+          if (Math.abs(target - steerState.target) > 1e-3) {
+            steerState.target = target;
+            (steerState.joint as InstanceType<typeof rapier.RevoluteImpulseJoint>)
+              .configureMotorPosition(target, STEER_STIFFNESS, STEER_DAMPING);
+            record.knuckle!.wakeUp();
+          }
+          angle += steerAngle(record);
+          steerZ += localZ(record.knuckle!);
+        }
+        angle /= steerers.length;
+        steerZ /= steerers.length;
+        let rearZ = 0;
+        for (const record of fixedWheels) rearZ += localZ(record.body);
+        rearZ = fixedWheels.length ? rearZ / fixedWheels.length : 0;
+        let wheelbase = steerZ - rearZ;
+        if (Math.abs(wheelbase) < 0.3) wheelbase = wheelbase < 0 ? -0.3 : 0.3;
+        const along = vel.x * rootFwd.x + vel.z * rootFwd.z;
+        const yawRate = Math.max(-3, Math.min(3, along * Math.tan(angle) / wheelbase));
+        const nextYaw = av.y + (yawRate - av.y) * Math.min(1, dt * 14);
+        root.setAngvel({ x: av.x, y: nextYaw, z: av.z }, true);
+        const v2 = root.linvel();
+        if (Math.hypot(v2.x, v2.z) > 0.35) {
+          const turnAngle = nextYaw * dt * 0.85;
+          const cosA = Math.cos(turnAngle);
+          const sinA = Math.sin(turnAngle);
+          root.setLinvel({ x: v2.x * cosA + v2.z * sinA, y: v2.y, z: -v2.x * sinA + v2.z * cosA }, true);
         }
         return;
       }
