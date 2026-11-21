@@ -1506,3 +1506,34 @@
 .laser-hint.is-warning { color: #8f2a14; }
 .laser-steer-readout strong { color: #24574f; }
 .laser-message { margin: 0; }
+
+/* Celular apaisado / pantallas bajas: tablero a la izquierda, controles a la derecha. */
+@media (max-height: 560px) {
+  .laser-card.hud-menu-card {
+    width: min(820px, calc(100vw - 24px));
+    max-height: calc(100dvh - 16px);
+    padding-top: 10px;
+    padding-bottom: 10px;
+    gap: 6px;
+  }
+  .laser-card h2 { font-size: 20px; }
+  .laser-tab {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-auto-flow: row dense;
+    column-gap: 10px;
+    row-gap: 6px;
+    align-content: start;
+  }
+  .laser-tab > * { grid-column: 2; }
+  .laser-tab > .laser-board {
+    grid-column: 1;
+    grid-row: 1 / span 8;
+    width: auto;
+    height: calc(100dvh - 140px);
+    max-height: 340px;
+    min-height: 180px;
+  }
+  .laser-row .hud-button { min-height: 36px; padding: 4px 8px; font-size: 13px; }
+  .laser-hint, .laser-steer-readout { font-size: 12px; }
+}
