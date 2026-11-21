@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import type { ContraptionBlueprint } from '../logic/blueprintManager';
 import { gameStore } from '../state/gameStore';
+import { buildToolsLocked } from '../modes/gameModes';
 import { INVENTORY_SIZE } from '../state/inventory';
 
 export interface PlayerInputSnapshot {
@@ -91,6 +92,7 @@ class PlayerInputBus {
   readonly logicKeys: Record<string, boolean> = {};
 
   requestWire() {
+    if (buildToolsLocked()) return;
     this.wireRequested = true;
   }
 

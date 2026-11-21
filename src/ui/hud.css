@@ -1192,3 +1192,82 @@
 @media (prefers-reduced-motion: reduce) {
   .hud-button, .hud-pad, .hud-reticle { transition: none; }
 }
+
+/* ── Entrega Delicada ─────────────────────────────────────────── */
+.hud-delivery-panel {
+  /* A la izquierda, bajo la placa de estado: el centro superior es de la píldora contextual. */
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 64px);
+  left: max(16px, env(safe-area-inset-left, 0px));
+  width: min(300px, 44vw);
+  padding: 10px 14px 12px;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--hud-ink);
+  font-family: var(--font-body);
+}
+.hud-delivery-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-family: var(--font-display);
+  font-size: 17px;
+}
+.hud-delivery-clock {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+.hud-delivery-goal {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--hud-ink-soft);
+}
+.hud-delivery-bar {
+  position: relative;
+  height: 24px;
+  border-radius: 999px;
+  border: 3px solid var(--hud-outline);
+  background: #5c3316;
+  overflow: hidden;
+}
+.hud-delivery-fill {
+  height: 100%;
+  background: linear-gradient(#ffe074, #e39a24);
+  transition: width .25s ease-out;
+}
+.hud-delivery-fill.is-low { background: linear-gradient(#df6e50, #b14027); }
+.hud-delivery-bar span {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 13px;
+  color: #fff4d6;
+  text-shadow: 0 2px 0 var(--hud-outline);
+}
+@media (max-height: 480px), (max-width: 560px) {
+  .hud-delivery-panel { top: calc(env(safe-area-inset-top, 0px) + 52px); padding: 6px 10px 8px; gap: 5px; min-width: 168px; }
+  .hud-delivery-goal { display: none; }
+  .hud-delivery-row { font-size: 14px; }
+  .hud-delivery-clock { font-size: 20px; }
+}
+/* Celular vertical: la píldora contextual ocupa todo el ancho superior, así que el
+   panel baja justo encima de la caja de herramientas (medido en iPhone 11 emulado). */
+@media (max-width: 560px) and (orientation: portrait) {
+  .hud-delivery-panel {
+    top: auto;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 212px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(340px, calc(100vw - 32px));
+  }
+  /* En vertical hay lugar: el objetivo se muestra, es la explicación del juego. */
+  .hud-delivery-goal { display: block; font-size: 12px; }
+}

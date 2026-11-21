@@ -40,29 +40,29 @@ describe('Entrega Delicada: reloj', () => {
 describe('Entrega Delicada: daño de la carga', () => {
   it('los golpes suaves no dañan y ninguno quita más del tope', () => {
     const s = running();
-    expect(impactDamage(s, { impulse: R.impactThreshold }, NONE)).toBe(0);
-    expect(impactDamage(s, { impulse: 1000 }, NONE)).toBe(R.maxDamagePerHit);
+    expect(impactDamage(s, { deltaV: R.impactThreshold }, NONE)).toBe(0);
+    expect(impactDamage(s, { deltaV: 1000 }, NONE)).toBe(R.maxDamagePerHit);
   });
 
   it('amortiguador y Sujetar a tiempo reducen el daño', () => {
     const s = running();
-    const base = impactDamage(s, { impulse: 10 }, NONE);
-    expect(impactDamage(s, { impulse: 10 }, { shockAbsorber: true, bumper: false })).toBeCloseTo(base * R.shockAbsorber);
-    expect(impactDamage(s, { impulse: 10, heldOnTime: true }, NONE)).toBeCloseTo(base * R.holdOnTime);
+    const base = impactDamage(s, { deltaV: 3 }, NONE);
+    expect(impactDamage(s, { deltaV: 3 }, { shockAbsorber: true, bumper: false })).toBeCloseTo(base * R.shockAbsorber);
+    expect(impactDamage(s, { deltaV: 3, heldOnTime: true }, NONE)).toBeCloseTo(base * R.holdOnTime);
   });
 
   it('el paragolpes protege solo de frente y se dobla con los golpes fuertes, sin llegar a cero', () => {
     let s = running();
     const loadout = { shockAbsorber: false, bumper: true };
-    expect(impactDamage(s, { impulse: 10 }, loadout)).toBe(impactDamage(s, { impulse: 10 }, NONE));
-    for (let i = 0; i < 6; i++) s = applyImpact(s, { impulse: 30, frontal: true }, loadout);
+    expect(impactDamage(s, { deltaV: 3 }, loadout)).toBe(impactDamage(s, { deltaV: 3 }, NONE));
+    for (let i = 0; i < 6; i++) s = applyImpact(s, { deltaV: 30, frontal: true }, loadout);
     expect(s.bumperProtection).toBe(R.bumperMin);
     expect(tightenBumper(s).bumperProtection).toBe(R.bumperStart);
   });
 
   it('la integridad baja hasta 0 pero la partida sigue y se puede entregar', () => {
     let s = running();
-    for (let i = 0; i < 10; i++) s = applyImpact(s, { impulse: 1000 }, NONE);
+    for (let i = 0; i < 10; i++) s = applyImpact(s, { deltaV: 1000 }, NONE);
     expect(s.integrity).toBe(0);
     expect(s.phase).toBe('run');
     s = deliver(s);
@@ -85,7 +85,7 @@ describe('Entrega Delicada: rescates, resultado y revancha', () => {
 
   it('puntúa estrellas, bonus de tiempo y medalla de ruta', () => {
     let s = chooseRoute(running(), 'shortcut');
-    s = applyImpact(s, { impulse: 10 }, NONE); // −15
+    s = applyImpact(s, { deltaV: 4.375 }, NONE); // −15
     s = deliver(tickDelivery(s, 100));
     expect(scoreDelivery(s)).toEqual({ stars: 3, timeBonus: 160, total: 850 + 160, medal: 'Atajo', message: '¡Entregada al 85 %!' });
   });
@@ -97,7 +97,7 @@ describe('Entrega Delicada: rescates, resultado y revancha', () => {
   });
 
   it('la revancha arranca con mayoría y deja todo limpio', () => {
-    let s = deliver(applyImpact(running(), { impulse: 20 }, NONE));
+    let s = deliver(applyImpact(running(), { deltaV: 20 }, NONE));
     s = voteRematch(s, 'a', 3);
     expect(s.phase).toBe('result');
     s = voteRematch(s, 'b', 3);

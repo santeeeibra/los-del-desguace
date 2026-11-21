@@ -8,7 +8,7 @@ import {
   type GameModeId,
 } from '../modes/gameModes';
 import { WORKSHOP_CONTRACTS, useContractStore } from '../modes/contracts';
-function ActiveModeCheckpoints({ mode }: { mode: Exclude<GameModeId, 'sandbox'> }) {
+function ActiveModeCheckpoints({ mode }: { mode: Exclude<GameModeId, 'sandbox' | 'delivery'> }) {
   const checkpointIndex = useGameModeStore((s) => s.checkpointIndex);
   const raceFinished = useGameModeStore((s) => s.raceFinished);
   const flightTargetReached = useGameModeStore((s) => s.flightTargetReached);
@@ -90,7 +90,7 @@ export function TrackCheckpoints() {
 
   return (
     <>
-      {mode !== 'sandbox' && <ActiveModeCheckpoints mode={mode} />}
+      {mode !== 'sandbox' && mode !== 'delivery' && <ActiveModeCheckpoints mode={mode} />}
       {activeContract && activeContract.kind === 'reach' && (
         <ContractTargetRing position={activeContract.targetPos} />
       )}

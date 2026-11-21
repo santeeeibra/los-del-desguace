@@ -53,7 +53,7 @@ import {
 import { arenaAndBridgeStore, BRIDGE_SPAN_Z_MAX, BRIDGE_SPAN_Z_MIN } from '../modes/arenaAndBridge';
 import { BOWLING_BARREL_IDS, contractStore } from '../modes/contracts';
 import { isInTowerNutReach } from '../modes/towerMirador';
-import { gameModeStore } from '../modes/gameModes';
+import { buildToolsLocked, gameModeStore } from '../modes/gameModes';
 import { multiplayerStore } from '../multiplayer/multiplayerStore';
 import { rotatedHalfHeight, rotatedSupportDistance, wrenchStep, WRENCH_STEP, type WrenchAxis } from '../invention/wrenchRotation';
 import { wrenchMarkerScore, WRENCH_REACH } from '../invention/wrenchTargeting';
@@ -1974,7 +1974,8 @@ export function PlayerRig({
     const partAction = playerInput.consumePartAction();
     if (partAction) {
       if ((partAction === 'weld' || partAction === 'smart-use') && carriedIdRef.current) {
-        performLaserWeld();
+        // En Entrega Delicada no hay soldadura libre: se arma por slots.
+        if (!buildToolsLocked()) performLaserWeld();
       } else if (partAction === 'ride' && !carriedIdRef.current && actionTargetId) {
         const entry = grabbableRegistry.getById(actionTargetId);
         const targetStation = workshop.stationOf(actionTargetId);

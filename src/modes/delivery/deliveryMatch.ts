@@ -14,10 +14,14 @@ export type RouteId = 'shortcut' | 'long';
 export const DELIVERY_RULES = {
   buildSec: 60,
   runSec: 180,
-  /** Golpe mínimo (impulso, N·s) que empieza a dañar la carga. */
-  impactThreshold: 4,
-  /** Integridad perdida por cada N·s por encima del umbral. */
-  damagePerImpulse: 2.5,
+  /**
+   * Cambio brusco de velocidad de la carga (m/s) a partir del cual se daña.
+   * Con la gravedad del juego (−18): caer 0,3 m ≈ 3,3 m/s; 1 m ≈ 6 m/s.
+   * Provisional: medido con caídas en el navegador, falta ajustarlo jugando.
+   */
+  impactThreshold: 2.5,
+  /** Integridad perdida por cada m/s por encima del umbral. */
+  damagePerDeltaV: 8,
   /** Ningún golpe aislado quita más que esto. */
   maxDamagePerHit: 35,
   /** Multiplicadores de daño (menor = protege más). */
@@ -32,8 +36,8 @@ export const DELIVERY_RULES = {
 } as const;
 
 export interface ImpactInput {
-  /** Impulso del golpe sobre la carga (N·s). */
-  impulse: number;
+  /** Cambio brusco de velocidad de la carga en el golpe (m/s). */
+  deltaV: number;
   /** Golpe frontal del vehículo (lo amortigua el paragolpes). */
   frontal?: boolean;
   /** Un acompañante apretó Sujetar dentro de la ventana de aviso. */
@@ -111,9 +115,9 @@ export function markReady(s: DeliveryState, playerId: string, playerCount: numbe
 /** Daño de un golpe ya con protecciones aplicadas (0 si no supera el umbral). */
 export function impactDamage(s: Pick<DeliveryState, 'bumperProtection'>, impact: ImpactInput, loadout: DeliveryLoadout) {
   const R = DELIVERY_RULES;
-  const over = impact.impulse - R.impactThreshold;
+  const over = impact.deltaV - R.impactThreshold;
   if (over <= 0) return 0;
-  let dmg = over * R.damagePerImpulse;
+  let dmg = over * R.damagePerDeltaV;
   if (loadout.shockAbsorber) dmg *= R.shockAbsorber;
   if (impact.heldOnTime) dmg *= R.holdOnTime;
   if (impact.frontal && loadout.bumper) dmg *= 1 - s.bumperProtection;
