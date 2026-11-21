@@ -130,6 +130,10 @@ export interface GameHudState {
   seated: boolean;
   seatedFlightMode: boolean;
   wrenchEquipped: boolean;
+  /** Soldadora equipada (implica el rayo láser de la llave). */
+  welderEquipped: boolean;
+  /** Avance (0–1) de la soldadura que se está haciendo con la soldadora. */
+  weldProgress: number;
   wrenchAiming: boolean;
   wrenchAimLocked: boolean;
   wrenchAxis: WrenchAxis;
@@ -199,6 +203,8 @@ let state: GameHudState = {
   seated: false,
   seatedFlightMode: false,
   wrenchEquipped: false,
+  welderEquipped: false,
+  weldProgress: 0,
   wrenchAiming: false,
   wrenchAimLocked: false,
   wrenchAxis: 'vertical',
@@ -462,9 +468,29 @@ export const gameStore = {
       wireHintClearTimer = null;
     }
     state = {
-      ...state, wrenchEquipped: !state.wrenchEquipped, wrenchAiming: false, wrenchAimLocked: false, wrenchTarget: null,
+      ...state, wrenchEquipped: !state.wrenchEquipped, welderEquipped: false, wrenchAiming: false, wrenchAimLocked: false, wrenchTarget: null,
       aimedWorkshopSlot: null, laserHint: null, laserPlacementReady: false, partMountReady: false, wireHint: null, pendingWireFrom: null, wiringActive: false,
     };
+    emit();
+  },
+  /** Equipa o guarda la soldadora (Shift+X). Usa el mismo rayo de apuntado que la llave. */
+  toggleWelder() {
+    if (buildToolsLocked() && !state.wrenchEquipped) return;
+    if (wireHintClearTimer !== null) {
+      window.clearTimeout(wireHintClearTimer);
+      wireHintClearTimer = null;
+    }
+    const equip = !state.welderEquipped;
+    state = {
+      ...state, wrenchEquipped: equip, welderEquipped: equip, wrenchAiming: false, wrenchAimLocked: false, wrenchTarget: null,
+      aimedWorkshopSlot: null, laserHint: null, laserPlacementReady: false, partMountReady: false, wireHint: null, pendingWireFrom: null, wiringActive: false,
+    };
+    emit();
+  },
+  setWeldProgress(progress: number) {
+    const next = Math.max(0, Math.min(1, progress));
+    if (Math.abs(state.weldProgress - next) < 0.01 && (next === 0) === (state.weldProgress === 0)) return;
+    state = { ...state, weldProgress: next };
     emit();
   },
   toggleWrenchAimLock() {

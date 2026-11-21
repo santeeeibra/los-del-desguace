@@ -69,6 +69,8 @@ class PlayerInputBus {
   menuOpen = false;
   lastPointerLockExitAt = 0;
   interactHeld = false;
+  /** F mantenida (soldar con la soldadora). */
+  weldHeld = false;
 
   triggerBlueprintAction(action: BlueprintAction) {
     this.blueprintAction = action;
@@ -227,6 +229,7 @@ class PlayerInputBus {
 
   resetTouchAndActions() {
     this.interactHeld = false;
+    this.weldHeld = false;
     this.touch.joystickX = 0;
     this.touch.joystickY = 0;
     this.touch.jump = false;
@@ -314,6 +317,7 @@ export function dispatchGameKeyDown(e: KeyDownLike) {
       break;
     case 'KeyF':
       if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        playerInput.weldHeld = true;
         playerInput.triggerPartAction('smart-use');
       }
       break;
@@ -335,7 +339,10 @@ export function dispatchGameKeyDown(e: KeyDownLike) {
       }
       break;
     case 'KeyX':
-      if (!e.repeat && !e.ctrlKey && !e.metaKey) gameStore.toggleWrench();
+      if (!e.repeat && !e.ctrlKey && !e.metaKey) {
+        if (e.shiftKey) gameStore.toggleWelder();
+        else gameStore.toggleWrench();
+      }
       break;
     case 'KeyM':
       if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) gameStore.toggleWrenchAimLock();
@@ -389,6 +396,9 @@ export function useKeyboardInput() {
       switch (e.code) {
         case 'KeyE':
           playerInput.interactHeld = false;
+          break;
+        case 'KeyF':
+          playerInput.weldHeld = false;
           break;
         case 'Space':
           playerInput.keys.jump = false;

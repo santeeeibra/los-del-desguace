@@ -106,6 +106,8 @@ interface PlayerRigProps {
 const SPAWN_POS: [number, number, number] = [-0.6, 1.15, 4.2];
 const ENABLED_ROTATIONS: [boolean, boolean, boolean] = [false, true, false];
 const BEAM_UP = new THREE.Vector3(0, 1, 0);
+/** Segundos que hay que mantener la tecla para soldar con la soldadora. */
+const WELD_SECONDS = 0.7;
 const AIM_PROJECTED = new THREE.Vector3();
 const WHEEL_AXIS = new THREE.Vector3(1, 0, 0);
 /** Altura de trabajo de una plataforma recién fabricada (radio de rueda + margen). */
@@ -163,6 +165,7 @@ export function PlayerRig({
   const dustPoolRef = useRef<DustPuffHandle>(null);
   const cameraMode = useGameStore((s) => s.cameraMode);
   const wrenchEquipped = useGameStore((s) => s.wrenchEquipped);
+  const welderEquipped = useGameStore((s) => s.welderEquipped);
   const characterConfig = useGameStore((s) => s.characterConfig);
   const activeEmote = useGameStore((s) => s.activeEmote);
   const customAppearance = useMemo(
@@ -194,6 +197,9 @@ export function PlayerRig({
   const sharedLoadedRef = useRef(false);
   const prevCartSpeedRef = useRef(0);
   const weldBreakCooldownRef = useRef(0);
+  const weldArmedRef = useRef(false);
+  const weldChargeRef = useRef(0);
+  const weldSparkClockRef = useRef(0);
   const seated = useGameStore((s) => s.seated);
   const seatOffset = useRef(new THREE.Vector3());
   const seatRotation = useRef(new THREE.Quaternion());
@@ -2861,7 +2867,8 @@ export function PlayerRig({
       } else gameStore.setWireHint(result.message);
     }
 
-    const performLaserWeld = () => {
+    const usingWelder = gameStore.getState().welderEquipped;
+    const weldCommit = () => {
       const slot = mountSlot ?? directSlot;
       if (slot) mountCarriedItem(slot);
       else if (partMountReady && freeTargetId && hitBody) mountCarriedItemOnPart(freeTargetId, hitBody, joinedAxle);
@@ -2871,6 +2878,35 @@ export function PlayerRig({
         gameStore.triggerDropBlocked('mount');
       }
     };
+    // Con la soldadora hay que mantener la tecla: la acción solo "arma" la soldadura.
+    const performLaserWeld = () => {
+      if (usingWelder) weldArmedRef.current = true;
+      else weldCommit();
+    };
+    if (weldArmedRef.current || weldChargeRef.current > 0) {
+      const held = playerInput.interactHeld || playerInput.weldHeld;
+      const targetReady = Boolean(mountSlot || directSlot || directWeld || (partMountReady && freeTargetId && hitBody));
+      if (!weldArmedRef.current || !usingWelder || !held || !carriedIdRef.current || !aiming || !targetReady) {
+        weldArmedRef.current = false;
+        weldChargeRef.current = 0;
+        gameStore.setWeldProgress(0);
+      } else {
+        weldChargeRef.current += dt / WELD_SECONDS;
+        weldSparkClockRef.current -= dt;
+        const dotPos = wrenchDotRef.current?.position;
+        if (weldSparkClockRef.current <= 0 && dotPos) {
+          weldSparkClockRef.current = 0.09;
+          dustPoolRef.current?.spawnBurst(dotPos.x, dotPos.y + 0.03, dotPos.z, 'spark');
+          playSpark();
+        }
+        if (weldChargeRef.current >= 1) {
+          weldArmedRef.current = false;
+          weldChargeRef.current = 0;
+          gameStore.setWeldProgress(0);
+          weldCommit();
+        } else gameStore.setWeldProgress(weldChargeRef.current);
+      }
+    }
 
     const partAction = playerInput.consumePartAction();
     let unmountTarget: string | null = null;
@@ -2998,7 +3034,8 @@ export function PlayerRig({
         else if (!aiming && laserHint) gameStore.triggerDropBlocked('mount');
         else if (!aiming) dropCarriedItem();
         else if (partMountReady && freeTargetId && hitBody) {
-          mountCarriedItemOnPart(freeTargetId, hitBody, joinedAxle);
+          if (usingWelder) performLaserWeld();
+          else mountCarriedItemOnPart(freeTargetId, hitBody, joinedAxle);
         } else if (placementReady) {
           const entry = grabbableRegistry.getById(carriedIdRef.current);
           const body = entry?.getBody();
@@ -3542,6 +3579,7 @@ export function PlayerRig({
             activeEmote={activeEmote}
             firstPersonHideHead={cameraMode === 'firstPerson'}
             wrenchEquipped={wrenchEquipped}
+            welderEquipped={welderEquipped}
             seated={seated}
             alignToGround
             wrenchTipRef={wrenchTipRef}

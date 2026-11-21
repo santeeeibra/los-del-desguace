@@ -77,6 +77,7 @@ const KEY_GUIDE_ROWS: ReadonlyArray<readonly [string, string]> = [
   ['E', 'Agarrar / subir / usar lo que mirás'],
   ['F', 'Soldar o usar el aparato'],
   ['X · M', 'Llave y mira láser'],
+  ['Shift+X', 'Soldadora'],
   ['L · K', 'Cablear / quitar cables'],
   ['Tab', 'Editor de piezas'],
   ['G', 'Gestos'],
@@ -553,6 +554,7 @@ export function HudOverlay() {
   const cameraBanner = useGameStore((s) => s.cameraBanner);
   const nearbyTargetId = useGameStore((s) => s.nearbyTargetId);
   const nearbyTargetKind = useGameStore((s) => s.nearbyTargetKind);
+  const weldProgress = useGameStore((s) => s.weldProgress);
   const nearbyTargetMounted = useGameStore((s) => s.nearbyTargetMounted);
   const nearbyTargetRideable = useGameStore((s) => s.nearbyTargetRideable);
   const workshopSlot = useGameStore((s) => s.workshopSlot);
@@ -1038,6 +1040,13 @@ export function HudOverlay() {
             <p className="hud-starter-task">{activeContract.description}</p>
           )}
         </div>
+
+        {weldProgress > 0 && (
+          <div className="hud-weld-bar" role="progressbar" aria-label="Soldando" aria-valuenow={Math.round(weldProgress * 100)}>
+            <i style={{ width: `${Math.round(weldProgress * 100)}%` }} />
+            <span>Soldando…</span>
+          </div>
+        )}
 
         {(activeEmote || activeContextText || contextFeedback || useWireAction) && (
           <div className={`hud-context-stack${nearReticle ? ' hud-context-at-reticle' : ''}${!showTouch && !seated && nearbyTargetId && !carriedKind ? ' hud-context-anchored' : ''}`}>

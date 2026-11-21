@@ -6,6 +6,7 @@ import { getCarryWeightSpec } from '../invention/vehicleFeel';
 import { CARRY_PROFILES, type GrabbableKind } from '../props/grabbableRegistry';
 import { CabezaBaseModel } from './CabezaBaseModel';
 import { MagicWrench } from './MagicWrench';
+import { WelderTool } from './WelderTool';
 import { BASE_BODY_PROFILE as BODY, BODY_SOCKETS } from './body/bodyProfile';
 import { BeltMeshes, ForearmZone, LegZone, ShoulderZone, TorsoZone } from './body/BodyParts';
 import { useCharacterMaterials } from './characterMaterials';
@@ -59,6 +60,7 @@ interface InventorCharacterProps {
   outfitId?: string;
   firstPersonHideHead?: boolean;
   wrenchEquipped?: boolean;
+  welderEquipped?: boolean;
   seated?: boolean;
   alignToGround?: boolean;
   wrenchTipRef?: React.RefObject<THREE.Group | null>;
@@ -79,6 +81,7 @@ export function InventorCharacter({
   outfitId,
   firstPersonHideHead = false,
   wrenchEquipped = false,
+  welderEquipped = false,
   seated = false,
   alignToGround = false,
   wrenchTipRef,
@@ -631,7 +634,7 @@ export function InventorCharacter({
             <ForearmZone m={materials} outfit={outfit} side={1} />
             {(wrenchEquipped || activeEmote === 'wrenchSpin') && (
               <group position={S.handR}>
-                <MagicWrench tipRef={wrenchTipRef} />
+                {welderEquipped ? <WelderTool tipRef={wrenchTipRef} /> : <MagicWrench tipRef={wrenchTipRef} />}
               </group>
             )}
           </group>
