@@ -2,13 +2,22 @@ import { useSyncExternalStore } from 'react';
 import { playSuccessChime } from '../audio/sfxEngine';
 import { WORKSHOP_ORIGIN } from '../invention/workshopAssembly';
 
-export type GameModeId = 'sandbox' | 'race' | 'flight';
+export type GameModeId = 'sandbox' | 'race' | 'flight' | 'delivery';
 
 export const GAME_MODE_LABELS: Record<GameModeId, string> = {
   sandbox: 'Taller Libre',
   race: 'Carrera en Pista',
   flight: 'Desafío de Vuelo',
+  delivery: 'Entrega Delicada',
 };
+
+/**
+ * En Entrega Delicada se arma solo por slots: sin soldadura libre, cables ni llave.
+ * Esas herramientas siguen disponibles en Taller Libre.
+ */
+export function buildToolsLocked(): boolean {
+  return state.mode === 'delivery';
+}
 
 export const RACE_CHECKPOINTS: readonly [number, number, number][] = [
   [3, 1.2, 14],
@@ -163,7 +172,8 @@ export const gameModeStore = {
   },
 
   tick(dt: number, pos: Vec3Like): void {
-    if (state.mode === 'sandbox') return;
+    // Entrega Delicada lleva su propio reloj (deliveryStore).
+    if (state.mode === 'sandbox' || state.mode === 'delivery') return;
     const safeDt = Math.min(Math.max(dt, 0), 0.1);
 
     if (state.mode === 'race') {

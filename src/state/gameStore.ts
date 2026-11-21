@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { extraPartPosition } from '../environment/workshopLayout';
 import { playImpact } from '../audio/sfxEngine';
+import { buildToolsLocked } from '../modes/gameModes';
 import {
   EMOTE_BY_ID,
   loadCharacterCustomization,
@@ -454,6 +455,8 @@ export const gameStore = {
     emit();
   },
   toggleWrench() {
+    // Bloqueada en modos de armado por slots, salvo para guardarla si quedó en la mano.
+    if (buildToolsLocked() && !state.wrenchEquipped) return;
     if (wireHintClearTimer !== null) {
       window.clearTimeout(wireHintClearTimer);
       wireHintClearTimer = null;
@@ -465,6 +468,7 @@ export const gameStore = {
     emit();
   },
   toggleWrenchAimLock() {
+    if (buildToolsLocked()) return;
     if (!state.wrenchEquipped) {
       state = {
         ...state,

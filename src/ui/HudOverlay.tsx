@@ -19,6 +19,8 @@ import { buildBlueprintShareUrl, decodeBlueprintCode, deleteBlueprint, encodeBlu
 import { canSelectWirePart, clearPendingWire, contraptionGraph, describeWireDestination, isPartWired, PART_LOGIC_SPECS } from '../logic/contraptionRegistry';
 import { useArenaAndBridgeState } from '../modes/arenaAndBridge';
 import { contractStore, useContractStore, WORKSHOP_CONTRACTS } from '../modes/contracts';
+import { DeliveryHud, DELIVERY_DESCRIPTION, useDeliveryStatusText } from './DeliveryHud';
+import { deliveryStore } from '../modes/delivery/deliveryStore';
 import {
   GAME_MODE_LABELS,
   gameModeStore,
@@ -47,6 +49,13 @@ const STARTER_STEPS = {
   seat: 'Montá el asiento en el encastre del medio.',
   drive: 'Acercate al asiento y elegí Subir.',
 } as const;
+
+const MODE_DESCRIPTIONS: Record<GameModeId, string> = {
+  sandbox: 'Armá sin límites (barriles voladores, robots o autos), soldá donde quieras o probá los presets.',
+  race: 'Armá tu vehículo y cruzá los 4 aros de la pista en el menor tiempo.',
+  flight: 'Despegá con alas, globos o cohetes y alcanzá el aro aéreo del patio.',
+  delivery: DELIVERY_DESCRIPTION,
+};
 
 function HexBolt({ className }: { className: string }) {
   return (
@@ -665,6 +674,8 @@ export function HudOverlay() {
     setMenuOpen(true);
   }, []);
 
+  const isDelivery = gameMode.mode === 'delivery';
+  const deliveryStatus = useDeliveryStatusText();
   const roundWon =
     (gameMode.mode === 'race' && gameMode.raceFinished) ||
     (gameMode.mode === 'flight' && gameMode.flightTargetReached);
@@ -897,7 +908,9 @@ export function HudOverlay() {
                       : `Aro ${gameMode.checkpointIndex + 1}/${RACE_CHECKPOINTS.length} · ${gameMode.elapsedSec.toFixed(1)}s`
                     : gameMode.mode === 'flight'
                       ? `Vuelo ${gameMode.currentFlightMeters.toFixed(1)}m`
-                      : 'Taller Libre'}
+                      : gameMode.mode === 'delivery'
+                        ? deliveryStatus
+                        : 'Taller Libre'}
             </span>
           </div>
           {sceneReady && (contractState.brokenWeldsCount > 0 ||
@@ -912,7 +925,11 @@ export function HudOverlay() {
           )}
           {sceneReady && (activeContract || gameMode.mode !== 'sandbox') && (
             <div className="hud-interactive" style={{ display: 'flex', gap: '5px' }}>
-              <button type="button" className="hud-ctx-btn" onClick={() => playerInput.triggerCartAction('retry')}>
+              <button
+                type="button"
+                className="hud-ctx-btn"
+                onClick={() => (isDelivery ? deliveryStore.start() : playerInput.triggerCartAction('retry'))}
+              >
                 Reintentar
               </button>
               <button type="button" className="hud-ctx-btn is-accent" onClick={() => playerInput.triggerCartAction('return-workshop')}>
@@ -1109,7 +1126,7 @@ export function HudOverlay() {
                 </div>
                 <div className="hud-menu-subtitle">Modo de juego</div>
                 <div className="hud-menu-presets">
-                  {(['sandbox', 'race', 'flight'] as GameModeId[]).map((m) => (
+                  {(['sandbox', 'delivery', 'race', 'flight'] as GameModeId[]).map((m) => (
                     <button key={m} type="button" className="hud-button" aria-pressed={gameMode.mode === m}
                       onClick={() => { contractStore.clearContract(); gameModeStore.setMode(m); setMenuOpen(false); }}>
                       {GAME_MODE_LABELS[m]}
@@ -1135,6 +1152,7 @@ export function HudOverlay() {
                     </button>
                   )}
                 </div>
+                {!isDelivery && (<>
                 <div className="hud-menu-subtitle">Inventos Sin Ruedas (Barril, Robot, Globos)</div>
                 <div className="hud-menu-presets">
                   {PRESET_BLUEPRINTS.filter((bp) => bp.category === 'free').map((bp) => (
@@ -1144,6 +1162,7 @@ export function HudOverlay() {
                     </button>
                   ))}
                 </div>
+                </>)}
                 <div className="hud-menu-subtitle">Arranque rápido con presets</div>
                 <div className="hud-menu-presets">
                   {PRESET_BLUEPRINTS.filter((bp) => bp.category !== 'free').map((bp) => (
@@ -1615,6 +1634,35 @@ export function HudOverlay() {
                 <strong>Armarlo yo</strong>
                 <span>Encontrá las ruedas, el motor y el asiento en la bandeja amarilla.</span>
               </button>
+              {(['sandbox', 'delivery', 'race', 'flight'] as GameModeId[]).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  className={`hud-menu-action${gameMode.mode === m ? ' is-primary' : ''}`}
+                  onClick={() => {
+                    contractStore.clearContract();
+                    gameModeStore.setMode(m);
+                    setWelcomeOpen(false);
+                  }}
+                >
+                  <strong>{GAME_MODE_LABELS[m]}</strong>
+                  <span>{MODE_DESCRIPTIONS[m]}</span>
+                </button>
+              ))}
+            </div>
+            <div className="hud-flow-steps" aria-label="Cómo jugar">
+              <div className="hud-flow-step">
+                <b>1. Plano o Preset</b>
+                Equipá el Slot 6 para ver hologramas 3D o cargá un preset sin ruedas en Menú.
+              </div>
+              <div className="hud-flow-step">
+                <b>2. Soldá y Cableá</b>
+                Uní piezas al chasis o entre sí. Usá X/M para apuntar con el rayo láser, F para soldar/probar y L para cablear.
+              </div>
+              <div className="hud-flow-step">
+                <b>3. Probá en Pista</b>
+                Subite al asiento y salí a girar o despegar por el patio.
+              </div>
             </div>
             <div className="hud-flow-footer">
               <button
@@ -1788,6 +1836,8 @@ export function HudOverlay() {
         </div>
       )}
 
+      {isDelivery && <DeliveryHud bolts={<WoodBolts />} hidden={!sceneReady || menuOpen || showWelcome} />}
+
       {impactFeedback && <div className="hud-impact" aria-hidden="true">{impactFeedback === 'bump' ? '¡PUM!' : '¡PLAF!'}</div>}
 
       {blueprintEquipped && activeGuide && (
@@ -1872,7 +1922,7 @@ export function HudOverlay() {
           <div />
         )}
         <div className="hud-inventory hud-interactive" data-driving={seated && showTouch} aria-label="Inventario de seis espacios">
-          {!seated && (
+          {!seated && !isDelivery && (
             <>
               <div className="hud-workshop-quick" role="group" aria-label="Herramientas del taller">
                 <button type="button" className="hud-button hud-wrench" aria-pressed={wrenchEquipped}
@@ -1918,7 +1968,7 @@ export function HudOverlay() {
           </div>
         </div>
         <div className="hud-action-area">
-          {!seated && toolsOpen && !contextualOptions && (
+          {!seated && !isDelivery && toolsOpen && !contextualOptions && (
             <section id="hud-workshop-editor" className="hud-build-panel hud-interactive" aria-label="Editor del taller">
               <div className="hud-editor-heading">
                 <strong>Herramientas</strong>
@@ -2090,7 +2140,7 @@ export function HudOverlay() {
                 )}
                 {showTargetControls && (
                   <>
-                {(nearbyTargetKind === 'switchBox' || nearbyTargetKind === 'crate') && (
+                {!isDelivery && (nearbyTargetKind === 'switchBox' || nearbyTargetKind === 'crate') && (
                   <button type="button" className="hud-ctx-btn is-accent" onClick={() => playerInput.triggerPartAction('toggle-switch')}>
                     Encender / Apagar{!showTouch && <kbd>F</kbd>}
                   </button>
@@ -2112,7 +2162,7 @@ export function HudOverlay() {
                     Invertir giro{!showTouch && <kbd>O</kbd>}
                   </button>
                 )}
-                    {targetWired && (
+                    {targetWired && !isDelivery && (
                       <button type="button" className="hud-ctx-btn is-danger" onClick={() => playerInput.triggerPartAction('unwire')}>
                         Quitar cables{!showTouch && <kbd>K</kbd>}
                       </button>

@@ -77,7 +77,7 @@ import {
 import { arenaAndBridgeStore, BRIDGE_SPAN_Z_MAX, BRIDGE_SPAN_Z_MIN } from '../modes/arenaAndBridge';
 import { BOWLING_BARREL_IDS, contractStore } from '../modes/contracts';
 import { isInTowerNutReach } from '../modes/towerMirador';
-import { gameModeStore } from '../modes/gameModes';
+import { buildToolsLocked, gameModeStore } from '../modes/gameModes';
 import { multiplayerStore } from '../multiplayer/multiplayerStore';
 import { rotatedHalfHeight, rotatedSupportDistance, wrenchStep, WRENCH_STEP, type WrenchAxis } from '../invention/wrenchRotation';
 import { wrenchMarkerScore, WRENCH_REACH } from '../invention/wrenchTargeting';
@@ -2435,18 +2435,23 @@ export function PlayerRig({
     const partAction = playerInput.consumePartAction();
     let unmountTarget: string | null = null;
     if (partAction === 'unmount' && !carriedIdRef.current) {
-      const targetStation = actionTargetId ? workshop.stationOf(actionTargetId) : undefined;
-      if (actionTargetId && targetStation && workshop.isMounted(actionTargetId) &&
-        customRootId(targetStation) !== actionTargetId && !workshopPhysics.isReleased(targetStation)) {
-        unmountTarget = actionTargetId;
+      if (buildToolsLocked()) {
+        gameStore.setWireHint('En Entrega Delicada se arma por slots');
       } else {
-        gameStore.setWireHint('Apuntá a una pieza unida a una base fija');
+        const targetStation = actionTargetId ? workshop.stationOf(actionTargetId) : undefined;
+        if (actionTargetId && targetStation && workshop.isMounted(actionTargetId) &&
+          customRootId(targetStation) !== actionTargetId && !workshopPhysics.isReleased(targetStation)) {
+          unmountTarget = actionTargetId;
+        } else {
+          gameStore.setWireHint('Apuntá a una pieza unida a una base fija');
+        }
       }
     } else if (partAction) {
       if (partAction === 'drop' && carriedIdRef.current) {
         dropCarriedItem();
       } else if ((partAction === 'weld' || partAction === 'smart-use') && carriedIdRef.current) {
-        performLaserWeld();
+        // En Entrega Delicada no hay soldadura libre: se arma por slots.
+        if (!buildToolsLocked()) performLaserWeld();
       } else if (partAction === 'ride' && !carriedIdRef.current && actionTargetId) {
         const entry = grabbableRegistry.getById(actionTargetId);
         const targetStation = workshop.stationOf(actionTargetId);

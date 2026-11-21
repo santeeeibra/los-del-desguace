@@ -1,3 +1,4 @@
+import { DeliveryController } from '../modes/delivery/DeliveryController';
 import { Suspense, useEffect, useMemo, useRef, type RefObject } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Environment, Lightformer } from '@react-three/drei';
@@ -204,6 +205,7 @@ export function DesguaceScene() {
           <TowerMirador />
           <ArenaAndBridgeZone resetSignal={resetNonce} playerSourceRef={cameraSourceRef} />
           <TrackCheckpoints />
+          <DeliveryController />
           <ScrapCart position={[9, 0, -7.45]} rotation={[0, 0, 0]} />
           <WorkshopChassis bodyRef={cartBodyRef} />
           <BlueprintHolograms cartBodyRef={cartBodyRef} />
