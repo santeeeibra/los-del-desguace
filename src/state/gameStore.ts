@@ -132,6 +132,8 @@ export interface GameHudState {
   wrenchEquipped: boolean;
   /** Soldadora equipada (implica el rayo láser de la llave). */
   welderEquipped: boolean;
+  /** El jugador está junto a la tronzadora del taller (ofrece abrir la Mesa de Corte). */
+  nearCutStation: boolean;
   /** Amoladora equipada (corta soldaduras). Implica el rayo láser de la llave. */
   grinderEquipped: boolean;
   /** Avance (0–1) de la soldadura que se está haciendo con la soldadora. */
@@ -206,6 +208,7 @@ let state: GameHudState = {
   seatedFlightMode: false,
   wrenchEquipped: false,
   welderEquipped: false,
+  nearCutStation: false,
   grinderEquipped: false,
   weldProgress: 0,
   wrenchAiming: false,
@@ -489,6 +492,11 @@ export const gameStore = {
       wrenchAiming: false, wrenchAimLocked: false, wrenchTarget: null, weldProgress: 0,
       aimedWorkshopSlot: null, laserHint: null, laserPlacementReady: false, partMountReady: false, wireHint: null, pendingWireFrom: null, wiringActive: false,
     };
+    emit();
+  },
+  setNearCutStation(near: boolean) {
+    if (state.nearCutStation === near) return;
+    state = { ...state, nearCutStation: near };
     emit();
   },
   setWeldProgress(progress: number) {

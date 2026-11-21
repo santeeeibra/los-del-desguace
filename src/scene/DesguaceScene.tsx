@@ -11,6 +11,7 @@ import { PALETTE, QUALITY_PRESETS } from '../config/visualConfig';
 import { GameCameraRig } from '../controls/GameCameraRig';
 import { type CameraTargetSource } from '../controls/ThirdPersonCamera';
 import { ArenaAndBridgeZone } from '../environment/ArenaAndBridgeZone';
+import { CutStation } from '../environment/CutStation';
 import { ScrapyardWorkshop } from '../environment/ScrapyardWorkshop';
 import { TestTrackAndYard } from '../environment/TestTrackAndYard';
 import { TowerMirador } from '../environment/TowerMirador';
@@ -204,6 +205,7 @@ export function DesguaceScene() {
           <ScrapyardWorkshop extraProps={preset.extraProps} />
           <TestTrackAndYard extraProps={preset.extraProps} />
           <TowerMirador />
+          <CutStation playerSourceRef={cameraSourceRef} />
           <ArenaAndBridgeZone resetSignal={resetNonce} playerSourceRef={cameraSourceRef} />
           <TrackCheckpoints />
           <DeliveryController />

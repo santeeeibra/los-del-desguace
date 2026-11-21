@@ -555,6 +555,8 @@ export function HudOverlay() {
   const nearbyTargetId = useGameStore((s) => s.nearbyTargetId);
   const nearbyTargetKind = useGameStore((s) => s.nearbyTargetKind);
   const weldProgress = useGameStore((s) => s.weldProgress);
+  const nearCutStation = useGameStore((s) => s.nearCutStation);
+  const canOpenCutStationRef = useRef(false);
   const grinderEquipped = useGameStore((s) => s.grinderEquipped);
   const nearbyTargetMounted = useGameStore((s) => s.nearbyTargetMounted);
   const nearbyTargetRideable = useGameStore((s) => s.nearbyTargetRideable);
@@ -621,6 +623,16 @@ export function HudOverlay() {
       const seen = Number(localStorage.getItem(KEY_GUIDE_STORAGE) ?? 0);
       if (seen < KEY_GUIDE_AUTO_SHOWS) localStorage.setItem(KEY_GUIDE_STORAGE, String(seen + 1));
     } catch { /* sin storage */ }
+  }, []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== 'KeyE' || e.repeat || e.altKey || e.ctrlKey || e.metaKey || !canOpenCutStationRef.current) return;
+      if (document.pointerLockElement) document.exitPointerLock?.();
+      setLaserOpen(true);
+      setToolsOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -915,6 +927,7 @@ export function HudOverlay() {
     setToolsOpen(false);
   };
   const cutAllowed = gameMode.mode === 'sandbox' && !seated && !carriedKind && !menuOpen && !laserOpen;
+  canOpenCutStationRef.current = cutAllowed && nearCutStation && !showWelcome && !emotesOpen;
   useEffect(() => {
     if (!cutAllowed || sceneCut.active) { setCutCandidate(null); return; }
     const read = () => setCutCandidate(laserTableBridge.get()?.aimedNear() ?? null);
@@ -1041,6 +1054,15 @@ export function HudOverlay() {
             <p className="hud-starter-task">{activeContract.description}</p>
           )}
         </div>
+
+        {cutAllowed && nearCutStation && !showWelcome && (
+          <div className="hud-context-stack hud-context-at-reticle hud-cut-station">
+            <button type="button" className="hud-ctx-btn is-accent hud-interactive"
+              onClick={() => { setLaserOpen(true); setToolsOpen(false); }}>
+              Tronzadora · Cortar plataformas{!showTouch && <kbd>E</kbd>}
+            </button>
+          </div>
+        )}
 
         {weldProgress > 0 && (
           <div className="hud-weld-bar" role="progressbar" aria-label="Soldando" aria-valuenow={Math.round(weldProgress * 100)}>

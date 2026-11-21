@@ -1693,3 +1693,6 @@
   font: 700 11px/14px var(--font-display);
   color: #361906;
 }
+
+/* Tronzadora: el cartel va debajo del de contexto para no taparse */
+.hud-context-stack.hud-cut-station { top: calc(50% + 62px); }

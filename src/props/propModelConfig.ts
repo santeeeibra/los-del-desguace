@@ -29,6 +29,7 @@ export const WORKSHOP_BARREL_MODELS = {
 } as const;
 export const WELDER_MODEL_URL = `${BASE}models/tools/welder.glb`;
 export const GRINDER_MODEL_URL = `${BASE}models/tools/grinder.glb`;
+export const CHOPSAW_MODEL_URL = `${BASE}models/tools/chopsaw.glb`;
 export const WRENCH_MODEL_URL = `${BASE}models/props/variants/wrench-v001.glb`;
 
 /** `?props=legacy` muestra las primitivas anteriores para comparar. */
