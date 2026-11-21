@@ -1271,3 +1271,9 @@
   /* En vertical hay lugar: el objetivo se muestra, es la explicación del juego. */
   .hud-delivery-goal { display: block; font-size: 12px; }
 }
+
+/* Celular vertical: el encabezado ocupa dos filas (estado + Reintentar/Taller a la
+   izquierda, botones a la derecha). La píldora contextual baja para no taparlas. */
+@media (max-width: 560px) and (orientation: portrait) {
+  .hud-context-stack { top: calc(env(safe-area-inset-top, 0px) + 112px); }
+}
