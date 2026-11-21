@@ -26,6 +26,10 @@ export interface LaserTableHandlers {
   undo(id: string): { error?: string; restored?: number };
   /** Plataforma a la que apunta o tiene cerca el jugador, si hay. */
   aimed(): string | null;
+  /** Plataforma cerca del jugador (a pocos metros) para ofrecer Cortar en escena. */
+  aimedNear(): string | null;
+  /** Deja la pieza lista para cortar en escena (fija la creación si estaba suelta). */
+  prepareSceneCut(id: string): { error?: string; viewYaw?: number };
 }
 
 let handlers: LaserTableHandlers | null = null;

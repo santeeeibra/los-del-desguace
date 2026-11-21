@@ -20,6 +20,9 @@ import { canSelectWirePart, clearPendingWire, contraptionGraph, describeWireDest
 import { useArenaAndBridgeState } from '../modes/arenaAndBridge';
 import { contractStore, useContractStore, WORKSHOP_CONTRACTS } from '../modes/contracts';
 import { LaserTable } from './LaserTable';
+import { SceneCutBar } from './SceneCutBar';
+import { sceneCutStore, useSceneCut } from '../invention/sceneCut';
+import { laserTableBridge } from '../invention/laserTableBridge';
 import { DeliveryHud, DELIVERY_DESCRIPTION, useDeliveryStatusText } from './DeliveryHud';
 import { deliveryStore } from '../modes/delivery/deliveryStore';
 import {
@@ -586,6 +589,8 @@ export function HudOverlay() {
   const [finishDismissed, setFinishDismissed] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [laserOpen, setLaserOpen] = useState(false);
+  const sceneCut = useSceneCut();
+  const [cutCandidate, setCutCandidate] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [emotesOpen, setEmotesOpen] = useState(false);
   const [menuTab, setMenuTab] = useState<'play' | 'spawner' | 'contracts' | 'character' | 'blueprints' | 'settings'>('play');
@@ -692,7 +697,7 @@ export function HudOverlay() {
   }, [roundWon]);
 
   useEffect(() => {
-    const modalActive = menuOpen || showWelcome || showFinish || showContractFinish || benchOpen || laserOpen;
+    const modalActive = menuOpen || showWelcome || showFinish || showContractFinish || benchOpen || laserOpen || sceneCut.active;
     playerInput.menuOpen = modalActive || emotesOpen;
     if (modalActive || emotesOpen) {
       setMoreOpen(false);
@@ -704,7 +709,7 @@ export function HudOverlay() {
     }
     if (modalActive) setEmotesOpen(false);
     return () => { playerInput.menuOpen = false; };
-  }, [menuOpen, showWelcome, showFinish, showContractFinish, emotesOpen, benchOpen, laserOpen]);
+  }, [menuOpen, showWelcome, showFinish, showContractFinish, emotesOpen, benchOpen, laserOpen, sceneCut.active]);
 
   useEffect(() => {
     if (!benchOpen) return;
@@ -715,6 +720,7 @@ export function HudOverlay() {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (sceneCutStore.isActive()) return;
       if (benchOpen) {
         if (e.code === 'Escape' && !e.repeat) gameStore.setTestBench(false);
         return;
@@ -868,6 +874,24 @@ export function HudOverlay() {
     setMoreOpen(false);
     setToolsOpen(false);
   };
+  const cutAllowed = gameMode.mode === 'sandbox' && !seated && !carriedKind && !menuOpen && !laserOpen;
+  useEffect(() => {
+    if (!cutAllowed || sceneCut.active) { setCutCandidate(null); return; }
+    const read = () => setCutCandidate(laserTableBridge.get()?.aimedNear() ?? null);
+    read();
+    const timer = window.setInterval(read, 400);
+    return () => window.clearInterval(timer);
+  }, [cutAllowed, sceneCut.active]);
+  useEffect(() => {
+    if (sceneCut.active && (gameMode.mode !== 'sandbox' || seated)) sceneCutStore.stop();
+  }, [sceneCut.active, gameMode.mode, seated]);
+  const startSceneCut = (id: string | null) => {
+    if (!id) { gameStore.setWireHint('Acercate a una plataforma para cortarla'); return; }
+    const error = sceneCutStore.start(id);
+    if (error) gameStore.setWireHint(error);
+    setToolsOpen(false);
+    setMoreOpen(false);
+  };
   const blueprintEquipped = !menuOpen && !seated && inventorySlots[inventorySelection]?.kind === 'blueprint';
   const activeGuide = PRESET_BLUEPRINTS[activeGuideIndex % PRESET_BLUEPRINTS.length];
   const starterInstruction = seated
@@ -875,7 +899,13 @@ export function HudOverlay() {
     : STARTER_STEPS[starterBuildStep];
 
   return (
-    <div className="hud-layer" data-scene-ready={sceneReady ? 'true' : 'false'} data-touch={showTouch}>
+    <div className="hud-layer" data-scene-ready={sceneReady ? 'true' : 'false'} data-touch={showTouch}
+      data-scene-cut={sceneCut.active ? 'true' : undefined}>
+      <SceneCutBar bolts={<WoodBolts />} labels={ITEM_SHORT} touch={showTouch} />
+      {cutCandidate && !sceneCut.active && (
+        <button type="button" className="hud-button is-accent scene-cut-start hud-interactive"
+          onClick={() => startSceneCut(cutCandidate)}>✂ Cortar</button>
+      )}
       {(cameraMode === 'firstPerson' || wrenchAiming) && (
         <div className="hud-reticle" data-target={Boolean(workshopSlot || aimedWorkshopSlot || nearbyTargetKind || wrenchTarget || laserPlacementReady)}
           data-wrench={wrenchAiming}
@@ -1993,6 +2023,12 @@ export function HudOverlay() {
                 {gameMode.mode === 'sandbox' && (
                   <button type="button" className="hud-button is-accent" onClick={() => { setLaserOpen(true); setToolsOpen(false); }}>
                     Mesa de corte
+                  </button>
+                )}
+                {gameMode.mode === 'sandbox' && (
+                  <button type="button" className="hud-button is-accent"
+                    onClick={() => startSceneCut(laserTableBridge.get()?.aimedNear() ?? laserTableBridge.get()?.aimed() ?? null)}>
+                    Cortar en escena
                   </button>
                 )}
               </div>

@@ -1537,3 +1537,70 @@
   .laser-row .hud-button { min-height: 36px; padding: 4px 8px; font-size: 13px; }
   .laser-hint, .laser-steer-readout { font-size: 12px; }
 }
+
+/* ── Cortar en escena ───────────────────────────────────────────────── */
+.hud-layer[data-scene-cut="true"] > *:not(.scene-cut-ui):not(.hud-impact) { display: none !important; }
+.scene-cut-start {
+  position: absolute;
+  right: max(14px, env(safe-area-inset-right));
+  top: calc(max(12px, env(safe-area-inset-top)) + 58px);
+  z-index: 5;
+  min-height: 48px;
+  padding: 8px 18px;
+  font-size: 17px;
+  pointer-events: auto;
+}
+.scene-cut-ui { position: absolute; inset: 0; pointer-events: none; }
+.scene-cut-ui > * { pointer-events: auto; }
+.scene-cut-top {
+  position: absolute;
+  top: max(10px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(560px, calc(100vw - 32px));
+  padding: 8px 14px;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: center;
+  color: var(--hud-ink);
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 13px;
+}
+.scene-cut-top strong { font-family: var(--font-display); font-size: 17px; }
+.scene-cut-bar {
+  position: absolute;
+  left: 50%;
+  bottom: max(10px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  width: min(760px, calc(100vw - 24px));
+  padding: 10px 16px;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.scene-cut-status, .scene-cut-steer {
+  margin: 0;
+  font: 800 13px/1.3 var(--font-body);
+  color: var(--hud-ink);
+  text-align: center;
+}
+.scene-cut-status.is-warning { color: #8f2a14; }
+.scene-cut-steer strong { color: #24574f; }
+.scene-cut-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.scene-cut-actions .hud-button { min-height: 44px; min-width: 44px; padding: 6px 12px; }
+.scene-cut-actions .hud-button.is-primary { background: linear-gradient(180deg, #ffe074, #e39a24); color: #361906; }
+.scene-cut-actions .hud-button.is-danger { background: linear-gradient(180deg, #df6e50, #b14027); color: #fff3e2; }
+.scene-cut-actions .hud-button.is-wire[aria-pressed="true"],
+.scene-cut-actions .hud-button.is-wire { background: linear-gradient(180deg, #3c8a7d, #24574f); color: #eafff9; }
+@media (max-height: 520px) {
+  .scene-cut-top { padding: 4px 10px; font-size: 11px; width: auto; left: max(12px, env(safe-area-inset-left)); transform: none; }
+  .scene-cut-top span { display: none; }
+  .scene-cut-top strong { font-size: 14px; }
+  .scene-cut-bar { padding: 6px 10px; gap: 4px; }
+  .scene-cut-actions .hud-button { min-height: 38px; padding: 4px 9px; font-size: 13px; }
+  .scene-cut-start { top: 62px; min-height: 42px; }
+}

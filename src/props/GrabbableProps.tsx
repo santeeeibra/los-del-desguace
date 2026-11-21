@@ -10,6 +10,7 @@ import {
 } from '@react-three/rapier';
 import * as THREE from 'three';
 import { PlatformColliders, PlatformVisual } from './PlatformPiece';
+import { sceneCutStore } from '../invention/sceneCut';
 import { getSharedTextures, PALETTE } from '../config/visualConfig';
 import { starterPartPosition, stockedPartPosition } from '../environment/workshopLayout';
 import { sampleMountSettle, vehicleFeelState } from '../invention/vehicleFeel';
@@ -498,7 +499,8 @@ function GrabbableItem({
   useFrame((state) => {
     const isCarried = grabbableRegistry.carriedId === id;
     const isStored = gameStore.getState().inventorySlots.some((item) => item?.id === id);
-    const isTarget = !isStored && grabbableRegistry.highlightedId === id && grabbableRegistry.carriedId === null;
+    const isTarget = !isStored && grabbableRegistry.highlightedId === id && grabbableRegistry.carriedId === null &&
+      !sceneCutStore.isActive();
 
     if (!isCarried && !isStored && bodyRef.current?.isValid() && bodyRef.current.isEnabled() && bodyRef.current.isDynamic()) {
       const b = bodyRef.current;

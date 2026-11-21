@@ -1,4 +1,6 @@
 import { useEffect, useRef } from 'react';
+import { sceneCutStore } from '../invention/sceneCut';
+import { grabbableRegistry } from '../props/grabbableRegistry';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useRapier } from '@react-three/rapier';
 import * as THREE from 'three';
@@ -75,6 +77,8 @@ const THIRD_PERSON_PRESETS: Record<Exclude<CameraViewMode, 'firstPerson'>, Third
 };
 
 export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigProps) {
+  const cutCamGoal = useRef(new THREE.Vector3());
+  const cutCenter = useRef(new THREE.Vector3());
   const { gl } = useThree();
   const { world, rapier } = useRapier();
   const cameraMode = useGameStore((s) => s.cameraMode);
@@ -210,6 +214,8 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
 
     const onPointerDown = (e: PointerEvent) => {
       if (e.target !== dom) return;
+      // En Cortar en escena los toques marcan el corte (los maneja SceneCutter).
+      if (sceneCutStore.isActive()) return;
       if (e.button !== 0 && e.button !== 2 && e.pointerType === 'mouse') return;
       dom.focus({ preventScroll: true });
       if (e.pointerType === 'mouse' && document.pointerLockElement === dom) {
@@ -403,6 +409,32 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
   // so camera, arms, and carried props share the exact same render timestamp (zero 60/120Hz stutter).
   useFrame(({ camera }, rawDelta) => {
     const dt = Math.min(rawDelta, 0.05);
+    // Cortar en escena: vista elevada fija sobre la pieza y lo que la rodea.
+    const cutState = sceneCutStore.get();
+    if (cutState.active && cutState.platformId) {
+      const cutBody = grabbableRegistry.getById(cutState.platformId)?.getBody();
+      if (cutBody?.isValid()) {
+        // Encuadre: el centro de la creación (pieza + lo que tiene soldado), no solo de la plataforma.
+        const t = cutCenter.current.copy(cutBody.translation());
+        const parts = sceneCutStore.framingPoints();
+        if (parts.length) {
+          for (const p of parts) t.add(p);
+          t.multiplyScalar(1 / (parts.length + 1));
+        }
+        const dist = 3.0;
+        const pitch = 1.05;
+        cutCamGoal.current.set(
+          t.x + Math.sin(cutState.viewYaw) * Math.cos(pitch) * dist,
+          t.y + Math.sin(pitch) * dist,
+          t.z + Math.cos(cutState.viewYaw) * Math.cos(pitch) * dist,
+        );
+        camera.position.lerp(cutCamGoal.current, 1 - Math.exp(-6 * dt));
+        camera.up.set(0, 1, 0);
+        camera.lookAt(t.x, t.y, t.z);
+        initialized.current = false;
+        return;
+      }
+    }
     if (keyOrbit.current.left) yawRef.current += 1.65 * dt;
     if (keyOrbit.current.right) yawRef.current -= 1.65 * dt;
 

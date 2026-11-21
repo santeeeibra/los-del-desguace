@@ -1,4 +1,5 @@
 import { DeliveryController } from '../modes/delivery/DeliveryController';
+import { SceneCutter } from '../invention/SceneCutter';
 import { Suspense, useEffect, useMemo, useRef, type RefObject } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Environment, Lightformer } from '@react-three/drei';
@@ -219,6 +220,7 @@ export function DesguaceScene() {
             cameraSourceRef={cameraSourceRef}
             cartBodyRef={cartBodyRef}
           />
+          <SceneCutter />
           <GameCameraRig targetSourceRef={cameraSourceRef} resetSignal={resetNonce} />
           <SceneReadyNotifier />
         </Physics>

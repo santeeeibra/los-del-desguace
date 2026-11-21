@@ -895,6 +895,38 @@ export function PlayerRig({
         playWeldClank();
         return { restored };
       },
+      aimedNear() {
+        const at = ecctrlRef.current?.body?.translation();
+        if (!at || seatedIdRef.current || carriedIdRef.current) return null;
+        let best: string | null = null;
+        let bestD = 3.2 * 3.2;
+        const highlighted = grabbableRegistry.highlightedId;
+        for (const id of platformStore.ids()) {
+          const body = grabbableRegistry.getById(id)?.getBody();
+          if (!body?.isValid()) continue;
+          const t = body.translation();
+          const d = (t.x - at.x) ** 2 + (t.z - at.z) ** 2 - (id === highlighted ? 4 : 0);
+          if (d < bestD) { bestD = d; best = id; }
+        }
+        return best;
+      },
+      prepareSceneCut(id) {
+        const info = this.info(id);
+        if (!info) return { error: 'Apuntá a una plataforma' };
+        if (info.carried) return { error: 'Soltá la plataforma antes de cortarla' };
+        const station = workshop.stationOf(id);
+        if (station && info.released) {
+          const rootId = customRootId(station);
+          const root = rootId ? grabbableRegistry.getById(rootId)?.getBody() : null;
+          if (!root?.isValid()) return { error: 'No se pudo fijar la creación' };
+          workshopPhysics.toggleAssembly(station, root, workshop);
+        }
+        if (document.pointerLockElement) document.exitPointerLock?.();
+        const t = grabbableRegistry.getById(id)?.getBody()?.translation();
+        const me = ecctrlRef.current?.body?.translation();
+        const viewYaw = t && me ? Math.atan2(me.x - t.x, me.z - t.z) : 0;
+        return { viewYaw };
+      },
       aimed() {
         const highlighted = grabbableRegistry.highlightedId;
         if (highlighted && grabbableRegistry.getById(highlighted)?.kind === 'platform') return highlighted;
