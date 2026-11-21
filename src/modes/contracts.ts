@@ -27,6 +27,7 @@ export interface WorkshopContract {
   targetPos: readonly [number, number, number];
   hitRadius: number;
   kind: 'reach' | 'race' | 'flight' | 'arena';
+  onFoot?: boolean;
   timeLimitSec?: number;
 }
 
@@ -37,33 +38,35 @@ export const WORKSHOP_CONTRACTS: readonly WorkshopContract[] = [
     id: 'first-drive',
     title: '1. Primer Arranque',
     badge: 'Fácil',
-    description: 'Armá un carrito con asiento y cruzá el arco de salida del taller.',
+    description: 'Armá un carrito o usá el Clásico. Subite y cruzá el arco amarillo de salida.',
     recommendedParts: 'Asiento + Motor + 4 Ruedas',
-    targetPos: [3.0, 1.2, 11.0],
-    hitRadius: 3.0,
+    targetPos: [3.0, 0.85, 12.25],
+    hitRadius: 2.0,
     kind: 'reach',
     timeLimitSec: 35,
   },
   {
     id: 'west-freight',
-    title: '2. Flete al Patio Oeste',
-    badge: 'Carga / Imán',
-    description: 'Manejá hasta la zona de carga del patio oeste (ideal con Electroimán o Soporte).',
-    recommendedParts: 'Electroimán / Soporte + Motor',
+    title: '2. Ruta al Patio Oeste',
+    badge: 'Exploración',
+    description: 'Llegá a la zona de carga del patio oeste. Podés ir a pie o llevar tu invento.',
+    recommendedParts: 'A pie o con tu invento',
     targetPos: [-15.5, 1.0, 2.5],
     hitRadius: 3.2,
     kind: 'reach',
+    onFoot: true,
     timeLimitSec: 45,
   },
   {
     id: 'ramp-climb',
     title: '3. Subida a la Rampa',
     badge: 'Potencia',
-    description: 'Subí por la rampa de madera hasta la plataforma elevada del patio.',
-    recommendedParts: '4 Ruedas + Motor o Cohete',
-    targetPos: [-16.8, 1.1, -2.5],
-    hitRadius: 2.8,
+    description: 'Subí por la rampa de madera hasta el centro de la plataforma, a pie o con tu invento.',
+    recommendedParts: 'A pie o con un vehículo liviano',
+    targetPos: [-16.8, 1.16, -2.5],
+    hitRadius: 1.35,
     kind: 'reach',
+    onFoot: true,
     timeLimitSec: 45,
   },
   {
@@ -330,12 +333,12 @@ export const contractStore = {
   tickContract(
     dt: number,
     pos: { x: number; y: number; z: number },
-    objectives?: { wheels: number; displacedBarrels: number },
+    objectives?: { wheels: number; displacedBarrels: number; onFoot?: boolean },
   ): void {
     const id = state.activeContractId;
     if (!id || state.completedNow) return;
     const contract = WORKSHOP_CONTRACTS.find((c) => c.id === id);
-    if (!contract) return;
+    if (!contract || (objectives?.onFoot && !contract.onFoot)) return;
 
     const nextElapsed = state.elapsedSec + Math.min(Math.max(dt, 0), 0.1);
     const gm = gameModeStore.getState();

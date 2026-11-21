@@ -1,5 +1,51 @@
 import rapier from '@dimforge/rapier3d-compat';
 import { describe, expect, it } from 'vitest';
+
+it('permite levantar un armado liviano entero y empujar uno sobre ruedas', async () => {
+  await rapier.init();
+  const world = new rapier.World({ x: 0, y: 0, z: 0 });
+  try {
+    const assembly = new WorkshopAssembly();
+    const physics = createWorkshopPhysics({ world, rapier });
+    const makeBody = (x: number, mass: number) => {
+      const body = world.createRigidBody(rapier.RigidBodyDesc.dynamic().setTranslation(x, 1, 0));
+      world.createCollider(rapier.ColliderDesc.ball(0.2).setMass(mass), body);
+      return body;
+    };
+    const root = makeBody(0, 6);
+    const part = makeBody(0.5, 2);
+    const mount = assembly.mountOnPart('part-light', 'base-light', 'fixture')!;
+    physics.attachOnPart('part-light', mount, part, root, part.translation(), part.rotation());
+    physics.fixCustomRoot(root);
+    expect(physics.manualHandling(mount.station, root, assembly)).toBe('release');
+
+    physics.holdAssemblyForEditing(mount.station, root, assembly);
+    expect(physics.moveAssembly(mount.station, root, { x: 0, y: 0.5, z: 0 })).toBe(true);
+    world.step();
+    expect(root.isFixed() && part.isFixed()).toBe(true);
+    expect(part.translation().x - root.translation().x).toBeCloseTo(0.5);
+    expect(part.translation().y).toBeCloseTo(1.5);
+
+    physics.toggleAssembly(mount.station, root, assembly);
+    expect(physics.manualHandling(mount.station, root, assembly)).toBe('lift');
+    expect(physics.holdAssembly(mount.station, root, assembly)).toBe(true);
+    expect(physics.moveAssembly(mount.station, root, { x: 0, y: 0.25, z: 0 })).toBe(true);
+    expect(part.translation().y).toBeCloseTo(root.translation().y);
+    physics.toggleAssembly(mount.station, root, assembly);
+    expect(root.isDynamic() && part.isDynamic()).toBe(true);
+
+    const truck = makeBody(7, 65);
+    const wheel = makeBody(7.5, 4);
+    const axle = assembly.mountOnPart('wheel-heavy', 'base-heavy', 'wheel', { x: 1, y: 0, z: 0 })!;
+    physics.attachOnPart('wheel-heavy', axle, wheel, truck, wheel.translation(), wheel.rotation(), { x: 1, y: 0, z: 0 });
+    physics.toggleAssembly(axle.station, truck, assembly);
+    expect(physics.manualHandling(axle.station, truck, assembly)).toBe('push');
+    physics.pushByHand(axle.station, truck, { x: 6, z: 0 }, 1 / 60, assembly);
+    expect(truck.linvel().x).toBeGreaterThan(0);
+  } finally {
+    world.free();
+  }
+});
 import { WorkshopAssembly, WORKSHOP_ORIGIN, WORKSHOP_SLOTS } from '../src/invention/workshopAssembly';
 import { createWorkshopPhysics, getWorkshopSlotPose } from '../src/invention/workshopPhysics';
 
@@ -10,6 +56,70 @@ function slot(id: string) {
 }
 
 describe('armado en el taller', () => {
+  it('mide RPM del eje con el chasis fijo y vuelve a estacionar la rueda al cerrar el banco', async () => {
+    await rapier.init();
+    const world = new rapier.World({ x: 0, y: 0, z: 0 });
+    try {
+      const assembly = new WorkshopAssembly();
+      const physics = createWorkshopPhysics({ world, rapier });
+      const root = world.createRigidBody(rapier.RigidBodyDesc.fixed().setTranslation(0, 1.5, 0));
+      world.createCollider(rapier.ColliderDesc.cuboid(0.65, 0.055, 1.12).setMass(14), root);
+      const mountSlot = slot('wheel_fl');
+      const { position } = getWorkshopSlotPose(mountSlot, root);
+      const wheel = world.createRigidBody(rapier.RigidBodyDesc.dynamic().setTranslation(position.x, position.y, position.z));
+      world.createCollider(rapier.ColliderDesc.ball(0.38).setMass(3.4), wheel);
+      expect(assembly.mount('engine', slot('engine_front'), 'engine')).toBe(true);
+      expect(assembly.mount('wheel', mountSlot, 'wheel')).toBe(true);
+      physics.attach('wheel', mountSlot, wheel, root);
+      expect(physics.startBench('cart', root, assembly)).toBe(true);
+      expect(physics.benchMotors()).toEqual(new Set(['engine']));
+      const measure = (power: number) => {
+        for (let i = 0; i < 45; i++) {
+          physics.updateMotors(assembly, undefined, power);
+          world.step();
+        }
+        return physics.benchRpm();
+      };
+      const low = measure(0.25);
+      const high = measure(0.85);
+      expect(low).toBeGreaterThan(0);
+      expect(high).toBeGreaterThan(low);
+      expect(measure(0)).toBeLessThan(low);
+      expect(root.isFixed()).toBe(true);
+      expect(root.translation().y).toBeCloseTo(1.5);
+      physics.updateMotors(assembly);
+      expect(physics.benchRpm()).toBe(0);
+      expect(physics.benchMotors()).toBeNull();
+      expect(wheel.isFixed()).toBe(true);
+    } finally {
+      world.free();
+    }
+  });
+
+  it('acelera según el eje del chasis aunque el asiento esté de lado y corta el empuje si vuelca', async () => {
+    await rapier.init();
+    const world = new rapier.World({ x: 0, y: 0, z: 0 });
+    try {
+      const assembly = new WorkshopAssembly();
+      const physics = createWorkshopPhysics({ world, rapier });
+      const root = world.createRigidBody(rapier.RigidBodyDesc.fixed());
+      world.createCollider(rapier.ColliderDesc.cuboid(0.65, 0.055, 1.12).setMass(14), root);
+      const seat = world.createRigidBody(rapier.RigidBodyDesc.fixed()
+        .setRotation({ x: 0, y: Math.SQRT1_2, z: 0, w: Math.SQRT1_2 }));
+      physics.toggleAssembly('cart', root, assembly, true);
+      physics.driveAssembly('cart', root, 1, 1 / 60, assembly, seat);
+      expect(root.linvel().z).toBeGreaterThan(0);
+      expect(root.linvel().x).toBeCloseTo(0);
+
+      root.setRotation({ x: 0, y: 0, z: 1, w: 0 }, true);
+      root.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      physics.driveAssembly('cart', root, 1, 1 / 60, assembly, seat);
+      expect(root.linvel().z).toBe(0);
+    } finally {
+      world.free();
+    }
+  });
+
   it('rechaza tipos incompatibles, posiciones ocupadas y la misma pieza dos veces', () => {
     const workshop = new WorkshopAssembly();
     const left = slot('wheel_fl');

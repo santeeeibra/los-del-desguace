@@ -10,7 +10,10 @@ const CENTER = { x: 0, y: 0, z: 0 };
 export const LEVEL_ROTATION = { x: 0, y: 0, z: 0, w: 1 };
 const SPIN_SPEED = 10;
 const VERTICAL = new Vector3(0, 1, 0);
+const WHEEL_SPIN_AXIS = new Vector3(1, 0, 0);
 const TURN_STEP = Math.PI / 4;
+export const MANUAL_LIFT_LIMIT = 16;
+const MANUAL_DRAG_LIMIT = 55;
 const WHEEL_MOUNTED_FRICTION = 0.18;
 const WHEEL_LOOSE_FRICTION = 0.95;
 
@@ -49,6 +52,9 @@ export function createWorkshopPhysics(
   }>();
   const releasedStations = new Set<WorkshopStation>();
   const parkedParts = new Set<RapierRigidBody>();
+  let bench: { root: RapierRigidBody; rotors: Set<string>; motors: Set<string> } | null = null;
+  const benchAxis = new Vector3();
+  const benchRotation = new Quaternion();
   /** Rumbo objetivo por estación para el vuelo libre (se reinicia si pasa un rato sin controlarse). */
   const flightHeading = new Map<WorkshopStation, { yaw: number; at: number }>();
   const flightTargetQuat = new Quaternion();
@@ -135,7 +141,21 @@ export function createWorkshopPhysics(
     body.recomputeMassPropertiesFromColliders();
   }
 
-  function updateMotors(assembly: WorkshopAssembly, driver?: { station: WorkshopStation; throttle: number }) {
+  function stopBench() {
+    if (!bench) return;
+    for (const id of bench.rotors) {
+      const body = mounts.get(id)?.body;
+      if (!body?.isValid()) continue;
+      body.setLinvel(CENTER, true);
+      body.setAngvel(CENTER, true);
+      body.setBodyType(rapier.RigidBodyType.Fixed, true);
+      parkedParts.add(body);
+    }
+    bench = null;
+  }
+
+  function updateMotors(assembly: WorkshopAssembly, driver?: { station: WorkshopStation; throttle: number }, testPower?: number) {
+    if (bench && (testPower === undefined || !bench.root.isValid() || !bench.root.isFixed())) stopBench();
     let active = false;
     for (const [partId, mount] of mounts) {
       const { slot, joint, body } = mount;
@@ -146,13 +166,14 @@ export function createWorkshopPhysics(
       const autoPowered = assembly.hasBattery(slot.station);
       const engineDirection = engine ? motorDirection?.(engine) ?? 1 : 1;
       // Si el conductor está sentado: usa su acelerador (o marcha mínima si hay señal cableada activa)
-      const factor = driverThrottle !== undefined
+      const testThrottle = bench?.rotors.has(partId) ? testPower : undefined;
+      const factor = testThrottle !== undefined ? testThrottle * engineDirection : driverThrottle !== undefined
         ? (wired === 0 && !autoPowered ? 0 : driverThrottle * engineDirection)
         : (wired ?? engineDirection);
       const axleDirection = slot.type === 'wheel' ? motorDirection?.(partId) ?? 1 : 1;
       const speed = engine && !parkedParts.has(body) ? SPIN_SPEED * factor * axleDirection : 0;
       if (speed !== 0) active = true;
-      const shouldBrake = speed === 0 && driverThrottle !== undefined;
+      const shouldBrake = speed === 0 && (driverThrottle !== undefined || testThrottle !== undefined);
       if (speed === mount.speed && shouldBrake === Boolean(mount.braking)) continue;
       mount.speed = speed;
       mount.braking = shouldBrake;
@@ -171,6 +192,40 @@ export function createWorkshopPhysics(
   }
 
   return {
+    startBench(station: WorkshopStation, root: RapierRigidBody, assembly: WorkshopAssembly) {
+      if (!root.isValid() || !root.isFixed() || releasedStations.has(station)) return false;
+      const rotors = new Set<string>();
+      const motors = new Set<string>();
+      for (const [id, { slot, joint, body }] of mounts) {
+        if (slot.station !== station || !body.isValid() || !(joint instanceof rapier.RevoluteImpulseJoint) ||
+          !joint.isValid()) continue;
+        const engine = assembly.engineIdFor(slot);
+        if (!engine) continue;
+        rotors.add(id);
+        motors.add(engine);
+      }
+      if (!rotors.size) return false;
+      stopBench();
+      this.parkRestoredAssembly(station, root);
+      for (const id of rotors) unparkPart(mounts.get(id)!.body);
+      bench = { root, rotors, motors };
+      return true;
+    },
+    benchMotors(): ReadonlySet<string> | null {
+      return bench?.motors ?? null;
+    },
+    benchRpm() {
+      let rpm = 0;
+      if (!bench) return rpm;
+      for (const id of bench.rotors) {
+        const mount = mounts.get(id);
+        if (!mount?.body.isValid()) continue;
+        benchAxis.copy(mount.slot.type === 'wheel' ? WHEEL_SPIN_AXIS : VERTICAL)
+          .applyQuaternion(benchRotation.copy(mount.body.rotation()));
+        rpm = Math.max(rpm, Math.abs(benchAxis.dot(mount.body.angvel())) * 60 / (2 * Math.PI));
+      }
+      return Math.round(rpm);
+    },
     attach(id: string, slot: WorkshopSlot, body: RapierRigidBody, cartRoot: RapierRigidBody | null = null) {
       const cartMount = slot.station === 'cart' && cartRoot !== null;
       const parent = cartMount ? cartRoot : (anchor ??= world.createRigidBody(rapier.RigidBodyDesc.fixed()));
@@ -307,7 +362,7 @@ export function createWorkshopPhysics(
       const bodies = assemblyBodies(station, root);
       const totalMass = Math.max(bodies.reduce((sum, b) => sum + (b.isValid() ? b.mass() : 0), 0), 1);
       const av = root.angvel();
-      const headingBody = facingBody?.isValid() ? facingBody : root;
+      const headingBody = isCustomStation(station) && facingBody?.isValid() ? facingBody : root;
       const fwd = driveDirection.set(0, 0, 1).applyQuaternion(driveRotation.copy(headingBody.rotation()));
       fwd.y = 0;
       const vel = root.linvel();
@@ -375,11 +430,12 @@ export function createWorkshopPhysics(
       facingBody?: RapierRigidBody | null,
     ) {
       if (!releasedStations.has(station) || !root?.isValid() || Math.abs(throttle) < 0.05) return;
+      if (upVector.set(0, 1, 0).applyQuaternion(driveRotation.copy(root.rotation())).y < 0.42) return;
       const engine = assembly?.engineOnStation(station);
       if (assembly && engine && engineSignal?.(engine) === 0 && !assembly.hasBattery(station)) return;
       const bodies = assemblyBodies(station, root);
       const totalMass = Math.max(bodies.reduce((sum, b) => sum + (b.isValid() ? b.mass() : 0), 0), 1);
-      const headingBody = facingBody?.isValid() ? facingBody : root;
+      const headingBody = isCustomStation(station) && facingBody?.isValid() ? facingBody : root;
       const fwd = driveDirection.set(0, 0, 1).applyQuaternion(driveRotation.copy(headingBody.rotation()));
       fwd.y = 0;
       if (fwd.lengthSq() > 1e-4) {
@@ -394,8 +450,7 @@ export function createWorkshopPhysics(
             y: 0,
             z: fwd.z * signedTarget * totalMass * 9.5 * dt,
           };
-          if (isCustomStation(station)) applyImpulseAtCenterOfMass(bodies, root, impulse);
-          else root.applyImpulse(impulse, true);
+          applyImpulseAtCenterOfMass(bodies, root, impulse);
         }
       }
     },
@@ -410,7 +465,8 @@ export function createWorkshopPhysics(
       if (!releasedStations.has(station) || !root?.isValid() || dt <= 0) return;
       const hasGyro = assembly.hasGyro(station);
       const hasFlight = assembly.hasFlightPropulsion(station);
-      if (!hasGyro && !hasFlight) return;
+      const hasWheels = assembly.hasWheels(station);
+      if (!hasGyro && !hasFlight && !hasWheels) return;
 
       const bodies = assemblyBodies(station, root);
       const totalMass = Math.max(bodies.reduce((sum, b) => sum + (b.isValid() ? b.mass() : 0), 0), 1);
@@ -423,7 +479,7 @@ export function createWorkshopPhysics(
       if (fwd.lengthSq() > 1e-4) fwd.normalize();
       else fwd.set(0, 0, 1);
 
-      if (!assembly.hasWheels(station)) {
+      if (!hasWheels) {
         // Vuelo libre (barril, robot, silla...): controlador unificado de cuerpo rígido.
         // Aplica rotación objetivo + velocidad lineal distribuida por igual a todas las piezas para evitar tironeos.
         flightClock += dt;
@@ -651,10 +707,40 @@ export function createWorkshopPhysics(
       away.normalize().multiplyScalar(Math.max(root.mass(), 1) * 0.95);
       root.applyImpulse(away, true);
     },
+    manualHandling(station: WorkshopStation, root: RapierRigidBody, assembly: WorkshopAssembly) {
+      if (!releasedStations.has(station)) return 'release';
+      const mass = assemblyBodies(station, root).reduce((total, body) => total + body.mass(), 0);
+      if (mass <= MANUAL_LIFT_LIMIT) return 'lift';
+      return assembly.hasWheels(station) || mass <= MANUAL_DRAG_LIMIT ? 'push' : 'heavy';
+    },
+    holdAssembly(station: WorkshopStation, root: RapierRigidBody, assembly: WorkshopAssembly) {
+      if (this.manualHandling(station, root, assembly) !== 'lift') return false;
+      this.holdAssemblyForEditing(station, root, assembly);
+      return true;
+    },
+    holdAssemblyForEditing(station: WorkshopStation, root: RapierRigidBody, assembly: WorkshopAssembly) {
+      if (releasedStations.has(station)) this.toggleAssembly(station, root, assembly);
+      this.parkRestoredAssembly(station, root);
+    },
+    pushByHand(station: WorkshopStation, root: RapierRigidBody, player: { x: number; z: number },
+      dt: number, assembly: WorkshopAssembly) {
+      if (this.manualHandling(station, root, assembly) !== 'push') return;
+      const at = root.translation();
+      const dx = at.x - player.x;
+      const dz = at.z - player.z;
+      const distance = Math.hypot(dx, dz);
+      if (distance < 0.2 || distance > 3) return;
+      const velocity = root.linvel();
+      if (Math.hypot(velocity.x, velocity.z) > 2.1) return;
+      const bodies = assemblyBodies(station, root);
+      const mass = bodies.reduce((total, body) => total + body.mass(), 0);
+      const impulse = (assembly.hasWheels(station) ? 105 : Math.min(720, mass * 20)) * dt;
+      applyImpulseAtCenterOfMass(bodies, root, { x: dx * impulse / distance, y: 0, z: dz * impulse / distance });
+    },
     pushCart(cart: RapierRigidBody, player: { x: number; z: number }) {
       this.pushAssembly('cart', cart, player);
     },
-    rotateAssembly(station: WorkshopStation, root: RapierRigidBody, angle = TURN_STEP): boolean {
+    rotateAssembly(station: WorkshopStation, root: RapierRigidBody, angle = TURN_STEP, axis = VERTICAL): boolean {
       if (releasedStations.has(station)) return false;
       const bodies = assemblyBodies(station, root);
       const own = new Set(bodies.map((body) => body.handle));
@@ -664,7 +750,7 @@ export function createWorkshopPhysics(
       const rotation = new Quaternion();
       const steps = Math.max(1, Math.ceil(Math.abs(angle) / (Math.PI / 24) - 1e-8));
       for (let step = 1; step <= steps; step++) {
-        yaw.setFromAxisAngle(VERTICAL, angle * step / steps);
+        yaw.setFromAxisAngle(axis, angle * step / steps);
         for (const body of bodies) {
           for (let index = 0; index < body.numColliders(); index++) {
             const collider = body.collider(index);
@@ -721,6 +807,7 @@ export function createWorkshopPhysics(
       return true;
     },
     reset(cart?: RapierRigidBody | null) {
+      stopBench();
       for (const { joint, axleMount, slot, body } of mounts.values()) {
         if (joint.isValid()) world.removeImpulseJoint(joint, true);
         if (axleMount?.isValid()) world.removeRigidBody(axleMount);

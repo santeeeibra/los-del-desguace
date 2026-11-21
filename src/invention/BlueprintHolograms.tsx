@@ -42,6 +42,17 @@ function HologramShape({ kind, material }: { kind: GrabbableKind; material: THRE
       return <mesh geometry={SHARED_SPHERE_GEO} material={material} position={[0, 0.1, 0]} scale={[0.27, 0.32, 0.27]} />;
     case 'fan':
       return <mesh geometry={SHARED_CYL_GEO} material={material} scale={[0.26, 0.28, 0.26]} />;
+    case 'droneRotor':
+      return <mesh geometry={SHARED_CYL_GEO} material={material} scale={[0.275, 0.18, 0.275]} />;
+    case 'boxingGlove':
+      return <mesh geometry={SHARED_BOX_GEO} material={material} scale={[0.34, 0.32, 0.6]} />;
+    case 'flag':
+      return (
+        <group>
+          <mesh geometry={SHARED_BOX_GEO} material={material} position={[-0.15, 0, 0]} scale={[0.035, 0.72, 0.035]} />
+          <mesh geometry={SHARED_BOX_GEO} material={material} position={[0.004, 0.24, 0]} scale={[0.31, 0.2, 0.025]} />
+        </group>
+      );
     case 'horn':
       return <mesh geometry={SHARED_CONE_GEO} material={material} rotation={[-Math.PI / 2, 0, 0]} scale={[0.16, 0.42, 0.16]} />;
     case 'gyro':

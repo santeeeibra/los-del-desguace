@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { CHARACTER_DIMENSIONS } from '../src/config/visualConfig';
 import {
   BASE_BODY_PROFILE as P,
   BODY_REFERENCE as R,
@@ -212,8 +213,12 @@ describe('regresión: animación y física', () => {
     expect(src).toContain('<group ref={carryAnchorRef} position={[0, 0.12, 0.65]} />');
   });
 
-  it('las dimensiones de colisión no cambian', () => {
-    const cfg = readFileSync('src/config/visualConfig.ts', 'utf8');
-    expect(cfg).toMatch(/capsuleHalfHeight: 0\.34,\s*capsuleRadius: 0\.32,\s*floatHeight: 0\.2,\s*visualYOffset: -0\.66/);
+  it('apoya las botas sin alterar el collider ni el ajuste visual del asiento', () => {
+    const dims = CHARACTER_DIMENSIONS;
+    expect(dims).toMatchObject({ capsuleHalfHeight: 0.34, capsuleRadius: 0.32, floatHeight: 0.2, visualYOffset: -0.66 });
+    const soleBottom = P.leg.hipY - 0.322 - P.leg.soleSize[1] / 2;
+    const capsuleStandingY = dims.capsuleHalfHeight + dims.capsuleRadius + dims.floatHeight;
+    expect(capsuleStandingY + dims.groundVisualYOffset + soleBottom).toBeCloseTo(0, 2);
+    expect(src).toContain('CHARACTER_DIMENSIONS.groundVisualYOffset');
   });
 });

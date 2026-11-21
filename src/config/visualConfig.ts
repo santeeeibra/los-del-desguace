@@ -92,11 +92,17 @@ export const PALETTE = {
   hazardBlack: '#272624',
 } as const;
 
-export const CHARACTER_DIMENSIONS = {
+const CHARACTER_CAPSULE = {
   capsuleHalfHeight: 0.34,
   capsuleRadius: 0.32,
   floatHeight: 0.2,
-  visualYOffset: -0.66, // aligns feet cleanly to bottom of capsule + floatHeight
+} as const;
+
+export const CHARACTER_DIMENSIONS = {
+  ...CHARACTER_CAPSULE,
+  // Ecctrl sostiene la cápsula a esta altura sobre una superficie plana.
+  groundVisualYOffset: -(CHARACTER_CAPSULE.capsuleHalfHeight + CHARACTER_CAPSULE.capsuleRadius + CHARACTER_CAPSULE.floatHeight),
+  visualYOffset: -0.66, // Referencia visual del asiento, primera persona y laboratorio.
 } as const;
 
 interface SharedTextures {

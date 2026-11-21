@@ -132,14 +132,27 @@ export const PART_LOGIC_SPECS: Partial<Record<CrazyPartKind, PartLogicSpec>> = {
     defaultConfig: { active: true },
     label: 'Giroscopio Estabilizador',
   },
+  boxingGlove: {
+    nodeKind: 'piston',
+    defaultConfig: { gain: 1 },
+    label: 'Puño de resorte',
+  },
+  droneRotor: {
+    nodeKind: 'thruster',
+    defaultConfig: { gain: 1 },
+    thrustForce: 115,
+    label: 'Hélice de dron',
+  },
 };
 
 export const contraptionGraph = new LogicGraph();
 const activeTurbo = new Set<string>();
 const springCooldowns = new Map<string, number>();
 const hornCooldowns = new Map<string, number>();
+const boxingCooldowns = new Map<string, number>();
+const BOXING_INTERVAL = 0.8;
+export const BOXING_REACH = 1.45;
 
-let pendingWireFrom: string | null = null;
 const scratchQuat = new Quaternion();
 const scratchDir = new Vector3();
 
@@ -155,8 +168,32 @@ export function ensurePartLogicNode(id: string, kind: CrazyPartKind) {
 }
 
 export function clearPendingWire(): void {
-  pendingWireFrom = null;
   gameStore.setPendingWireFrom(null);
+}
+
+const WIRE_SOURCES: readonly LogicNodeKind[] = ['battery', 'switch', 'key_input', 'timer', 'and'];
+const WIRE_DESTINATIONS: readonly LogicNodeKind[] = ['motor', 'thruster', 'light', 'magnet', 'piston', 'and'];
+
+export function canSelectWirePart(kind: GrabbableKind, hasSource: boolean): boolean {
+  const spec = PART_LOGIC_SPECS[kind];
+  return Boolean(spec && (hasSource ? WIRE_DESTINATIONS : WIRE_SOURCES).includes(spec.nodeKind));
+}
+
+function getWirePort(sourceKind: LogicNodeKind, targetKind: LogicNodeKind, used: ReadonlySet<string>) {
+  if (targetKind === 'and') return used.has('a') ? 'b' : 'a';
+  return sourceKind === 'battery' ? 'power' : 'signal';
+}
+
+export function describeWireDestination(sourceId: string, targetId: string, targetKind: GrabbableKind) {
+  const source = contraptionGraph.getNode(sourceId);
+  const target = PART_LOGIC_SPECS[targetKind];
+  if (!source || !target || sourceId === targetId || !canSelectWirePart(targetKind, true)) return null;
+  const incoming = contraptionGraph.getWires().filter((wire) => wire.toNodeId === targetId);
+  const connected = incoming.find((wire) => wire.fromNodeId === sourceId);
+  const used = new Set(incoming.map((wire) => wire.toPort));
+  const port = connected?.toPort ?? getWirePort(source.kind, target.nodeKind, used);
+  const label = port === 'power' ? 'Alimentación' : port === 'signal' ? 'Señal' : `Entrada ${port.toUpperCase()}`;
+  return { label, blocked: connected ? 'Ya conectado' : used.has(port) ? 'Entrada ocupada' : null };
 }
 
 /**
@@ -167,57 +204,39 @@ export function stepWireConnection(targetId: string | null): {
   status: 'pending' | 'connected' | 'disconnected' | 'cancelled' | 'invalid';
   message: string;
 } {
+  const pendingWireFrom = gameStore.getState().pendingWireFrom;
   if (!targetId) {
-    pendingWireFrom = null;
-    gameStore.setPendingWireFrom(null);
+    clearPendingWire();
     return { status: 'cancelled', message: 'Cable cancelado' };
   }
   const entry = grabbableRegistry.getById(targetId);
   const target = entry ? ensurePartLogicNode(entry.id, entry.kind) : undefined;
   if (!target) return { status: 'invalid', message: 'Esa pieza no admite cables' };
   if (!pendingWireFrom) {
-    if (
-      target.kind !== 'battery' &&
-      target.kind !== 'switch' &&
-      target.kind !== 'key_input' &&
-      target.kind !== 'timer' &&
-      target.kind !== 'and'
-    ) {
-      return { status: 'invalid', message: 'Apuntá primero a batería, asiento, interruptor, timer o puerta AND' };
+    if (!WIRE_SOURCES.includes(target.kind)) {
+      return { status: 'invalid', message: 'Elegí una batería, un asiento, un interruptor, un temporizador o una puerta AND' };
     }
-    pendingWireFrom = targetId;
     gameStore.setPendingWireFrom(targetId);
     return { status: 'pending', message: `${target.label} · Apuntá al destino y volvé a conectar` };
   }
   if (pendingWireFrom === targetId) {
-    pendingWireFrom = null;
-    gameStore.setPendingWireFrom(null);
-    const enabled = target.kind === 'switch' ? contraptionGraph.toggleSwitch(targetId) : null;
-    return { status: 'cancelled', message: enabled === null ? 'Cable cancelado' : enabled ? 'Interruptor encendido' : 'Interruptor apagado' };
+    return { status: 'invalid', message: 'Elegí otra pieza como destino' };
   }
-  if (
-    target.kind !== 'motor' &&
-    target.kind !== 'thruster' &&
-    target.kind !== 'light' &&
-    target.kind !== 'magnet' &&
-    target.kind !== 'piston' &&
-    target.kind !== 'and'
-  ) {
+  if (!WIRE_DESTINATIONS.includes(target.kind)) {
     return { status: 'invalid', message: 'Apuntá a un motor, rueda, faro, propulsor, resorte, bocina, imán o puerta AND' };
   }
   const fromId = pendingWireFrom;
-  pendingWireFrom = null;
-  gameStore.setPendingWireFrom(null);
   const fromNode = contraptionGraph.getNode(fromId);
+  if (!fromNode) {
+    clearPendingWire();
+    return { status: 'invalid', message: 'El origen ya no está disponible. Elegí otra pieza' };
+  }
   const incoming = contraptionGraph.getWires().filter((wire) => wire.toNodeId === targetId);
   const existing = incoming.find((wire) => wire.fromNodeId === fromId);
   if (existing) {
-    contraptionGraph.disconnect(existing.id);
-    return { status: 'disconnected', message: 'Cable retirado' };
+    return { status: 'invalid', message: 'El cable ya está conectado. Usá Quitar cables si querés retirarlo' };
   }
-  const toPort = target.kind === 'and'
-    ? incoming.some((wire) => wire.toPort === 'a') ? 'b' : 'a'
-    : fromNode?.kind === 'battery' ? 'power' : 'signal';
+  const toPort = getWirePort(fromNode.kind, target.kind, new Set(incoming.map((wire) => wire.toPort)));
   if (incoming.some((wire) => wire.toPort === toPort)) {
     return {
       status: 'invalid',
@@ -225,11 +244,15 @@ export function stepWireConnection(targetId: string | null): {
         : toPort === 'power' ? 'Ya tiene batería conectada' : 'Ya tiene señal de control conectada',
     };
   }
-  contraptionGraph.connect(fromId, targetId, { toPort });
+  if (!contraptionGraph.connect(fromId, targetId, { toPort })) {
+    return { status: 'invalid', message: 'No se pudo conectar ese cable' };
+  }
+  clearPendingWire();
   return { status: 'connected', message: `${toPort === 'power' ? 'Energía' : 'Control'} conectado a ${target.label}` };
 }
 
 export function getWiredEngineSignal(id: string): number | undefined {
+  if (manualPulses.has(id)) return 1;
   return contraptionGraph.hasIncoming(id) ? contraptionGraph.getOutput(id) : undefined;
 }
 
@@ -243,7 +266,7 @@ export function getMotorDirection(id: string): number {
 }
 
 export function isPartWired(id: string): boolean {
-  return contraptionGraph.hasConnection(id) || pendingWireFrom === id;
+  return contraptionGraph.hasConnection(id);
 }
 
 const manualPulses = new Map<string, number>();
@@ -286,7 +309,8 @@ export function invertMotorNode(id: string): string {
 export function pulseActuator(id: string, durationSec = 0.65): string {
   const entry = grabbableRegistry.getById(id);
   const kind = entry && PART_LOGIC_SPECS[entry.kind]?.nodeKind;
-  if (!entry || (kind !== 'thruster' && kind !== 'light' && kind !== 'magnet' && kind !== 'piston')) return 'La pieza no admite una prueba';
+  if (!entry || (kind !== 'thruster' && kind !== 'light' && kind !== 'magnet' && kind !== 'piston' &&
+    kind !== 'motor')) return 'La pieza no admite una prueba';
   ensurePartLogicNode(entry.id, entry.kind);
   manualPulses.set(id, durationSec);
   return 'Probando pieza…';
@@ -295,11 +319,11 @@ export function pulseActuator(id: string, durationSec = 0.65): string {
 export function disconnectAllWires(id: string): string {
   const wires = contraptionGraph.getWires().filter((w) => w.fromNodeId === id || w.toNodeId === id);
   if (wires.length === 0) {
-    if (pendingWireFrom === id) clearPendingWire();
+    if (gameStore.getState().pendingWireFrom === id) clearPendingWire();
     return 'Sin cables conectados';
   }
   for (const w of wires) contraptionGraph.disconnect(w.id);
-  if (pendingWireFrom === id) clearPendingWire();
+  if (gameStore.getState().pendingWireFrom === id) clearPendingWire();
   return `Se quitaron ${wires.length} cable(s)`;
 }
 
@@ -308,8 +332,8 @@ export function resetContraptionGraph(): void {
   manualPulses.clear();
   springCooldowns.clear();
   hornCooldowns.clear();
-  pendingWireFrom = null;
-  gameStore.setPendingWireFrom(null);
+  boxingCooldowns.clear();
+  clearPendingWire();
   for (const node of contraptionGraph.getNodes()) {
     contraptionGraph.removeNode(node.id);
   }
@@ -380,6 +404,26 @@ function tickCooldowns(map: Map<string, number>, dt: number): void {
   }
 }
 
+export function boxingExtension(id: string): number {
+  const elapsed = BOXING_INTERVAL - (boxingCooldowns.get(id) ?? 0);
+  return Math.max(0, Math.min(elapsed / 0.06, (0.27 - elapsed) / 0.21));
+}
+
+function triggerBoxingGlove(
+  id: string,
+  body: RapierRigidBody,
+  findTarget?: (id: string, body: RapierRigidBody, direction: Vector3) => RapierRigidBody | null,
+): void {
+  if (boxingCooldowns.has(id)) return;
+  boxingCooldowns.set(id, BOXING_INTERVAL);
+  playSpringBoing();
+  scratchDir.set(0, 0, 1).applyQuaternion(scratchQuat.copy(body.rotation()));
+  const target = findTarget?.(id, body, scratchDir);
+  if (!target?.isDynamic()) return;
+  target.applyImpulse(scratchDir.multiplyScalar(15), true);
+  if (body.isDynamic()) body.applyImpulse(scratchDir.multiplyScalar(-1), true);
+}
+
 export function stepContraptionLogic(
   dt: number,
   keys: Record<string, boolean>,
@@ -387,9 +431,11 @@ export function stepContraptionLogic(
   turboParts?: readonly string[],
   isMountedPart?: (id: string) => boolean,
   skipForcesFor?: (id: string) => boolean,
+  findBoxingTarget?: (id: string, body: RapierRigidBody, direction: Vector3) => RapierRigidBody | null,
 ): void {
   tickCooldowns(springCooldowns, dt);
   tickCooldowns(hornCooldowns, dt);
+  tickCooldowns(boxingCooldowns, dt);
 
   activeTurbo.clear();
   if (turboParts) {
@@ -437,9 +483,9 @@ export function stepContraptionLogic(
       if (lift > 0) body.applyImpulse({ x: 0, y: lift, z: 0 }, true);
       continue;
     }
-    if (entry.kind !== 'wing') continue;
+    if (entry.kind !== 'wing' || !isMountedPart?.(entry.id)) continue;
     const body = entry.getBody();
-    if (!body || !body.isValid() || !body.isEnabled()) continue;
+    if (!body || !body.isValid() || !body.isEnabled() || !body.isDynamic()) continue;
     const lv = body.linvel();
     const speed = Math.hypot(lv.x, lv.y, lv.z);
     if (speed < 0.8) continue;
@@ -495,7 +541,10 @@ export function stepContraptionLogic(
 
     const spec = PART_LOGIC_SPECS[entry.kind];
     if (!spec) continue;
-    if (entry.kind === 'spring' && sig > 0.5) {
+    if (entry.kind === 'boxingGlove' && sig > 0.5) {
+      // The free-flight controller owns the vehicle's motion but not the glove's target.
+      triggerBoxingGlove(entry.id, body, findBoxingTarget);
+    } else if (entry.kind === 'spring' && sig > 0.5) {
       if (!skipForcesFor?.(entry.id)) triggerSpring(entry.id, body);
     } else if (entry.kind === 'horn' && sig > 0.5) {
       triggerHorn(entry.id, body, isMountedPart);

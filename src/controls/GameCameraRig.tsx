@@ -4,6 +4,7 @@ import { useRapier } from '@react-three/rapier';
 import * as THREE from 'three';
 import type { CameraTargetSource } from './ThirdPersonCamera';
 import { playerInput } from './playerInput';
+import { snapshotPrimaryInteractRequest, type InteractRequest } from '../invention/interactResolution';
 import { gameStore, useGameStore, type CameraViewMode } from '../state/gameStore';
 
 interface GameCameraRigProps {
@@ -27,7 +28,8 @@ interface ThirdPersonPreset {
   pitchSens: number;
 }
 
-const DEFAULT_YAW = 0.45;
+// Desde el punto de aparición, mirar hacia el chasis y el arco.
+const DEFAULT_YAW = -2.14;
 
 const FIRST_PERSON_LIMITS = {
   fov: 62,
@@ -162,7 +164,7 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
   useEffect(() => {
     const dom = gl.domElement;
     let aimPointerId: number | null = null;
-    let leftTap: { id: number; x: number; y: number; time: number } | null = null;
+    let leftTap: { id: number; x: number; y: number; time: number; request: InteractRequest } | null = null;
     let wasPointerLocked = document.pointerLockElement === dom;
 
     const applyLookDelta = (dx: number, dy: number) => {
@@ -192,13 +194,27 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
       }
     };
 
+    let mousePush = false;
+    const usePrimaryAction = (request?: InteractRequest) => {
+      if (gameStore.getState().assemblyInteraction === 'push') {
+        mousePush = true;
+        playerInput.interactHeld = true;
+      }
+      playerInput.triggerInteract(request);
+    };
+    const stopMousePush = () => {
+      if (!mousePush) return;
+      mousePush = false;
+      playerInput.interactHeld = false;
+    };
+
     const onPointerDown = (e: PointerEvent) => {
       if (e.target !== dom) return;
       if (e.button !== 0 && e.button !== 2 && e.pointerType === 'mouse') return;
       dom.focus({ preventScroll: true });
       if (e.pointerType === 'mouse' && document.pointerLockElement === dom) {
         if (e.button === 0 && !playerInput.menuOpen) {
-          playerInput.triggerInteract();
+          usePrimaryAction();
           return;
         }
         if (e.button === 2 && gameStore.getState().wrenchEquipped) {
@@ -212,7 +228,14 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
         gameStore.setWrenchAiming(true);
       }
       if (e.pointerType === 'mouse' && e.button === 0 && !playerInput.menuOpen) {
-        leftTap = { id: e.pointerId, x: e.clientX, y: e.clientY, time: performance.now() };
+        if (gameStore.getState().assemblyInteraction === 'push') usePrimaryAction();
+        else leftTap = {
+          id: e.pointerId,
+          x: e.clientX,
+          y: e.clientY,
+          time: performance.now(),
+          request: snapshotPrimaryInteractRequest(gameStore.getState()),
+        };
         if (gameStore.getState().mouseLookMode === 'pointerLock' && document.pointerLockElement !== dom) {
           try {
             Promise.resolve(dom.requestPointerLock?.()).catch(() => {});
@@ -255,10 +278,11 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
     };
 
     const releaseDrag = (e: PointerEvent) => {
+      if (e.type === 'pointercancel' && e.pointerType === 'mouse') stopMousePush();
       if (leftTap && leftTap.id === e.pointerId) {
         const moved = Math.hypot(e.clientX - leftTap.x, e.clientY - leftTap.y);
-        if (moved < 6 && performance.now() - leftTap.time < 260 && gameStore.getState().wrenchAiming && !playerInput.menuOpen) {
-          playerInput.triggerInteract();
+        if (e.type === 'pointerup' && moved < 6 && performance.now() - leftTap.time < 260 && !playerInput.menuOpen) {
+          usePrimaryAction(leftTap.request);
         }
         leftTap = null;
       }
@@ -279,7 +303,20 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const mode = gameStore.getState().cameraMode;
+      if (playerInput.menuOpen || !e.deltaY) return;
+      const hud = gameStore.getState();
+      if (!e.altKey && !hud.seated) {
+        if (hud.wrenchAiming && (hud.carriedKind || hud.wrenchTarget)) {
+          const backwards = e.deltaY > 0;
+          playerInput.triggerCartAction(hud.wrenchTarget === 'base' && !hud.carriedKind
+            ? backwards ? 'rotate-base-back' : 'rotate-base'
+            : backwards ? 'rotate-back' : 'rotate');
+        } else {
+          gameStore.cycleInventory(Math.sign(e.deltaY));
+        }
+        return;
+      }
+      const mode = hud.cameraMode;
       if (mode === 'firstPerson') return;
       const preset = THIRD_PERSON_PRESETS[mode];
       if (mode === 'thirdPersonClose') {
@@ -298,16 +335,25 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
     };
 
     const onContextMenu = (e: MouseEvent) => e.preventDefault();
+    const onMouseDown = (e: MouseEvent) => {
+      // Pointerdown no se repite al agregar otro botón mientras se sostiene el derecho.
+      if (e.button === 0 && (e.buttons & 2) !== 0 && aimPointerId !== null && !playerInput.menuOpen) {
+        e.preventDefault();
+        usePrimaryAction();
+      }
+    };
+    const onMouseUp = (e: MouseEvent) => {
+      if (e.button === 0) stopMousePush();
+    };
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'KeyQ') keyOrbit.current.left = true;
       if (e.code === 'KeyC') keyOrbit.current.right = true;
     };
     const onKeyUp = (e: KeyboardEvent) => {
-      if (e.code === 'KeyQ') keyOrbit.current.left = false;
       if (e.code === 'KeyC') keyOrbit.current.right = false;
     };
     const onBlur = () => {
+      stopMousePush();
       aimPointerId = null;
       leftTap = null;
       gameStore.setWrenchAiming(false);
@@ -319,10 +365,12 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
 
     document.addEventListener('pointerlockchange', onPointerLockChange);
     dom.addEventListener('pointerdown', onPointerDown);
+    dom.addEventListener('mousedown', onMouseDown);
     dom.addEventListener('lostpointercapture', releaseDrag);
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('pointerup', releaseDrag);
+    window.addEventListener('mouseup', onMouseUp);
     window.addEventListener('pointercancel', releaseDrag);
     dom.addEventListener('wheel', onWheel, { passive: false });
     dom.addEventListener('contextmenu', onContextMenu);
@@ -335,10 +383,13 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
       gameStore.setPointerLocked(false);
       document.removeEventListener('pointerlockchange', onPointerLockChange);
       dom.removeEventListener('pointerdown', onPointerDown);
+      dom.removeEventListener('mousedown', onMouseDown);
       dom.removeEventListener('lostpointercapture', releaseDrag);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('pointerup', releaseDrag);
+      window.removeEventListener('mouseup', onMouseUp);
+      stopMousePush();
       window.removeEventListener('pointercancel', releaseDrag);
       dom.removeEventListener('wheel', onWheel);
       dom.removeEventListener('contextmenu', onContextMenu);

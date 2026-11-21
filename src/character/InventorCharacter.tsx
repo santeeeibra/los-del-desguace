@@ -2,6 +2,7 @@ import { Suspense, useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { CHARACTER_DIMENSIONS } from '../config/visualConfig';
+import { getCarryWeightSpec } from '../invention/vehicleFeel';
 import { CARRY_PROFILES, type GrabbableKind } from '../props/grabbableRegistry';
 import { CabezaBaseModel } from './CabezaBaseModel';
 import { MagicWrench } from './MagicWrench';
@@ -41,6 +42,9 @@ export interface CharacterAnimData {
   landImpulse: number;
   bumpImpulse: number;
   dropBlockedImpulse?: number;
+  pickupImpulse?: number;
+  rotateImpulse?: number;
+  mountImpulse?: number;
 }
 
 interface InventorCharacterProps {
@@ -56,6 +60,7 @@ interface InventorCharacterProps {
   firstPersonHideHead?: boolean;
   wrenchEquipped?: boolean;
   seated?: boolean;
+  alignToGround?: boolean;
   wrenchTipRef?: React.RefObject<THREE.Group | null>;
   activeEmote?: EmoteId | null;
 }
@@ -75,6 +80,7 @@ export function InventorCharacter({
   firstPersonHideHead = false,
   wrenchEquipped = false,
   seated = false,
+  alignToGround = false,
   wrenchTipRef,
   activeEmote = null,
 }: InventorCharacterProps) {
@@ -121,6 +127,14 @@ export function InventorCharacter({
   const wobbleVel = useRef(0);
   const smoothLean = useRef(0);
   const smoothPitch = useRef(0);
+  const carryHeft = useRef(0);
+  const carryHeftVel = useRef(0);
+  const wristTwist = useRef(0);
+  const wristTwistVel = useRef(0);
+  const mountRecoil = useRef(0);
+  const mountRecoilVel = useRef(0);
+  const carrySettlePitch = useRef(0);
+  const carrySettleRoll = useRef(0);
 
   const landExprTimer = useRef(0);
   const surpriseExprTimer = useRef(0);
@@ -167,12 +181,28 @@ export function InventorCharacter({
       wobbleVel.current += 2.2;
       anim.dropBlockedImpulse = 0;
     }
+    if (anim.pickupImpulse && anim.pickupImpulse > 0.01) {
+      const heft = THREE.MathUtils.clamp(anim.pickupImpulse, 0.2, 1.2);
+      carryHeftVel.current += heft * 5.2;
+      squashVel.current -= heft * 2.9;
+      anim.pickupImpulse = 0;
+    }
+    if (anim.rotateImpulse && Math.abs(anim.rotateImpulse) > 0.01) {
+      wristTwistVel.current += THREE.MathUtils.clamp(anim.rotateImpulse, -1.5, 1.5) * 6.8;
+      anim.rotateImpulse = 0;
+    }
+    if (anim.mountImpulse && anim.mountImpulse > 0.01) {
+      mountRecoilVel.current += THREE.MathUtils.clamp(anim.mountImpulse, 0.2, 1.2) * 5.5;
+      carryHeft.current = 0;
+      carryHeftVel.current = 0;
+      anim.mountImpulse = 0;
+    }
 
     landExprTimer.current = Math.max(0, landExprTimer.current - dt);
     surpriseExprTimer.current = Math.max(0, surpriseExprTimer.current - dt);
     disappointExprTimer.current = Math.max(0, disappointExprTimer.current - dt);
 
-    // 2. Spring-damper for squash/stretch and bump stumble
+    // 2. Spring-damper for squash/stretch, bump stumble, and carry/wrist cues
     const springForce = (1 - squashY.current) * 155 - squashVel.current * 15.5;
     squashVel.current += springForce * dt;
     squashY.current = THREE.MathUtils.clamp(squashY.current + squashVel.current * dt, 0.74, 1.18);
@@ -180,6 +210,21 @@ export function InventorCharacter({
     const wobbleForce = -wobbleAngle.current * 115 - wobbleVel.current * 12;
     wobbleVel.current += wobbleForce * dt;
     wobbleAngle.current = THREE.MathUtils.clamp(wobbleAngle.current + wobbleVel.current * dt, -0.4, 0.4);
+
+    const heftForce = -carryHeft.current * 135 - carryHeftVel.current * 16.5;
+    carryHeftVel.current += heftForce * dt;
+    carryHeft.current = THREE.MathUtils.clamp(carryHeft.current + carryHeftVel.current * dt, -0.25, 0.85);
+    if (!anim.isCarrying) {
+      carryHeft.current = THREE.MathUtils.lerp(carryHeft.current, 0, 1 - Math.exp(-22 * dt));
+    }
+
+    const wristForce = -wristTwist.current * 165 - wristTwistVel.current * 17.5;
+    wristTwistVel.current += wristForce * dt;
+    wristTwist.current = THREE.MathUtils.clamp(wristTwist.current + wristTwistVel.current * dt, -0.45, 0.45);
+
+    const recoilForce = -mountRecoil.current * 150 - mountRecoilVel.current * 17;
+    mountRecoilVel.current += recoilForce * dt;
+    mountRecoil.current = THREE.MathUtils.clamp(mountRecoil.current + mountRecoilVel.current * dt, -0.2, 0.55);
 
     // 3. Smooth locomotion state blends (idle / walk / run / stop / carry / air)
     const horizSpeed = seated ? 0 : anim.speed;
@@ -207,11 +252,21 @@ export function InventorCharacter({
     const c = Math.cos(stridePhase.current);
     const gAmp = gaitBlend.current * (1 - airBlend.current);
 
-    // 4. Moderate acceleration pitch & cornering lean
+    // 4. Moderate acceleration pitch & cornering lean + carry settle inertia
+    const weightSpec = getCarryWeightSpec(anim.isCarrying ? anim.carriedKind : null);
     const targetPitch = THREE.MathUtils.clamp(anim.accelForward * 0.012, -0.09, 0.1);
     const targetLean = THREE.MathUtils.clamp(-anim.turnRate * 0.032, -0.14, 0.14);
     smoothPitch.current = THREE.MathUtils.lerp(smoothPitch.current, targetPitch, 1 - Math.exp(-10 * dt));
     smoothLean.current = THREE.MathUtils.lerp(smoothLean.current, targetLean, 1 - Math.exp(-11 * dt));
+
+    const targetCarrySettlePitch = anim.isCarrying
+      ? THREE.MathUtils.clamp(-anim.accelForward * 0.011 * weightSpec.weightNorm, -0.09, 0.09)
+      : 0;
+    const targetCarrySettleRoll = anim.isCarrying
+      ? THREE.MathUtils.clamp(anim.turnRate * 0.028 * weightSpec.weightNorm, -0.12, 0.12)
+      : 0;
+    carrySettlePitch.current = THREE.MathUtils.lerp(carrySettlePitch.current, targetCarrySettlePitch, 1 - Math.exp(-9 * dt));
+    carrySettleRoll.current = THREE.MathUtils.lerp(carrySettleRoll.current, targetCarrySettleRoll, 1 - Math.exp(-9 * dt));
 
     // 5. Body pivot squash, dip on landing, and breathing
     let airStretch = 1;
@@ -232,14 +287,15 @@ export function InventorCharacter({
         bodyPivotRef.current.scale.set(invScaleXZ, finalScaleY, invScaleXZ);
         const stepBob = Math.abs(c) * (0.036 + runBlend.current * 0.022) * gAmp;
         const idleBreath = Math.sin(t * 2.1) * 0.008 * (1 - gAmp);
-        bodyPivotRef.current.position.y = stepBob + idleBreath + landingDip;
+        const heftCrouch = (carryBlend.current * weightSpec.shoulderDrop * 0.65 + carryHeft.current * 0.048);
+        bodyPivotRef.current.position.y = stepBob + idleBreath + landingDip - heftCrouch;
 
-        const carryBackLean = carryBlend.current * -0.07;
+        const carryBackLean = carryBlend.current * -(0.045 + weightSpec.torsoFlex * 0.6) + carryHeft.current * 0.09;
         const runFwdLean = (0.05 + runBlend.current * 0.08) * gAmp;
         bodyPivotRef.current.rotation.x =
-          carryBackLean + runFwdLean + smoothPitch.current - wobbleAngle.current * 0.65;
+          carryBackLean + runFwdLean + smoothPitch.current + carrySettlePitch.current * 0.45 - wobbleAngle.current * 0.65;
         bodyPivotRef.current.rotation.z =
-          s * 0.042 * gAmp + smoothLean.current + wobbleAngle.current * 0.4;
+          s * (0.042 + carryBlend.current * 0.015) * gAmp + smoothLean.current + carrySettleRoll.current * 0.35 + wobbleAngle.current * 0.4;
       }
     }
 
@@ -295,24 +351,29 @@ export function InventorCharacter({
       const freeArmZL = THREE.MathUtils.lerp(firstPersonHideHead ? -0.18 : -0.14, airArmZ, airBlend.current);
       const freeArmZR = THREE.MathUtils.lerp(firstPersonHideHead ? 0.18 : 0.14, -airArmZ, airBlend.current);
 
-      // Carry pose tailored to object size & resolved clearance offset
-      const carryArmBob = firstPersonHideHead ? 0 : gAmp * Math.abs(c) * 0.035;
+      // Carry pose tailored to object size, weight, step sway & wrist rotation cue
+      const carryStepBob = gAmp * Math.abs(c) * (firstPersonHideHead ? weightSpec.bobAmp * 1.15 : weightSpec.bobAmp * 1.8);
+      const carryStepSway = gAmp * s * (firstPersonHideHead ? 0.024 : 0.032) * weightSpec.weightNorm;
       const distDelta = activeDist - profile.holdDistance;
       const liftDelta = activeLift - profile.holdHeight;
-      const carryRotX =
-        profile.armPitch + carryArmBob + distDelta * -0.95 + liftDelta * -1.45;
-      const inwardAngle = (0.27 - profile.armSpread) * 1.45;
-      const carryRotZL = inwardAngle;
-      const carryRotZR = -inwardAngle;
+      const heftPitch = carryHeft.current * 0.22;
+      const recoilPitch = -mountRecoil.current * 0.36;
+      const carryRotXBase =
+        profile.armPitch + carryStepBob + heftPitch + carrySettlePitch.current * 0.75 + distDelta * -0.95 + liftDelta * -1.45;
+      const carryRotXL = carryRotXBase + wristTwist.current * 0.45 + carryStepSway * 0.5;
+      const carryRotXR = carryRotXBase - wristTwist.current * 0.45 - carryStepSway * 0.5;
+      const inwardAngle = (0.27 - profile.armSpread) * 1.45 + weightSpec.gripClose * carryBlend.current;
+      const carryRotZL = inwardAngle + wristTwist.current * 0.55 + carrySettleRoll.current * 0.65 + carryStepSway;
+      const carryRotZR = -inwardAngle + wristTwist.current * 0.55 + carrySettleRoll.current * 0.65 + carryStepSway;
 
       leftArmRef.current.rotation.x = THREE.MathUtils.lerp(
         leftArmRef.current.rotation.x,
-        THREE.MathUtils.lerp(freeArmXL, carryRotX, carryBlend.current),
+        THREE.MathUtils.lerp(freeArmXL + recoilPitch, carryRotXL, carryBlend.current),
         lerpRate
       );
       rightArmRef.current.rotation.x = THREE.MathUtils.lerp(
         rightArmRef.current.rotation.x,
-        THREE.MathUtils.lerp(freeArmXR, carryRotX, carryBlend.current),
+        THREE.MathUtils.lerp(freeArmXR + recoilPitch, carryRotXR, carryBlend.current),
         lerpRate
       );
       leftArmRef.current.rotation.z = THREE.MathUtils.lerp(
@@ -332,16 +393,20 @@ export function InventorCharacter({
 
       const baseShoulderX = firstPersonHideHead ? BODY.firstPerson.shoulderX : BODY.arm.shoulderX;
       const carryShoulderX = firstPersonHideHead
-        ? Math.max(profile.armSpread * 0.94, 0.22)
-        : profile.armSpread * 0.88;
+        ? Math.max(profile.armSpread * 0.9, 0.21)
+        : profile.armSpread * 0.85;
       const shoulderOffset = THREE.MathUtils.lerp(baseShoulderX, carryShoulderX, carryBlend.current);
       const baseArmY = firstPersonHideHead ? BODY.firstPerson.shoulderY : BODY.arm.shoulderY;
-      const armPosY = baseArmY + THREE.MathUtils.lerp(0, liftDelta * 0.35, carryBlend.current);
+      const shoulderWeightDrop =
+        (weightSpec.shoulderDrop * (firstPersonHideHead ? 0.72 : 1.0) + carryHeft.current * 0.042) * carryBlend.current;
+      const stepArmDip = firstPersonHideHead ? -gAmp * Math.abs(c) * weightSpec.bobAmp * 0.65 * carryBlend.current : 0;
+      const armPosY = baseArmY + THREE.MathUtils.lerp(0, liftDelta * 0.35, carryBlend.current) - shoulderWeightDrop + stepArmDip;
       const handForwardPull = firstPersonHideHead
         ? THREE.MathUtils.lerp(0.1, 0.14 + distDelta * 0.65, carryBlend.current)
         : THREE.MathUtils.lerp(0, distDelta * 0.55, carryBlend.current);
-      leftArmRef.current.position.set(-shoulderOffset, armPosY, handForwardPull);
-      rightArmRef.current.position.set(shoulderOffset, armPosY, handForwardPull);
+      const wristShiftY = wristTwist.current * 0.028 * carryBlend.current;
+      leftArmRef.current.position.set(-shoulderOffset, armPosY + wristShiftY, handForwardPull);
+      rightArmRef.current.position.set(shoulderOffset, armPosY - wristShiftY, handForwardPull);
     }
 
     // Toggle ONLY obstructing head/torso/upper-shoulder/leg geometry in first person (keep forearms, cuffs, gloves & cargo visible)
@@ -490,7 +555,13 @@ export function InventorCharacter({
   const S = BODY_SOCKETS;
 
   return (
-    <group ref={rootRef} position={[0, CHARACTER_DIMENSIONS.visualYOffset, 0]}>
+    <group ref={rootRef} position={[
+      0,
+      alignToGround && !seated && !firstPersonHideHead
+        ? CHARACTER_DIMENSIONS.groundVisualYOffset
+        : CHARACTER_DIMENSIONS.visualYOffset,
+      0,
+    ]}>
       <group ref={bodyPivotRef}>
         {/* PIERNAS: cuerpo base + prenda de pierna + botas (medidas en bodyProfile) */}
         <group ref={leftLegRef} position={S.hipL}>

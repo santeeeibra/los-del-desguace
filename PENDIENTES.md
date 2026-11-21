@@ -1,5 +1,9 @@
 # Pendientes de Los del Desguace
 
+## Animación y respuesta del juego
+
+- [Plan de entregas y pedido para Antigravity](./docs/PLAN_ANIMACION_Y_RESPUESTA.md). La primera entrega cubre el agarre y montaje de una rueda, el Banco RPM y una vuelta en pista.
+
 ## Motor de juego
 
 - Permitir ubicar uniones sobre piezas ya montadas. Reusar las uniones fijas, los ejes y la transmisión que prueban el carrito y el tambor.

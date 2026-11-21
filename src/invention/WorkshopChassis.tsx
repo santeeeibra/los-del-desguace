@@ -1,42 +1,49 @@
+import { useFrame } from '@react-three/fiber';
 import { CuboidCollider, RigidBody, type RapierRigidBody } from '@react-three/rapier';
-import { Suspense, type RefObject } from 'react';
-import { DoubleSide } from 'three';
+import { Suspense, useRef, type RefObject } from 'react';
+import * as THREE from 'three';
 import { PALETTE } from '../config/visualConfig';
 import { PropModel } from '../props/PropModels';
 import { PROP_MODEL_URLS, USE_LEGACY_PROP_VISUALS } from '../props/propModelConfig';
-import { useGameStore } from '../state/gameStore';
-import {
-  DRUM_STAND_ORIGIN,
-  WORKSHOP_ORIGIN,
-  WORKSHOP_SLOTS,
-  workshopMarkerOffset,
-  type WorkshopStation,
-} from './workshopAssembly';
-
-function MountPoints({ station }: { station: WorkshopStation }) {
-  const targetSlot = useGameStore((s) => s.workshopSlot);
-  const aimedSlot = useGameStore((s) => s.aimedWorkshopSlot);
-
-  return WORKSHOP_SLOTS.filter((slot) => slot.station === station).map((slot) => (
-    <group key={slot.id} position={slot.position}>
-      <mesh
-        position={workshopMarkerOffset(slot)}
-        rotation={slot.type === 'wheel' ? [0, Math.PI / 2, 0] : [-Math.PI / 2, 0, 0]}
-      >
-        <ringGeometry args={[0.07, 0.11, 16]} />
-        <meshBasicMaterial color={targetSlot === slot.id ? '#80efd2' : aimedSlot === slot.id ? '#ffe066' : '#b9a26a'} side={DoubleSide} />
-      </mesh>
-      {targetSlot === slot.id && (
-        <mesh position={[0, 0.47, 0]} rotation={[Math.PI, 0, 0]}>
-          <coneGeometry args={[0.085, 0.16, 4]} />
-          <meshBasicMaterial color="#ffe066" />
-        </mesh>
-      )}
-    </group>
-  ));
-}
+import { vehicleFeelState } from './vehicleFeel';
+import { DRUM_STAND_ORIGIN, WORKSHOP_ORIGIN } from './workshopAssembly';
 
 export function WorkshopChassis({ bodyRef }: { bodyRef: RefObject<RapierRigidBody | null> }) {
+  const chassisVisualRef = useRef<THREE.Group>(null);
+  const smoothPitchRef = useRef(0);
+  const smoothRollRef = useRef(0);
+  const heaveYRef = useRef(0);
+  const heaveVelRef = useRef(0);
+
+  useFrame((state, rawDelta) => {
+    const visual = chassisVisualRef.current;
+    if (!visual) return;
+    const dt = Math.min(rawDelta, 0.05);
+
+    if (vehicleFeelState.chassisHeaveImpulse > 0.01) {
+      heaveVelRef.current -= vehicleFeelState.chassisHeaveImpulse * 0.95;
+      vehicleFeelState.chassisHeaveImpulse = 0;
+    }
+
+    const targetPitch = vehicleFeelState.chassisActive ? vehicleFeelState.chassisPitch : 0;
+    const targetRoll = vehicleFeelState.chassisActive ? vehicleFeelState.chassisRoll : 0;
+    const k = 1 - Math.exp(-11 * dt);
+    smoothPitchRef.current = THREE.MathUtils.lerp(smoothPitchRef.current, targetPitch, k);
+    smoothRollRef.current = THREE.MathUtils.lerp(smoothRollRef.current, targetRoll, k);
+
+    // Damped suspension spring for landing settle (visual-only, colliders & joints stay fixed)
+    const springF = -heaveYRef.current * 145 - heaveVelRef.current * 15;
+    heaveVelRef.current += springF * dt;
+    heaveYRef.current = THREE.MathUtils.clamp(heaveYRef.current + heaveVelRef.current * dt, -0.085, 0.028);
+
+    const rumble = vehicleFeelState.motorRpmNorm > 0.04
+      ? Math.sin(state.clock.elapsedTime * (36 + vehicleFeelState.motorRpmNorm * 32)) * 0.0022 * vehicleFeelState.motorRpmNorm
+      : 0;
+
+    visual.position.set(0, heaveYRef.current + rumble, 0);
+    visual.rotation.set(smoothPitchRef.current, 0, smoothRollRef.current);
+  });
+
   const legacyMesh = (
     <group position={[0, 0.36, 0]}>
       <mesh castShadow receiveShadow>
@@ -56,16 +63,17 @@ export function WorkshopChassis({ bodyRef }: { bodyRef: RefObject<RapierRigidBod
     <RigidBody ref={bodyRef} type="fixed" colliders={false} position={WORKSHOP_ORIGIN} name="workshop-chassis"
       canSleep={false} ccd additionalSolverIterations={4} linearDamping={0.65} angularDamping={1.2}>
       <CuboidCollider args={[0.65, 0.055, 1.12]} position={[0, 0.36, 0]} mass={14} friction={0.65} />
-      {USE_LEGACY_PROP_VISUALS || !PROP_MODEL_URLS.chassis ? (
-        legacyMesh
-      ) : (
-        <Suspense fallback={legacyMesh}>
-          <group position={[0, 0.36, 0]} scale={[1.08, 0.79, 1.11]}>
-            <PropModel url={PROP_MODEL_URLS.chassis} />
-          </group>
-        </Suspense>
-      )}
-      <MountPoints station="cart" />
+      <group ref={chassisVisualRef}>
+        {USE_LEGACY_PROP_VISUALS || !PROP_MODEL_URLS.chassis ? (
+          legacyMesh
+        ) : (
+          <Suspense fallback={legacyMesh}>
+            <group position={[0, 0.36, 0]} scale={[1.08, 0.79, 1.11]}>
+              <PropModel url={PROP_MODEL_URLS.chassis} />
+            </group>
+          </Suspense>
+        )}
+      </group>
     </RigidBody>
   );
 }
@@ -82,7 +90,6 @@ export function WorkshopDrumStand() {
         <cylinderGeometry args={[0.27, 0.3, 0.04, 16]} />
         <meshStandardMaterial color={PALETTE.metalYellow} roughness={0.55} />
       </mesh>
-      <MountPoints station="drum" />
     </RigidBody>
   );
 }

@@ -2,7 +2,7 @@ import rapier from '@dimforge/rapier3d-compat';
 import { describe, expect, it } from 'vitest';
 import { restoreCartBlueprint } from '../src/invention/cartBlueprints';
 import { createWorkshopPhysics } from '../src/invention/workshopPhysics';
-import { WORKSHOP_ORIGIN, WorkshopAssembly } from '../src/invention/workshopAssembly';
+import { FREE_BUILD_ORIGIN, WORKSHOP_ORIGIN, WorkshopAssembly } from '../src/invention/workshopAssembly';
 import {
   contraptionGraph,
   getMotorDirection,
@@ -136,8 +136,17 @@ describe('Estabilidad de los presets al subir al asiento', () => {
         });
       }
 
-      const err = restoreCartBlueprint(preset, cart, assembly, physics, contraptionGraph, { world, rapier }, new Set());
+      cart.setTranslation({ x: 12, y: 0.08, z: 15 }, true);
+      cart.setRotation({ x: 0, y: Math.SQRT1_2, z: 0, w: Math.SQRT1_2 }, true);
+      world.step();
+      const loadPoint = preset.rootPartId ? FREE_BUILD_ORIGIN : WORKSHOP_ORIGIN;
+      const err = restoreCartBlueprint(preset, cart, assembly, physics, contraptionGraph,
+        { world, rapier }, new Set(), loadPoint);
       expect(err).toBeNull();
+      if (!preset.rootPartId) {
+        expect(cart.translation().x).toBeCloseTo(WORKSHOP_ORIGIN[0]);
+        expect(cart.rotation().w).toBeCloseTo(1);
+      }
 
       // Simular subir al asiento (soltar creación con throttle = 0) y luego acelerar (throttle = 1)
       const station = preset.rootPartId ? (`custom:${preset.rootPartId}` as const) : 'cart';

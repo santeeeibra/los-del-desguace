@@ -1,6 +1,7 @@
 import { Suspense, useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { CuboidCollider, CylinderCollider, RigidBody } from '@react-three/rapier';
+import { PARTS_TRAYS, STARTER_TRAY, TRAY_HEIGHT } from './workshopLayout';
 import * as THREE from 'three';
 import { getSharedTextures, PALETTE } from '../config/visualConfig';
 import { PropModel } from '../props/PropModels';
@@ -344,15 +345,30 @@ export function ScrapyardWorkshop({ extraProps }: ScrapyardWorkshopProps) {
         </group>
       </RigidBody>
 
-      {/* LOADING DOCK & RAMP (Scale, Jump & Landing Test Zone - Right side) */}
+      <RigidBody type="fixed" colliders={false}>
+        {[STARTER_TRAY, ...PARTS_TRAYS].map(({ x, z, width, depth }, index) => (
+          <group key={z + x} position={[x, TRAY_HEIGHT / 2, z]}>
+            <CuboidCollider args={[width / 2, TRAY_HEIGHT / 2, depth / 2]} />
+            <mesh receiveShadow material={materials.wood}>
+              <boxGeometry args={[width, TRAY_HEIGHT, depth]} />
+            </mesh>
+            <mesh material={index === 0 ? materials.metalYellow : materials.metalTeal}
+              position={[0, 0, depth / 2 + 0.016]}>
+              <boxGeometry args={[width, TRAY_HEIGHT, 0.034]} />
+            </mesh>
+          </group>
+        ))}
+      </RigidBody>
+
+      {/* Plataforma de carga y dispensador de piezas extra. */}
       <RigidBody type="fixed" colliders={false} friction={1}>
         {/* Main wooden loading platform (1.0m high) */}
         <CuboidCollider args={[2.1, 0.5, 2.1]} position={[6.5, 0.5, 2.4]} />
         {/* Sloped wooden ramp leading up to platform */}
         <CuboidCollider args={[0.95, 0.12, 1.65]} position={[6.5, 0.48, -0.95]} rotation={[-0.31, 0, 0]} />
         {/* Two stepped crates on side for jump/landing testing */}
-        <CuboidCollider args={[0.55, 0.25, 0.55]} position={[3.8, 0.25, 3.2]} />
-        <CuboidCollider args={[0.55, 0.5, 0.55]} position={[4.8, 0.5, 4.1]} />
+        <CuboidCollider args={[0.55, 0.25, 0.55]} position={[9.3, 0.25, 3.2]} />
+        <CuboidCollider args={[0.55, 0.5, 0.55]} position={[9.3, 0.5, 4.4]} />
 
         {/* Platform visuals */}
         <group position={[6.5, 0, 2.4]}>
@@ -380,10 +396,10 @@ export function ScrapyardWorkshop({ extraProps }: ScrapyardWorkshopProps) {
         </mesh>
 
         {/* Stepped jump crates */}
-        <mesh castShadow receiveShadow material={materials.wood} position={[3.8, 0.25, 3.2]}>
+        <mesh castShadow receiveShadow material={materials.wood} position={[9.3, 0.25, 3.2]}>
           <boxGeometry args={[1.1, 0.5, 1.1]} />
         </mesh>
-        <mesh castShadow receiveShadow material={materials.woodDark} position={[4.8, 0.5, 4.1]}>
+        <mesh castShadow receiveShadow material={materials.woodDark} position={[9.3, 0.5, 4.4]}>
           <boxGeometry args={[1.1, 1.0, 1.1]} />
         </mesh>
       </RigidBody>
@@ -415,13 +431,13 @@ export function ScrapyardWorkshop({ extraProps }: ScrapyardWorkshopProps) {
       </RigidBody>
 
       {/* Dynamic bumpable barrel & tire stack to test bump/collision reaction! */}
-      <RigidBody type="dynamic" colliders={false} mass={14} linearDamping={1.2} angularDamping={1.5} position={[-1.8, 0.5, 2.2]}>
+      <RigidBody type="dynamic" colliders={false} mass={14} linearDamping={1.2} angularDamping={1.5} position={[-7.5, 0.5, 2.35]}>
         <CylinderCollider args={[0.48, 0.36]} />
         {renderBarrel(0, 0, 0, materials.metalTeal, 'teal')}
       </RigidBody>
 
       {extraProps && (
-        <RigidBody type="dynamic" colliders={false} mass={12} linearDamping={1.2} angularDamping={1.5} position={[-2.6, 0.5, 2.5]}>
+        <RigidBody type="dynamic" colliders={false} mass={12} linearDamping={1.2} angularDamping={1.5} position={[-8.75, 0.5, 2.35]}>
           <CylinderCollider args={[0.48, 0.36]} />
           {renderBarrel(0, 0, 0, materials.metalRust, 'orange')}
         </RigidBody>

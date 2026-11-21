@@ -204,7 +204,7 @@ export function DesguaceScene() {
           <TowerMirador />
           <ArenaAndBridgeZone resetSignal={resetNonce} playerSourceRef={cameraSourceRef} />
           <TrackCheckpoints />
-          <ScrapCart />
+          <ScrapCart position={[9, 0, -7.45]} rotation={[0, 0, 0]} />
           <WorkshopChassis bodyRef={cartBodyRef} />
           <BlueprintHolograms cartBodyRef={cartBodyRef} />
           <WorkshopDrumStand />

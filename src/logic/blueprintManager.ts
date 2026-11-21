@@ -615,6 +615,9 @@ export const VALID_BLUEPRINT_KINDS: ReadonlySet<GrabbableKind> = new Set<Grabbab
   'fan',
   'horn',
   'gyro',
+  'boxingGlove',
+  'droneRotor',
+  'flag',
 ]);
 
 export function createBlueprint(

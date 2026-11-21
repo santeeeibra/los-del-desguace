@@ -1,5 +1,7 @@
 import { useEffect } from 'react';
+import { snapshotPrimaryInteractRequest, type InteractRequest } from '../invention/interactResolution';
 import type { ContraptionBlueprint } from '../logic/blueprintManager';
+import type { ContractId } from '../modes/contracts';
 import { gameStore } from '../state/gameStore';
 import { INVENTORY_SIZE } from '../state/inventory';
 
@@ -19,9 +21,15 @@ export type CartAction =
   | 'rotate-back'
   | 'rotate-base'
   | 'rotate-base-back'
+  | 'rotate-base-x'
+  | 'rotate-base-z'
+  | 'position'
   | 'push'
   | 'undo'
   | 'repair'
+  | 'retry'
+  | 'return-workshop'
+  | 'bench'
   | 'move-fwd'
   | 'move-back'
   | 'move-left'
@@ -40,10 +48,14 @@ export type PartContextAction =
   | 'weld'
   | 'smart-use'
   | 'cycle-timer'
-  | 'ride';
+  | 'ride'
+  | 'drop'
+  | 'unmount';
 
 type MovementKey = 'forward' | 'backward' | 'leftward' | 'rightward';
-type BlueprintAction = { type: 'save'; name: string } | { type: 'load'; blueprint: ContraptionBlueprint };
+type BlueprintAction = { type: 'save'; name: string }
+  | { type: 'load'; blueprint: ContraptionBlueprint }
+  | { type: 'preset'; blueprint: ContraptionBlueprint; startContract?: ContractId };
 const MOVEMENT_KEYS: Partial<Record<string, MovementKey>> = {
   KeyW: 'forward', w: 'forward', ArrowUp: 'forward',
   KeyS: 'backward', s: 'backward', ArrowDown: 'backward',
@@ -55,6 +67,7 @@ class PlayerInputBus {
   private blueprintAction: BlueprintAction | null = null;
   menuOpen = false;
   lastPointerLockExitAt = 0;
+  interactHeld = false;
 
   triggerBlueprintAction(action: BlueprintAction) {
     this.blueprintAction = action;
@@ -84,6 +97,7 @@ class PlayerInputBus {
   };
 
   private interactCount = 0;
+  private interactRequest: InteractRequest | null = null;
   private cartAction: CartAction | null = null;
   private partAction: PartContextAction | null = null;
   private inventoryAction: number | 'store' | null = null;
@@ -137,16 +151,23 @@ class PlayerInputBus {
     return action;
   }
 
-  triggerInteract() {
+  triggerInteract(request?: InteractRequest) {
     this.interactCount += 1;
+    this.interactRequest = request ?? snapshotPrimaryInteractRequest(gameStore.getState());
+  }
+
+  consumeInteractRequest(): InteractRequest | null {
+    if (this.interactCount > 0) {
+      this.interactCount = 0;
+      const req = this.interactRequest ?? { intent: 'default', targetId: null };
+      this.interactRequest = null;
+      return req;
+    }
+    return null;
   }
 
   consumeInteract(): boolean {
-    if (this.interactCount > 0) {
-      this.interactCount = 0;
-      return true;
-    }
-    return false;
+    return this.consumeInteractRequest() !== null;
   }
 
   setTouchJoystick(x: number, y: number) {
@@ -203,12 +224,14 @@ class PlayerInputBus {
   }
 
   resetTouchAndActions() {
+    this.interactHeld = false;
     this.touch.joystickX = 0;
     this.touch.joystickY = 0;
     this.touch.jump = false;
     this.touch.run = false;
     this.touch.descend = false;
     this.interactCount = 0;
+    this.interactRequest = null;
     this.partAction = null;
     this.cartAction = null;
     this.inventoryAction = null;
@@ -279,9 +302,13 @@ export function dispatchGameKeyDown(e: KeyDownLike) {
       playerInput.keys.run = true;
       break;
     case 'KeyE':
-      if (!e.repeat) {
+      if (!e.repeat && !e.altKey && !e.ctrlKey && !e.metaKey) {
+        playerInput.interactHeld = true;
         playerInput.triggerInteract();
       }
+      break;
+    case 'KeyQ':
+      if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) gameStore.selectPreviousInventory();
       break;
     case 'KeyF':
       if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -294,7 +321,9 @@ export function dispatchGameKeyDown(e: KeyDownLike) {
       }
       break;
     case 'KeyR':
-      if (!e.ctrlKey && !e.metaKey && (!e.repeat || gameStore.getState().wrenchEquipped)) {
+      if (!e.repeat && !e.shiftKey && !e.ctrlKey && !e.metaKey && gameStore.getState().wrenchAiming) {
+        gameStore.cycleWrenchAxis();
+      } else if (!e.ctrlKey && !e.metaKey && (!e.repeat || !gameStore.getState().wrenchAiming)) {
         playerInput.triggerCartAction(e.shiftKey ? 'rotate-back' : 'rotate');
       }
       break;
@@ -356,6 +385,9 @@ export function useKeyboardInput() {
       delete playerInput.logicKeys[e.code];
       if (playerInput.setMovementKey(e.code, e.key, false)) return;
       switch (e.code) {
+        case 'KeyE':
+          playerInput.interactHeld = false;
+          break;
         case 'Space':
           playerInput.keys.jump = false;
           break;

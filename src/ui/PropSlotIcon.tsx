@@ -144,6 +144,21 @@ export function PropSlotIcon({ kind }: { kind: InventoryKind }) {
           <polygon points="14,22 18,22 17,24.5 15,24.5" fill="#d94632" stroke={stroke} strokeWidth="1.5" strokeLinejoin="round" />
         </svg>
       );
+    case 'boxingGlove':
+      return (
+        <svg className="hud-slot-svg" viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M6 17h12v9H6z" fill="#555e65" stroke={stroke} strokeWidth="2" />
+          <path d="M13 19v-7a6 6 0 0 1 6-6h3a6 6 0 0 1 6 6v4a7 7 0 0 1-7 7h-6z" fill="#d94732" stroke={stroke} strokeWidth="2" />
+        </svg>
+      );
+    case 'flag':
+      return (
+        <svg className="hud-slot-svg" viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M8 6h17l-3 6 3 6H8z" fill="#d94732" stroke={stroke} strokeWidth="2" />
+          <path d="M8 5v23" stroke="#e2a82e" strokeWidth="2.6" strokeLinecap="round" />
+        </svg>
+      );
+    case 'droneRotor':
     case 'fan':
       return (
         <svg className="hud-slot-svg" viewBox="0 0 32 32" aria-hidden="true">

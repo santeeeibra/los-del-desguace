@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { extraPartPosition } from '../environment/workshopLayout';
 import { playImpact } from '../audio/sfxEngine';
 import {
   EMOTE_BY_ID,
@@ -10,6 +11,7 @@ import {
 import { listBlueprints, type ContraptionBlueprint } from '../logic/blueprintManager';
 import type { QualityLevel } from '../config/visualConfig';
 import { WRENCH_AXES, type WrenchAxis } from '../invention/wrenchRotation';
+import type { StarterBuildStep } from '../invention/workshopAssembly';
 import type { GrabbableKind } from '../props/grabbableRegistry';
 import { emptyInventory, INVENTORY_SIZE, placeInInventory, type InventoryItem, type InventorySlots } from './inventory';
 
@@ -112,11 +114,16 @@ export interface GameHudState {
   aimedWorkshopSlot: string | null;
   laserHint: string | null;
   wireHint: string | null;
+  starterBuildStep: StarterBuildStep;
+  celebration: { title: string; detail?: string; kind: 'workshop' | 'achievement'; id: number } | null;
   pendingWireFrom: string | null;
+  wiringActive: boolean;
+  testBench: { power: number; rpm: number } | null;
   laserPlacementReady: boolean;
   partMountReady: boolean;
   workshopStatus: string | null;
   cartMode: 'fixed' | 'free' | null;
+  assemblyInteraction: 'release' | 'lift' | 'push' | 'heavy' | 'drop' | 'position' | 'place' | null;
   activeStationType: 'cart' | 'custom' | null;
   canUndoMount: boolean;
   seated: boolean;
@@ -176,11 +183,16 @@ let state: GameHudState = {
   aimedWorkshopSlot: null,
   laserHint: null,
   wireHint: null,
+  starterBuildStep: 'wheels',
+  celebration: null,
   pendingWireFrom: null,
+  wiringActive: false,
+  testBench: null,
   laserPlacementReady: false,
   partMountReady: false,
   workshopStatus: null,
   cartMode: null,
+  assemblyInteraction: null,
   activeStationType: null,
   canUndoMount: false,
   seated: false,
@@ -214,8 +226,11 @@ let impactClearTimer: number | null = null;
 let dropHintClearTimer: number | null = null;
 let cameraBannerClearTimer: number | null = null;
 let wireHintClearTimer: number | null = null;
+let celebrationTimer: ReturnType<typeof setTimeout> | undefined;
+let celebrationId = 0;
 let emoteClearTimer: ReturnType<typeof setTimeout> | null = null;
 let clearExtraPartsRequested = false;
+let previousInventorySelection = 0;
 let nextExtraPartId = 0;
 
 function emit() {
@@ -346,6 +361,24 @@ export const gameStore = {
     state = { ...state, aimedWorkshopSlot, laserHint, laserPlacementReady, partMountReady };
     emit();
   },
+  setStarterBuildStep(starterBuildStep: StarterBuildStep) {
+    if (state.starterBuildStep === starterBuildStep) return;
+    state = { ...state, starterBuildStep };
+    emit();
+  },
+  celebrate(title: string, detail?: string, kind: 'workshop' | 'achievement' = 'workshop') {
+    const current = state.celebration;
+    if (kind === 'workshop' && current?.kind === 'achievement') return;
+    if (current?.title === title && current.detail === detail) return;
+    clearTimeout(celebrationTimer);
+    state = { ...state, celebration: { title, detail, kind, id: ++celebrationId } };
+    emit();
+    celebrationTimer = setTimeout(() => {
+      celebrationTimer = undefined;
+      state = { ...state, celebration: null };
+      emit();
+    }, kind === 'achievement' ? 3100 : 1900);
+  },
   setWireHint(wireHint: string | null) {
     if (wireHintClearTimer !== null) {
       window.clearTimeout(wireHintClearTimer);
@@ -364,8 +397,29 @@ export const gameStore = {
     }
   },
   setPendingWireFrom(pendingWireFrom: string | null) {
-    if (state.pendingWireFrom === pendingWireFrom) return;
-    state = { ...state, pendingWireFrom };
+    const wiringActive = pendingWireFrom !== null;
+    if (state.pendingWireFrom === pendingWireFrom && state.wiringActive === wiringActive) return;
+    state = { ...state, pendingWireFrom, wiringActive };
+    emit();
+  },
+  beginWiring() {
+    if (state.wiringActive) return;
+    state = { ...state, wiringActive: true };
+    emit();
+  },
+  setTestBench(open: boolean) {
+    if (Boolean(state.testBench) === open) return;
+    state = { ...state, testBench: open ? { power: 0, rpm: 0 } : null };
+    emit();
+  },
+  setBenchPower(power: number) {
+    if (!state.testBench || !Number.isFinite(power)) return;
+    state = { ...state, testBench: { ...state.testBench, power: Math.min(1, Math.max(0, power)) } };
+    emit();
+  },
+  setBenchRpm(rpm: number) {
+    if (!state.testBench || state.testBench.rpm === rpm) return;
+    state = { ...state, testBench: { ...state.testBench, rpm } };
     emit();
   },
   triggerRotatingTarget(id: string) {
@@ -389,6 +443,11 @@ export const gameStore = {
     state = { ...state, cartMode, activeStationType: nextStationType };
     emit();
   },
+  setAssemblyInteraction(assemblyInteraction: GameHudState['assemblyInteraction']) {
+    if (state.assemblyInteraction === assemblyInteraction) return;
+    state = { ...state, assemblyInteraction };
+    emit();
+  },
   setCanUndoMount(canUndoMount: boolean) {
     if (state.canUndoMount === canUndoMount) return;
     state = { ...state, canUndoMount };
@@ -401,7 +460,7 @@ export const gameStore = {
     }
     state = {
       ...state, wrenchEquipped: !state.wrenchEquipped, wrenchAiming: false, wrenchAimLocked: false, wrenchTarget: null,
-      aimedWorkshopSlot: null, laserHint: null, laserPlacementReady: false, partMountReady: false, wireHint: null, pendingWireFrom: null,
+      aimedWorkshopSlot: null, laserHint: null, laserPlacementReady: false, partMountReady: false, wireHint: null, pendingWireFrom: null, wiringActive: false,
     };
     emit();
   },
@@ -452,13 +511,22 @@ export const gameStore = {
   },
   setCarried(id: string | null, kind: GameHudState['carriedKind']) {
     if (state.carriedId === id && state.carriedKind === kind) return;
-    state = { ...state, carriedId: id, carriedKind: kind };
+    state = id
+      ? { ...state, carriedId: id, carriedKind: kind, pendingWireFrom: null, wiringActive: false }
+      : { ...state, carriedId: null, carriedKind: kind };
     emit();
   },
   selectInventory(index: number) {
     if (index < 0 || index >= INVENTORY_SIZE || state.inventorySelection === index) return;
+    previousInventorySelection = state.inventorySelection;
     state = { ...state, inventorySelection: index };
     emit();
+  },
+  selectPreviousInventory() {
+    this.selectInventory(previousInventorySelection);
+  },
+  cycleInventory(direction: number) {
+    this.selectInventory((state.inventorySelection + direction + INVENTORY_SIZE) % INVENTORY_SIZE);
   },
   setActiveGuideIndex(activeGuideIndex: number) {
     if (state.activeGuideIndex === activeGuideIndex) return;
@@ -506,7 +574,10 @@ export const gameStore = {
   },
   triggerReset() {
     clearExtraPartsRequested = false;
-    state = { ...state, resetNonce: state.resetNonce + 1, inventorySlots: starterInventory(), inventorySelection: 0, spawnedProps: [] };
+    previousInventorySelection = 0;
+    clearTimeout(celebrationTimer);
+    celebrationTimer = undefined;
+    state = { ...state, resetNonce: state.resetNonce + 1, inventorySlots: starterInventory(), inventorySelection: 0, spawnedProps: [], celebration: null };
     emit();
   },
   spawnExtraPart(kind: GrabbableKind): SpawnedPropEntry | null {
@@ -514,17 +585,11 @@ export const gameStore = {
     const occupied = new Set(state.spawnedProps.map(({ spawnIndex }) => spawnIndex));
     let idx = 0;
     while (occupied.has(idx)) idx++;
-    const angle = idx * 1.15;
-    const radius = 2.6 + (idx % 4) * 0.48;
     const entry: SpawnedPropEntry = {
       id: `extra-${kind}-${++nextExtraPartId}`,
       kind,
       spawnIndex: idx,
-      position: [
-        Number((2.05 + Math.cos(angle) * radius).toFixed(2)),
-        1.15,
-        Number((5.9 + Math.sin(angle) * radius).toFixed(2)),
-      ],
+      position: extraPartPosition(idx),
     };
     state = { ...state, spawnedProps: [...state.spawnedProps, entry] };
     emit();

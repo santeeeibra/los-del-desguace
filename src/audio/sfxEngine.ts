@@ -21,6 +21,17 @@ let engineFilter: BiquadFilterNode | null = null;
 let engineGain: GainNode | null = null;
 let engineHumRequested = false;
 let lastEngineIntensity = 0.5;
+
+// Rolling / tire skid persistent nodes (reuses shared noise buffer, zero per-frame allocations)
+let rollNoiseSource: AudioBufferSourceNode | null = null;
+let rollFilter: BiquadFilterNode | null = null;
+let rollGain: GainNode | null = null;
+let skidFilter: BiquadFilterNode | null = null;
+let skidGain: GainNode | null = null;
+let rollAudioRequested = false;
+let lastRollSpeed = 0;
+let lastRollSlip = 0;
+
 let lastEmoteSfxAt = 0;
 let lastSuccessAt = Number.NEGATIVE_INFINITY;
 const EMOTE_COOLDOWN_MS = 120;
@@ -166,6 +177,7 @@ export function unlockAudio(): void {
       if (ctx.state === 'running') {
         detachListeners();
         if (engineHumRequested && !engineGain) setEngineHum(true, lastEngineIntensity);
+        if (rollAudioRequested && !rollGain) setRollingAudio(true, lastRollSpeed, lastRollSlip);
       } else {
         void ctx
           .resume()
@@ -173,6 +185,7 @@ export function unlockAudio(): void {
             if (ctx.state === 'running') {
               detachListeners();
               if (engineHumRequested) setEngineHum(true, lastEngineIntensity);
+              if (rollAudioRequested) setRollingAudio(true, lastRollSpeed, lastRollSlip);
             }
           })
           .catch(() => {});
@@ -584,14 +597,166 @@ export function playSpringBoing(): void {
   });
 }
 
+/**
+ * Tactile low rubber/weight thump when lifting a wheel or heavy workshop piece.
+ */
+export function playGrabThud(weightNorm = 0.7): void {
+  runWithAudio((ctx, out) => {
+    const now = ctx.currentTime;
+    const w = Math.max(0.2, Math.min(1, weightNorm));
+    // Deep body heft thud
+    scheduleTone(ctx, out, 'triangle', 125 - w * 28, 52, now, 0.095, 0.14 + w * 0.08);
+    // Short gloved grip rustle
+    const noise = ctx.createBufferSource();
+    noise.buffer = getNoiseBuffer(ctx);
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(620, now);
+    bp.Q.value = 1.4;
+    const nGain = ctx.createGain();
+    nGain.gain.setValueAtTime(0.001, now);
+    nGain.gain.linearRampToValueAtTime(0.055 + w * 0.035, now + 0.008);
+    nGain.gain.exponentialRampToValueAtTime(0.001, now + 0.055);
+    noise.onended = () => disconnectNodes(noise, bp, nGain);
+    noise.connect(bp);
+    bp.connect(nGain);
+    nGain.connect(out);
+    noise.start(now);
+    noise.stop(now + 0.06);
+  });
+}
+
+/**
+ * Crisp mechanical ratchet click when rotating a wheel or loose piece.
+ */
+export function playRotateTick(isWheel = false): void {
+  runWithAudio((ctx, out) => {
+    const now = ctx.currentTime;
+    const baseFreq = isWheel ? 640 : 780;
+    scheduleTone(ctx, out, 'triangle', baseFreq, baseFreq * 0.62, now, 0.045, 0.11);
+    scheduleTone(ctx, out, 'sine', baseFreq * 2.1, baseFreq * 1.45, now + 0.005, 0.032, 0.065);
+  });
+}
+
+/**
+ * Distinct metallic axle seating confirmation for mounting a wheel or axle-driven part:
+ * deep hub seat thump + steel collar ring + crisp lock click.
+ */
+export function playAxleSeatClank(): void {
+  runWithAudio((ctx, out) => {
+    const now = ctx.currentTime;
+    // Heavy steel hub seating thump
+    scheduleTone(ctx, out, 'triangle', 220, 78, now, 0.125, 0.24);
+    // Metallic axle sleeve ring
+    scheduleTone(ctx, out, 'sine', 960, 620, now + 0.006, 0.11, 0.14);
+    scheduleTone(ctx, out, 'triangle', 1480, 1120, now + 0.012, 0.085, 0.09);
+    // Crisp mechanical lock-in click slightly after seat
+    scheduleTone(ctx, out, 'square', 1320, 540, now + 0.042, 0.035, 0.09);
+
+    // Brief warm metallic spark transient
+    const noise = ctx.createBufferSource();
+    noise.buffer = getNoiseBuffer(ctx);
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(2600, now + 0.008);
+    bp.Q.value = 2.6;
+    const nGain = ctx.createGain();
+    nGain.gain.setValueAtTime(0.001, now + 0.008);
+    nGain.gain.linearRampToValueAtTime(0.15, now + 0.014);
+    nGain.gain.exponentialRampToValueAtTime(0.001, now + 0.075);
+    noise.onended = () => disconnectNodes(noise, bp, nGain);
+    noise.connect(bp);
+    bp.connect(nGain);
+    nGain.connect(out);
+    noise.start(now + 0.008);
+    noise.stop(now + 0.08);
+  });
+}
+
+/**
+ * Short dull double-tap when a mount or rotation is blocked.
+ */
+export function playBlockedClick(): void {
+  runWithAudio((ctx, out) => {
+    const now = ctx.currentTime;
+    scheduleTone(ctx, out, 'triangle', 190, 125, now, 0.045, 0.11);
+    scheduleTone(ctx, out, 'triangle', 150, 98, now + 0.055, 0.055, 0.1);
+  });
+}
+
+/**
+ * Continuous ground rolling hum + distinct tire skid/scrub audio driven by real velocity and slip.
+ */
+export function setRollingAudio(active: boolean, speedNorm = 0, slipNorm = 0): void {
+  rollAudioRequested = active;
+  lastRollSpeed = speedNorm;
+  lastRollSlip = slipNorm;
+  const ready = getReadyContext();
+  if (!ready) return;
+  const { ctx, out } = ready;
+  const now = ctx.currentTime;
+
+  if (!rollNoiseSource || !rollFilter || !rollGain || !skidFilter || !skidGain) {
+    if (!active) return;
+
+    rollNoiseSource = ctx.createBufferSource();
+    rollNoiseSource.buffer = getNoiseBuffer(ctx);
+    rollNoiseSource.loop = true;
+
+    rollFilter = ctx.createBiquadFilter();
+    rollFilter.type = 'bandpass';
+    rollFilter.frequency.setValueAtTime(210, now);
+    rollFilter.Q.value = 1.1;
+
+    rollGain = ctx.createGain();
+    rollGain.gain.setValueAtTime(0, now);
+
+    skidFilter = ctx.createBiquadFilter();
+    skidFilter.type = 'bandpass';
+    skidFilter.frequency.setValueAtTime(1280, now);
+    skidFilter.Q.value = 4.2;
+
+    skidGain = ctx.createGain();
+    skidGain.gain.setValueAtTime(0, now);
+
+    rollNoiseSource.connect(rollFilter);
+    rollFilter.connect(rollGain);
+    rollGain.connect(out);
+
+    rollNoiseSource.connect(skidFilter);
+    skidFilter.connect(skidGain);
+    skidGain.connect(out);
+
+    rollNoiseSource.start(now);
+  }
+
+  const spd = Math.max(0, Math.min(1, speedNorm));
+  const slip = Math.max(0, Math.min(1, slipNorm));
+
+  const targetRollGain = active && spd > 0.02 ? 0.015 + spd * 0.068 : 0;
+  const targetRollFreq = 150 + spd * 250;
+  const targetSkidGain = active && slip > 0.12 ? (slip - 0.12) * 0.14 : 0;
+  const targetSkidFreq = 1080 + slip * 540 + spd * 180;
+
+  rollGain.gain.setTargetAtTime(targetRollGain, now, 0.06);
+  rollFilter.frequency.setTargetAtTime(targetRollFreq, now, 0.06);
+  skidGain.gain.setTargetAtTime(targetSkidGain, now, 0.04);
+  skidFilter.frequency.setTargetAtTime(targetSkidFreq, now, 0.05);
+}
+
 export const sfxEngine = {
   unlockAudio,
   playSpark,
   playImpact,
   playWireSnap,
   setEngineHum,
+  setRollingAudio,
   playEmoteSfx,
   playWeldClank,
+  playAxleSeatClank,
+  playGrabThud,
+  playRotateTick,
+  playBlockedClick,
   playSuccessChime,
   playWoodClick,
 };

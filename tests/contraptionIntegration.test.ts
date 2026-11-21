@@ -4,10 +4,112 @@ import { expect, it } from 'vitest';
 import { captureCartBlueprint, restoreCartBlueprint } from '../src/invention/cartBlueprints';
 import { createWorkshopPhysics, getWorkshopSlotPose } from '../src/invention/workshopPhysics';
 import { FREE_BUILD_ORIGIN, WORKSHOP_ORIGIN, WORKSHOP_SLOTS, WorkshopAssembly } from '../src/invention/workshopAssembly';
-import { contraptionGraph, getMotorDirection, getPartLogicOutput, getWiredEngineSignal, invertMotorNode, isPartWired, pulseActuator, resetContraptionGraph, stepContraptionLogic, stepWireConnection } from '../src/logic/contraptionRegistry';
+import { BOXING_REACH, contraptionGraph, describeWireDestination, disconnectAllWires, getMotorDirection, getPartLogicOutput, getWiredEngineSignal, invertMotorNode, isPartWired, pulseActuator, resetContraptionGraph, stepContraptionLogic, stepWireConnection, toggleSwitchNode } from '../src/logic/contraptionRegistry';
 import { grabbableRegistry, type GrabbableKind } from '../src/props/grabbableRegistry';
 import { PRESET_BLUEPRINTS } from '../src/logic/blueprintManager';
 import { LogicGraph } from '../src/logic/logicGraph';
+import { gameStore } from '../src/state/gameStore';
+
+async function withActuatorWorld(
+  test: (world: rapier.World, addProp: (kind: GrabbableKind, pos: [number, number, number]) => rapier.RigidBody) => void,
+) {
+  await rapier.init();
+  const world = new rapier.World({ x: 0, y: 0, z: 0 });
+  const ids: string[] = [];
+  const addProp = (kind: GrabbableKind, initialPos: [number, number, number]) => {
+    const id = `test-${kind}`;
+    const body = world.createRigidBody(rapier.RigidBodyDesc.dynamic().setTranslation(...initialPos));
+    const collider = world.createCollider(rapier.ColliderDesc.cuboid(0.15, 0.15, 0.15).setMass(2), body);
+    ids.push(id);
+    grabbableRegistry.register({
+      id, kind, initialPos, getBody: () => body, getCollider: () => collider,
+      getVisualGroup: () => null, getWorldPos: (out) => Boolean(out.copy(body.translation())),
+    });
+    return body;
+  };
+  resetContraptionGraph();
+  try {
+    test(world, addProp);
+  } finally {
+    ids.forEach((id) => grabbableRegistry.unregister(id));
+    resetContraptionGraph();
+    world.free();
+  }
+}
+
+it('el puño empuja un objetivo adelante, retrocede y respeta una pared intermedia', () =>
+  withActuatorWorld((world, addProp) => {
+    const glove = addProp('boxingGlove', [0, 1, 0]);
+    const target = addProp('crate', [0, 1, 1.15]);
+    const wall = world.createCollider(rapier.ColliderDesc.cuboid(0.4, 0.4, 0.05).setTranslation(0, 1, 0.6));
+    const step = () => stepContraptionLogic(1 / 60, {}, () => false, undefined, undefined, undefined,
+      (_id, source, direction) => world.castRay(new rapier.Ray(source.translation(), direction),
+        BOXING_REACH, true, undefined, undefined, undefined, source)?.collider.parent() ?? null);
+    world.step();
+    pulseActuator('test-boxingGlove');
+    step();
+    expect(target.linvel().z).toBe(0);
+    world.removeCollider(wall, true);
+    world.step();
+    for (let i = 0; i < 52; i++) step();
+    expect(target.linvel().z).toBe(0);
+    pulseActuator('test-boxingGlove');
+    step();
+    expect(target.linvel().z).toBeGreaterThan(0);
+    expect(glove.linvel().z).toBeLessThan(0);
+  }));
+
+it('la hélice de dron empuja en su eje local únicamente al recibir una señal', () =>
+  withActuatorWorld((world, addProp) => {
+    const rotor = addProp('droneRotor', [0, 1, 0]);
+    addProp('switchBox', [1, 1, 0]);
+    rotor.setRotation(new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), -Math.PI / 2), true);
+    world.step();
+    const step = () => stepContraptionLogic(1 / 60, {}, () => false, undefined, () => true);
+    step();
+    expect(rotor.linvel().x).toBe(0);
+    expect(stepWireConnection('test-switchBox').status).toBe('pending');
+    expect(stepWireConnection('test-droneRotor').status).toBe('connected');
+    step();
+    expect(rotor.linvel().x).toBe(0);
+    toggleSwitchNode('test-switchBox');
+    // El grafo propaga el estado de la fuente al actuador en el siguiente tick.
+    step();
+    step();
+    expect(rotor.linvel().x).toBeGreaterThan(0);
+    expect(rotor.linvel().y).toBeCloseTo(0);
+    const speed = rotor.linvel().x;
+    toggleSwitchNode('test-switchBox');
+    step();
+    const speedAfterLastSignal = rotor.linvel().x;
+    expect(speedAfterLastSignal).toBeGreaterThan(speed);
+    step();
+    expect(rotor.linvel().x).toBeCloseTo(speedAfterLastSignal);
+  }));
+
+it('solo aplica sustentación a un ala montada y dinámica', async () => {
+  await rapier.init();
+  const world = new rapier.World({ x: 0, y: 0, z: 0 });
+  const id = 'test-wing-lift';
+  const body = world.createRigidBody(rapier.RigidBodyDesc.dynamic().setTranslation(0, 2, 0));
+  const collider = world.createCollider(rapier.ColliderDesc.cuboid(0.55, 0.07, 0.24).setMass(2.8), body);
+  grabbableRegistry.register({
+    id, kind: 'wing', initialPos: [0, 2, 0],
+    getBody: () => body, getCollider: () => collider, getVisualGroup: () => null,
+    getWorldPos: (out) => Boolean(out.copy(body.translation())),
+  });
+  try {
+    world.step();
+    body.setLinvel({ x: 0, y: 0, z: 6 }, true);
+    stepContraptionLogic(1 / 60, {}, () => false, undefined, () => false);
+    expect(body.linvel().y).toBe(0);
+    stepContraptionLogic(1 / 60, {}, () => false, undefined, (partId) => partId === id);
+    expect(body.linvel().y).toBeGreaterThan(0);
+  } finally {
+    grabbableRegistry.unregister(id);
+    world.free();
+  }
+});
 
 it.each(PRESET_BLUEPRINTS)('restaura $name con juntas y cableado', async (preset) => {
   await rapier.init();
@@ -32,7 +134,7 @@ it.each(PRESET_BLUEPRINTS)('restaura $name con juntas y cableado', async (preset
     timerBox: () => rapier.ColliderDesc.cuboid(0.18, 0.14, 0.18),
     logicAnd: () => rapier.ColliderDesc.cuboid(0.18, 0.14, 0.18),
     magnet: () => rapier.ColliderDesc.cuboid(0.22, 0.16, 0.22),
-    cargoRack: () => rapier.ColliderDesc.cuboid(0.45, 0.12, 0.35),
+    cargoRack: () => rapier.ColliderDesc.cuboid(0.46, 0.12, 0.36),
     spring: () => rapier.ColliderDesc.cylinder(0.22, 0.18),
     balloon: () => rapier.ColliderDesc.cylinder(0.34, 0.28),
     fan: () => rapier.ColliderDesc.cylinder(0.16, 0.26),
@@ -187,7 +289,12 @@ it('un cable activa el motor con un interruptor y puede quitarse sin desmontar l
     expect(getPartLogicOutput('test-light')).toBe(0);
 
     expect(stepWireConnection('test-motor').status).toBe('invalid');
+    gameStore.toggleWrench();
     expect(stepWireConnection('test-switch').status).toBe('pending');
+    gameStore.toggleWrench();
+    expect(stepWireConnection('test-motor').status).toBe('invalid');
+    expect(stepWireConnection('test-switch').status).toBe('pending');
+    expect(describeWireDestination('test-switch', 'test-motor', 'part')).toEqual({ label: 'Señal', blocked: null });
     expect(stepWireConnection('test-motor').status).toBe('connected');
     expect(isPartWired('test-motor')).toBe(true);
     const step = () => {
@@ -200,7 +307,9 @@ it('un cable activa el motor con un interruptor y puede quitarse sin desmontar l
     expect(Math.abs(wheel.angvel().x)).toBeGreaterThan(1);
 
     expect(stepWireConnection('test-switch').status).toBe('pending');
-    expect(stepWireConnection('test-switch').message).toBe('Interruptor apagado');
+    expect(stepWireConnection('test-switch').status).toBe('invalid');
+    expect(stepWireConnection(null).status).toBe('cancelled');
+    expect(toggleSwitchNode('test-switch')).toBe('Interruptor apagado');
     step();
     step();
     expect(getWiredEngineSignal('test-motor')).toBe(0);
@@ -223,8 +332,12 @@ it('un cable activa el motor con un interruptor y puede quitarse sin desmontar l
     expect(world.impulseJoints.len()).toBe(3);
 
     expect(stepWireConnection('test-switch').status).toBe('pending');
-    expect(stepWireConnection('test-motor').status).toBe('disconnected');
+    expect(describeWireDestination('test-switch', 'test-motor', 'part')).toEqual({ label: 'Señal', blocked: 'Ya conectado' });
+    expect(stepWireConnection('test-motor').status).toBe('invalid');
+    expect(isPartWired('test-motor')).toBe(true);
+    disconnectAllWires('test-switch');
     expect(stepWireConnection('test-battery').status).toBe('pending');
+    expect(describeWireDestination('test-battery', 'test-motor', 'part')).toEqual({ label: 'Alimentación', blocked: null });
     expect(stepWireConnection('test-motor').status).toBe('connected');
     step();
     step();

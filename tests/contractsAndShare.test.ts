@@ -75,6 +75,16 @@ describe('contracts & blueprint sharing', () => {
     expect(contractStore.getState().completedNow).toBe(true);
   });
 
+  it('permite explorar a pie y exige pilotar en Primer Arranque', () => {
+    const onFoot = { wheels: 0, displacedBarrels: 0, onFoot: true };
+    for (const id of ['first-drive', 'west-freight', 'ramp-climb'] as const) {
+      const { targetPos: [x, y, z] } = WORKSHOP_CONTRACTS.find((contract) => contract.id === id)!;
+      contractStore.startContract(id);
+      contractStore.tickContract(0.05, { x, y, z }, onFoot);
+      expect(contractStore.getState().completedNow).toBe(id !== 'first-drive');
+    }
+  });
+
   it('encodeBlueprintCode y decodeBlueprintCode hacen roundtrip en presets 0 y 9 y rechazan códigos inválidos', () => {
     const p0 = PRESET_BLUEPRINTS[0];
     const p9 = PRESET_BLUEPRINTS[9];

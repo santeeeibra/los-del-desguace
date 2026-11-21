@@ -82,6 +82,19 @@
   flex-wrap: wrap;
   gap: 6px;
 }
+.hud-starter-task {
+  flex-basis: 100%;
+  max-width: min(315px, 40vw);
+  margin: 1px 0 0;
+  padding: 5px 9px;
+  border-inline-start: 3px solid var(--hud-yellow);
+  border-radius: 4px;
+  background: #261a13ed;
+  color: var(--hud-paper);
+  font-size: 13px;
+  line-height: 1.2;
+  font-weight: 800;
+}
 .hud-footer {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
@@ -89,9 +102,38 @@
 }
 .hud-footer > .hud-joystick,
 .hud-footer > .hud-drive-steer { justify-self: start; }
-.hud-action-area { display: grid; gap: 10px; justify-items: end; }
+.hud-action-area { position: relative; display: grid; gap: 6px; justify-items: end; min-width: 0; }
+.hud-action-tools, .hud-context-axis {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+}
+.hud-context-axis { flex: 1 0 100%; font-size: 12px; font-weight: 800; }
+.hud-context-axis span { margin-inline-end: auto; }
+.hud-context-popover.wood-sign {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 7px);
+  width: min(274px, calc(100vw - 30px));
+  max-height: 42dvh;
+  overflow: auto;
+  touch-action: pan-y;
+  padding: 9px;
+  border-radius: 8px;
+  z-index: 3;
+}
+.hud-context-popover .hud-context-actions { max-width: none; justify-content: flex-start; }
 .hud-inventory { display: grid; justify-items: center; gap: 5px; }
 .hud-inventory[data-driving="true"] { visibility: hidden; }
+.hud-workshop-quick, .hud-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 5px;
+  max-width: calc(100vw - 24px);
+}
+.hud-workshop-quick .hud-button { min-width: 68px; }
 
 /* Caja de herramientas de madera y hierro */
 .hud-slots {
@@ -211,7 +253,7 @@
   min-width: 38px;
   min-height: 40px;
   padding: 0 11px;
-  border-radius: 12px;
+  border-radius: 6px;
   border: 2.5px solid var(--hud-outline);
   background: linear-gradient(175deg, #f8e2b2, #dfb067);
   box-shadow: inset 0 2px 0 rgba(255, 252, 238, .65), 0 3px 0 var(--hud-outline);
@@ -249,7 +291,24 @@
   border-radius: 5px;
 }
 
-.hud-build-panel { padding: 8px; display: grid; gap: 6px; max-width: min(335px, calc(100vw - 24px)); box-sizing: border-box; }
+.hud-build-panel {
+  width: min(350px, calc(100vw - 32px));
+  max-height: min(52dvh, 420px);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+.hud-editor-heading { display: flex; gap: 12px; justify-content: space-between; align-items: center; }
+.hud-editor-heading > strong { font-family: var(--font-display); font-size: 16px; color: var(--hud-ink); }
+.hud-editor-hint { margin: 0; font-size: 13px; line-height: 1.35; color: var(--hud-ink); }
+.hud-editor-shortcuts { border-top: 1px solid #976733; padding-top: 6px; font-size: 13px; color: var(--hud-ink); }
+.hud-editor-shortcuts > summary { cursor: pointer; font-weight: 800; }
+.hud-editor-shortcuts dl { display: grid; grid-template-columns: max-content 1fr; gap: 5px 10px; margin: 6px 0 0; }
+.hud-editor-shortcuts dd { margin: 0; }
 .hud-build-row { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
 .hud-build-row > span {
   flex: 0 0 auto;
@@ -264,7 +323,6 @@
 }
 .hud-axis { text-transform: capitalize; }
 .hud-build-row [aria-label^="Girar"] { font-size: 17px; }
-.hud-mini-rotate { display: flex; gap: 4px; align-items: center; }
 
 /* Placa de estado superior izquierda */
 .hud-pill-status {
@@ -273,7 +331,7 @@
   align-items: center;
   gap: 7px;
   padding: 7px 14px;
-  border-radius: 999px;
+  border-radius: 6px;
   border: 2.5px solid var(--hud-outline);
   background: linear-gradient(175deg, var(--hud-wood-top), var(--hud-wood-mid));
   box-shadow: inset 0 2px 0 rgba(255, 250, 232, .65), 0 3px 0 var(--hud-outline);
@@ -297,7 +355,11 @@
   z-index: 5;
 }
 
-/* Cartel contextual flotante de madera */
+.hud-context-stack.hud-context-at-reticle {
+  top: calc(50% + 17px);
+  max-width: min(340px, 54vw);
+}
+
 .hud-context-pill {
   position: relative;
   display: inline-flex;
@@ -305,29 +367,28 @@
   flex-wrap: wrap;
   justify-content: center;
   gap: 4px 8px;
-  padding: 6px 16px;
-  border-radius: 14px;
-  border: 2.5px solid var(--hud-outline);
-  background:
-    repeating-linear-gradient(2deg, rgba(120, 65, 20, .04) 0 8px, transparent 8px 18px),
-    linear-gradient(175deg, #f9e3b3, #e6b871);
-  box-shadow: inset 0 2px 0 rgba(255, 250, 232, .7), 0 4px 0 var(--hud-outline);
+  padding: 5px 10px;
+  border-radius: 5px;
+  border: 1px solid #a17b52;
+  background: #261a13ed;
   font-size: 12px;
-  color: var(--hud-ink);
+  color: var(--hud-paper);
 }
 .hud-context-pill[data-mount="true"] {
-  border-color: #215e54;
-  background: linear-gradient(175deg, #d7f7ed, #9de2cf);
+  border-color: #79cbb1;
 }
-.hud-context-main { font-family: var(--font-display); font-weight: 700; color: var(--hud-ink); }
-.hud-context-sub { color: var(--hud-ink-soft); font-size: 11px; font-weight: 700; }
-.hud-context-err { color: #9c2716; font-weight: 800; font-size: 11px; }
+.hud-context-main { font-family: var(--font-display); font-weight: 600; }
+.hud-context-primary { display: inline-flex; align-items: center; gap: 5px; color: #a9f4db; font-weight: 800; }
+.hud-context-sub, .hud-context-err { flex-basis: 100%; text-align: center; font-size: 12px; font-weight: 700; }
+.hud-context-sub { color: #f6dcb4; }
+.hud-context-err { color: #ffb39a; }
 
 .hud-context-actions {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px;
+  justify-content: flex-end;
+  gap: 5px;
+  max-width: min(290px, 47vw);
 }
 .hud-ctx-btn {
   display: inline-flex;
@@ -335,7 +396,7 @@
   gap: 5px;
   min-height: 32px;
   padding: 4px 12px;
-  border-radius: 999px;
+  border-radius: 6px;
   border: 2.5px solid var(--hud-outline);
   background: linear-gradient(175deg, #f8e2b2, #dfa85e);
   box-shadow: inset 0 1.5px 0 rgba(255, 252, 238, .65), 0 2.5px 0 var(--hud-outline);
@@ -356,13 +417,16 @@
   background: linear-gradient(175deg, #3c8a7d, #24574f);
   color: #ecfff9;
 }
+.hud-ctx-btn[aria-pressed="true"] {
+  color: #ecfff9;
+  background: #24574f;
+}
 .hud-ctx-btn.is-danger {
   background: linear-gradient(175deg, #df6e50, #b14027);
   color: #fff3ee;
 }
 
 .hud-touch-actions { display: flex; align-items: flex-end; gap: 9px; }
-.hud-wrench-actions { display: grid; gap: 4px; }
 .hud-joystick {
   --stick-size: clamp(118px, 24vmin, 148px);
   width: var(--stick-size);
@@ -427,7 +491,7 @@
   min-width: 64px;
   min-height: 64px;
   aspect-ratio: 1;
-  border-radius: 50%;
+  border-radius: 9px;
   border: 2.5px solid var(--hud-outline);
   background: radial-gradient(circle at 40% 26%, #945c2f, #5c3417);
   color: #fff4da;
@@ -453,6 +517,17 @@
   color: #12261e;
   background: radial-gradient(circle at 40% 26%, #b5ecd2, #4fa88b);
 }
+.hud-pad-interact {
+  display: grid;
+  align-content: center;
+  width: clamp(92px, 20vmin, 128px);
+  aspect-ratio: auto;
+  padding: 4px 8px;
+  text-transform: none;
+  font-size: 13px;
+}
+.hud-pad-interact small { font-size: 10px; letter-spacing: 0; }
+.hud-pad-interact:disabled { opacity: .62; }
 .hud-pad-run[data-active="true"] {
   color: #361906;
   background: radial-gradient(circle at 40% 26%, #ffe694, #df9320);
@@ -464,13 +539,19 @@
 .hud-guide {
   position: absolute;
   left: max(14px, env(safe-area-inset-left));
-  bottom: calc(max(14px, env(safe-area-inset-bottom)) + 64px);
+  bottom: max(14px, env(safe-area-inset-bottom));
   display: flex;
-  gap: 10px;
+  flex-wrap: wrap;
+  max-width: calc((100% - 440px) / 2);
+  gap: 5px 8px;
   padding: 7px 11px;
   font-size: 11px;
   font-weight: 700;
   color: var(--hud-ink);
+}
+
+@media (max-width: 880px) {
+  .hud-guide { display: none; }
 }
 .hud-reticle {
   position: absolute;
@@ -485,9 +566,47 @@
 }
 .hud-reticle[data-target="true"] { transform: translate(-50%, -50%) scale(1.65); border-color: var(--hud-yellow); }
 .hud-reticle[data-wrench="true"] { border-color: var(--hud-teal); }
+.hud-reticle[data-placement="ready"], .hud-reticle[data-wire="ready"] {
+  border-radius: 2px;
+  border-color: #9cf6db;
+}
+.hud-reticle[data-placement="blocked"] { border-color: #ff8867; }
 
 .hud-toast, .hud-impact { position: absolute; left: 50%; transform: translateX(-50%); }
 .hud-toast { top: 13%; padding: 6px 12px; font-family: var(--font-display); font-size: 13px; font-weight: 700; }
+.hud-celebration {
+  position: absolute;
+  inset: 24% auto auto 50%;
+  width: max-content;
+  max-width: min(82vw, 440px);
+  transform: translateX(-50%);
+  text-align: center;
+  pointer-events: none;
+  z-index: 6;
+}
+.hud-celebration-card.wood-sign {
+  display: grid;
+  gap: 3px;
+  padding: 7px 25px 10px;
+  border-radius: 8px;
+  animation: hud-celebration-in 180ms cubic-bezier(.2, .8, .3, 1) both;
+}
+.hud-celebration-card.wood-sign[data-kind="achievement"] {
+  border-color: #6e440e;
+  background: linear-gradient(170deg, #ffedac, #e5a840);
+}
+.hud-celebration-card strong {
+  color: var(--hud-ink);
+  font-size: clamp(23px, 5vw, 40px);
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+.hud-celebration-card span { color: var(--hud-ink); font-size: 13px; font-weight: 800; }
+.hud-result-card .hud-menu-header h2 { font-size: clamp(24px, 5vw, 42px); line-height: 1; }
+@keyframes hud-celebration-in {
+  from { opacity: 0; transform: translateY(-6px) scale(.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
 .hud-impact { top: 40%; color: #ffe066; font-size: 30px; font-weight: 700; text-shadow: 0 3px 0 #3b1e0a; }
 
 /* Modales de madera (Menú, Bienvenida, Cierre de Ronda) */
@@ -510,6 +629,30 @@
   display: grid;
   gap: 12px;
 }
+.hud-bench-overlay.hud-menu-backdrop {
+  place-items: end;
+  padding: max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-right));
+  background: rgb(20 11 5 / 14%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.hud-bench-card.hud-menu-card { width: min(340px, 100%); gap: 8px; }
+.hud-bench-meter {
+  display: grid;
+  padding: 8px 12px;
+  color: #d6f7e8;
+  background: #282019;
+  border-radius: 6px;
+}
+.hud-bench-meter strong { font-size: clamp(25px, 5vw, 36px); line-height: 1; font-variant-numeric: tabular-nums; }
+.hud-bench-meter span { font-size: 12px; color: #f5dfba; }
+.hud-bench-power { display: grid; font-size: 14px; font-weight: 800; color: var(--hud-ink); }
+.hud-bench-power span { display: flex; justify-content: space-between; }
+.hud-bench-power input { width: 100%; min-height: 44px; margin: 0; accent-color: #286752; touch-action: pan-x; }
+.hud-bench-stop { justify-self: end; min-width: 80px; }
+.hud-cable-tool { background: #caeadb; border-color: #276350; }
+.hud-cable-tool[aria-pressed="true"] { color: #eafff4; background: #276350; }
+.hud-ctx-btn:disabled { opacity: .54; cursor: default; }
 .hud-menu-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .hud-menu-kicker {
   font-family: var(--font-display);
@@ -1101,7 +1244,7 @@
 .hud-turbo-pill {
   min-height: 36px;
   padding: 0 16px;
-  border-radius: 999px;
+  border-radius: 6px;
   border: 2.5px solid var(--hud-outline);
   background: linear-gradient(175deg, #f07b50, #b33f22);
   box-shadow: inset 0 2px 0 rgba(255, 232, 200, .4), 0 3px 0 var(--hud-outline);
@@ -1127,7 +1270,7 @@
   place-items: center;
   align-content: center;
   gap: 2px;
-  border-radius: 16px;
+  border-radius: 8px;
   border: 3px solid var(--hud-outline);
   font-family: var(--font-display);
   font-weight: 700;
@@ -1158,11 +1301,13 @@
 }
 
 @media (max-height: 520px) {
+  .hud-celebration { top: 23%; }
+  .hud-celebration-card strong { font-size: clamp(22px, 7.5vh, 33px); }
   .hud-pill-status { padding: 4px 10px; font-size: 11px; }
   .hud-context-stack { top: 48px; max-width: min(390px, 82vw); gap: 4px; }
   .hud-guide-card { top: 50px; max-height: calc(100dvh - 120px); overflow-y: auto; }
-  .hud-context-pill { padding: 4px 10px; font-size: 10.5px; }
-  .hud-ctx-btn { min-height: 28px; padding: 2px 9px; font-size: 10.5px; }
+  .hud-context-pill { padding: 4px 9px; font-size: 12px; }
+  .hud-ctx-btn { min-height: 34px; padding: 2px 9px; font-size: 12px; }
   .hud-button { min-height: 34px; padding: 0 8px; font-size: 11px; }
   .hud-slot { width: clamp(32px, 7vh, 40px); padding: 1px 0 8px; border-radius: 8px; }
   .hud-slot-name { font-size: 7.5px; }
@@ -1170,6 +1315,7 @@
   .hud-drive-steer { gap: 7px; padding: 5px 7px; border-radius: 16px; }
   .hud-steer-btn { min-width: 56px; min-height: 56px; padding: 0 10px; font-size: 20px; border-radius: 13px; }
   .hud-pad { width: 58px; min-width: 56px; min-height: 56px; font-size: 9px; }
+  .hud-pad-interact { width: 96px; font-size: 12px; }
   .hud-touch-actions {
     display: flex;
     flex-wrap: wrap;
@@ -1179,7 +1325,19 @@
     gap: 5px;
   }
   .hud-action-area { gap: 4px; }
+  .hud-build-panel { width: min(320px, 48vw); max-height: 48dvh; }
+  .hud-build-panel .hud-button { min-height: 44px; }
+  .hud-workshop-quick .hud-button, .hud-quick-actions .hud-button { min-height: 44px; }
   .hud-menu-card { padding: 14px 16px; gap: 9px; }
+}
+
+.hud-layer[data-touch="true"] .hud-ctx-btn,
+.hud-layer[data-touch="true"] .hud-turbo-pill { min-height: 44px; }
+
+.hud-utility-bar .hud-button,
+.hud-workshop-quick .hud-button,
+.hud-quick-actions .hud-button {
+  box-shadow: 0 2px 0 var(--hud-outline);
 }
 
 @media (max-width: 680px) {
@@ -1190,5 +1348,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .hud-celebration-card.wood-sign { animation: none; }
   .hud-button, .hud-pad, .hud-reticle { transition: none; }
 }

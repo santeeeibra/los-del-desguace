@@ -2,10 +2,12 @@ import { CONNECTION_SLOTS } from './inventionSchema';
 import type { GrabbableKind } from '../props/grabbableRegistry';
 
 export const WORKSHOP_ORIGIN: [number, number, number] = [2.05, 0.08, 5.9];
-export const FREE_BUILD_ORIGIN: [number, number, number] = [3.0, 0.08, 8.6];
+export const FREE_BUILD_ORIGIN: [number, number, number] = [5.25, 0.08, 6.9];
+export const FREE_BUILD_SPARE_ORIGIN: [number, number, number] = [0.8, 0.08, -0.65];
 export const DRUM_STAND_ORIGIN: [number, number, number] = [-3.1, 0, 6];
 export type WorkshopPartType = 'wheel' | 'engine' | 'drum' | 'wing' | 'headlight' | 'seat' | 'thruster' | 'cargo_rack' | 'chassis' | 'battery' | 'gyro' | 'fan' | 'balloon' | 'fixture';
 export type WorkshopStation = 'cart' | 'drum' | `custom:${string}`;
+export type StarterBuildStep = 'wheels' | 'motor' | 'seat' | 'drive';
 
 export function isCustomStation(station: WorkshopStation): station is `custom:${string}` {
   return station.startsWith('custom:');
@@ -337,6 +339,14 @@ export class WorkshopAssembly {
     if (!poweredCount) return `${progress} · Faltan ruedas en el eje ${engine.transmission === 'rear' ? 'trasero' : 'delantero'}`;
     if (this.engineStopped(station, signal)) return `${progress} · Motor sin señal`;
     return `${progress} · Tracción ${engine.transmission === 'rear' ? 'trasera' : 'delantera'}`;
+  }
+
+  starterBuildStep(): StarterBuildStep {
+    for (const slot of WORKSHOP_SLOTS) {
+      if (slot.station === 'cart' && slot.type === 'wheel' && !this.occupied.has(slot.id)) return 'wheels';
+    }
+    if (!this.engineAt('cart')) return 'motor';
+    return this.occupied.has('seat_center') ? 'drive' : 'seat';
   }
 
   releasedCartStatus(signal?: (id: string) => number | undefined): string {

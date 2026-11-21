@@ -22,7 +22,16 @@ export type GrabbableKind =
   | 'balloon'
   | 'fan'
   | 'horn'
-  | 'gyro';
+  | 'gyro'
+  | 'boxingGlove'
+  | 'droneRotor'
+  | 'flag';
+
+export const NEW_PROP_BOUNDS = {
+  boxingGlove: [0.17, 0.16, 0.3],
+  droneRotor: [0.28, 0.11, 0.28],
+  flag: [0.19, 0.36, 0.06],
+} as const;
 
 export interface CarryProfile {
   holdDistance: number;
@@ -143,6 +152,18 @@ export const CARRY_PROFILES: Record<GrabbableKind, CarryProfile> = {
   gyro: {
     holdDistance: 0.64, holdHeight: 0.02, armSpread: 0.22, armPitch: -1.0, tiltX: 0.06,
     dropRadius: 0.24, dropHalfExtents: [0.22, 0.22, 0.22], dropHeightOffset: 0.24,
+  },
+  boxingGlove: {
+    holdDistance: 0.7, holdHeight: 0, armSpread: 0.2, armPitch: -1, tiltX: 0,
+    dropRadius: 0.3, dropHalfExtents: NEW_PROP_BOUNDS.boxingGlove, dropHeightOffset: 0.19,
+  },
+  droneRotor: {
+    holdDistance: 0.71, holdHeight: 0, armSpread: 0.24, armPitch: -1, tiltX: 0,
+    dropRadius: 0.28, dropHalfExtents: NEW_PROP_BOUNDS.droneRotor, dropHeightOffset: 0.14,
+  },
+  flag: {
+    holdDistance: 0.68, holdHeight: 0, armSpread: 0.16, armPitch: -1, tiltX: 0,
+    dropRadius: 0.2, dropHalfExtents: NEW_PROP_BOUNDS.flag, dropHeightOffset: 0.39,
   },
 };
 
