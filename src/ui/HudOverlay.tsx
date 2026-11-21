@@ -71,6 +71,19 @@ function HexBolt({ className }: { className: string }) {
   );
 }
 
+const KEY_GUIDE_STORAGE = 'desguace.keyGuideSeen';
+const KEY_GUIDE_AUTO_SHOWS = 3;
+const KEY_GUIDE_ROWS: ReadonlyArray<readonly [string, string]> = [
+  ['E', 'Agarrar / subir / usar lo que mirás'],
+  ['F', 'Soldar o usar el aparato'],
+  ['X · M', 'Llave y mira láser'],
+  ['L · K', 'Cablear / quitar cables'],
+  ['Tab', 'Editor de piezas'],
+  ['G', 'Gestos'],
+  ['Alt+E', 'Más acciones'],
+  ['Esc', 'Menú'],
+];
+
 const WoodBolts = memo(function WoodBolts() {
   return (
     <div className="wood-bolts" aria-hidden="true">
@@ -593,6 +606,30 @@ export function HudOverlay() {
   const [cutCandidate, setCutCandidate] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [emotesOpen, setEmotesOpen] = useState(false);
+  const [keyGuideOpen, setKeyGuideOpen] = useState(() => {
+    try { return Number(localStorage.getItem(KEY_GUIDE_STORAGE) ?? 0) < KEY_GUIDE_AUTO_SHOWS; } catch { return true; }
+  });
+  const closeKeyGuide = useCallback(() => {
+    setKeyGuideOpen(false);
+    try { localStorage.setItem(KEY_GUIDE_STORAGE, String(KEY_GUIDE_AUTO_SHOWS)); } catch { /* sin storage */ }
+  }, []);
+  useEffect(() => {
+    try {
+      const seen = Number(localStorage.getItem(KEY_GUIDE_STORAGE) ?? 0);
+      if (seen < KEY_GUIDE_AUTO_SHOWS) localStorage.setItem(KEY_GUIDE_STORAGE, String(seen + 1));
+    } catch { /* sin storage */ }
+  }, []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.repeat || (e.code !== 'F1' && !(e.key === '?' && !e.ctrlKey && !e.altKey))) return;
+      const t = e.target as HTMLElement | null;
+      if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement) return;
+      e.preventDefault();
+      setKeyGuideOpen((open) => !open);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   const [menuTab, setMenuTab] = useState<'play' | 'spawner' | 'contracts' | 'character' | 'blueprints' | 'settings'>('play');
   const [planName, setPlanName] = useState('');
   const [importCode, setImportCode] = useState('');
@@ -1033,6 +1070,19 @@ export function HudOverlay() {
               </div>
             )}
           </div>
+        )}
+
+        {!showTouch && keyGuideOpen && sceneReady && !showWelcome && !menuOpen && (
+          <aside className="hud-key-guide wood-sign hud-interactive" aria-label="Guía de teclas">
+            <WoodBolts />
+            <strong>TECLAS</strong>
+            <dl>
+              {KEY_GUIDE_ROWS.map(([key, text]) => (
+                <div key={key}><dt><kbd>{key}</kbd></dt><dd>{text}</dd></div>
+              ))}
+            </dl>
+            <button type="button" className="hud-ctx-btn" onClick={closeKeyGuide}>Entendido <kbd>F1</kbd></button>
+          </aside>
         )}
 
         <div className="hud-utilities hud-interactive">

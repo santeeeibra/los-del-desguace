@@ -1636,3 +1636,23 @@
 @media (prefers-reduced-motion: reduce) {
   [data-suggested="true"], [data-suggested="true"]::after { animation: none; box-shadow: 0 0 0 4px rgba(255, 224, 102, .8); }
 }
+
+/* PC: pantalla limpia, todo por teclado; la guía de teclas ayuda las primeras veces (F1 / ?) */
+.hud-layer[data-touch="false"] .hud-utility-bar { display: none; }
+.hud-layer[data-touch="false"] .hud-action-tools > .hud-ctx-btn[aria-controls],
+.hud-layer[data-touch="false"] .hud-action-tools > .hud-ctx-btn[aria-expanded="false"] { display: none; }
+.hud-key-guide.wood-sign {
+  position: absolute;
+  left: 14px;
+  bottom: 96px;
+  width: min(250px, 42vw);
+  padding: 10px 12px 12px;
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  z-index: 4;
+}
+.hud-key-guide strong { font-family: var(--font-display); color: var(--hud-ink); letter-spacing: .06em; }
+.hud-key-guide dl { margin: 0; display: grid; gap: 3px; }
+.hud-key-guide dl > div { display: grid; grid-template-columns: 62px 1fr; gap: 6px; align-items: center; }
+.hud-key-guide dt, .hud-key-guide dd { margin: 0; font-size: 12px; font-weight: 800; color: var(--hud-ink-soft); }
