@@ -128,7 +128,7 @@ function FabricateTab({ onMessage }: { onMessage: (text: string) => void }) {
         {error ?? 'Arrastrá los puntos para darle forma. El frente es hacia arriba.'}
       </p>
       <div className="laser-row">
-        <button type="button" className="hud-button is-primary" disabled={Boolean(error)}
+        <button type="button" className="hud-button is-primary" disabled={Boolean(error)} data-suggested={!error || undefined}
           onClick={() => {
             const result = laserTableBridge.get()?.fabricate(template, points);
             onMessage(result?.error ?? 'Plataforma fabricada: está frente a vos, lista para soldarle piezas.');
@@ -278,6 +278,7 @@ function CutTab({ platforms, labels, onMessage }: {
       <div className="laser-row">
         <button type="button" className={`hud-button${preview?.loose.length ? ' is-danger' : ' is-primary'}`}
           disabled={!preview || Boolean(preview.result.error) || Boolean(info?.released)}
+          data-suggested={(preview && !preview.result.error && !info?.released) || undefined}
           onClick={() => {
             if (!cut) return;
             const result = laserTableBridge.get()?.cut(selected, cut);

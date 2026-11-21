@@ -80,6 +80,7 @@ export function SceneCutBar({ bolts, labels, touch }: {
             onClick={() => sceneCutStore.undo()}>Deshacer</button>
           <button type="button" className={`hud-button scene-cut-go ${looseNames.length ? 'is-danger' : 'is-primary'}`}
             disabled={cutting || !preview || Boolean(preview.error) || cut.points.length < 3}
+            data-suggested={(!cutting && preview && !preview.error && cut.points.length >= 3) || undefined}
             onClick={() => sceneCutStore.requestCut(preview, looseNames)}>
             {cut.confirmLoose ? 'Confirmar corte' : 'Cortar'}
           </button>

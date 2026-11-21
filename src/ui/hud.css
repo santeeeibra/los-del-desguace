@@ -1604,3 +1604,35 @@
   .scene-cut-actions .hud-button { min-height: 38px; padding: 4px 9px; font-size: 13px; }
   .scene-cut-start { top: 62px; min-height: 42px; }
 }
+
+/* ── Ayuda gráfica: el botón útil ahora late con brillo dorado y una flechita ── */
+@keyframes hud-suggest-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 224, 102, 0), 0 4px 0 var(--hud-outline); filter: brightness(1); }
+  50% { box-shadow: 0 0 0 5px rgba(255, 224, 102, .75), 0 0 22px 6px rgba(255, 196, 50, .65), 0 4px 0 var(--hud-outline); filter: brightness(1.12); }
+}
+@keyframes hud-suggest-arrow {
+  0%, 100% { transform: translate(-50%, 0); }
+  50% { transform: translate(-50%, -6px); }
+}
+[data-suggested="true"] {
+  position: relative;
+  animation: hud-suggest-glow 1.3s ease-in-out infinite;
+}
+.hud-pad[data-suggested="true"], .hud-button[data-suggested="true"], .hud-context-primary[data-suggested="true"] { overflow: visible; }
+[data-suggested="true"]::after {
+  content: '▼';
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 4px);
+  transform: translateX(-50%);
+  color: #ffe066;
+  font-size: 18px;
+  line-height: 1;
+  text-shadow: 0 2px 0 #2c1607, 0 0 6px rgba(255, 196, 50, .9);
+  pointer-events: none;
+  animation: hud-suggest-arrow 0.9s ease-in-out infinite;
+}
+.hud-context-primary[data-suggested="true"] { border-radius: 8px; }
+@media (prefers-reduced-motion: reduce) {
+  [data-suggested="true"], [data-suggested="true"]::after { animation: none; box-shadow: 0 0 0 4px rgba(255, 224, 102, .8); }
+}

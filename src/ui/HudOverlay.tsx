@@ -892,6 +892,10 @@ export function HudOverlay() {
     setToolsOpen(false);
     setMoreOpen(false);
   };
+  // Ayuda gráfica: un solo botón "útil ahora" late con brillo dorado y una flechita.
+  const suggestPrimary = !seated && !sceneCut.active && primaryReady &&
+    (interactLabel === 'Montar' || interactLabel === 'Soldar' || interactLabel === 'Subir');
+  const suggestCut = !suggestPrimary && Boolean(cutCandidate) && !sceneCut.active;
   const blueprintEquipped = !menuOpen && !seated && inventorySlots[inventorySelection]?.kind === 'blueprint';
   const activeGuide = PRESET_BLUEPRINTS[activeGuideIndex % PRESET_BLUEPRINTS.length];
   const starterInstruction = seated
@@ -903,7 +907,7 @@ export function HudOverlay() {
       data-scene-cut={sceneCut.active ? 'true' : undefined}>
       <SceneCutBar bolts={<WoodBolts />} labels={ITEM_SHORT} touch={showTouch} />
       {cutCandidate && !sceneCut.active && (
-        <button type="button" className="hud-button is-accent scene-cut-start hud-interactive"
+        <button type="button" className="hud-button is-accent scene-cut-start hud-interactive" data-suggested={suggestCut || undefined}
           onClick={() => startSceneCut(cutCandidate)}>✂ Cortar</button>
       )}
       {(cameraMode === 'firstPerson' || wrenchAiming) && (
@@ -1018,7 +1022,7 @@ export function HudOverlay() {
                     ? `Origen · ${sourceLabel ?? 'Pieza elegida'}`
                     : useWireAction ? 'Cableado' : activeContextText}
                 </span>}
-                {sceneReady && !seated && primaryReady && <span className="hud-context-primary">
+                {sceneReady && !seated && primaryReady && <span className="hud-context-primary" data-suggested={suggestPrimary || undefined}>
                   {primaryLabel}{!showTouch && <kbd>{primaryKey}</kbd>}
                 </span>}
                 {(useWireAction || contextFeedback) && <span className={dropBlockedHint || wireDestination?.blocked || (carriedKind && !primaryReady) ? 'hud-context-err' : 'hud-context-sub'}>
@@ -2355,6 +2359,7 @@ export function HudOverlay() {
                     Correr
                   </button>
                   <button type="button" className="hud-pad hud-pad-interact" data-active={primaryReady}
+                    data-suggested={suggestPrimary || undefined}
                     disabled={!primaryReady}
                     onPointerDown={(event) => {
                       event.stopPropagation();
