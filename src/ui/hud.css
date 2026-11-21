@@ -1656,3 +1656,12 @@
 .hud-key-guide dl { margin: 0; display: grid; gap: 3px; }
 .hud-key-guide dl > div { display: grid; grid-template-columns: 62px 1fr; gap: 6px; align-items: center; }
 .hud-key-guide dt, .hud-key-guide dd { margin: 0; font-size: 12px; font-weight: 800; color: var(--hud-ink-soft); }
+
+/* PC: el cartel de contexto sigue al objeto mirado */
+.hud-context-stack.hud-context-anchored {
+  left: var(--aim-x, 50%);
+  top: var(--aim-y, 50%);
+  transform: translate(-50%, -100%);
+  transition: opacity .18s;
+  opacity: var(--aim-on, 0);
+}

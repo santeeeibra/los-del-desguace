@@ -1040,7 +1040,7 @@ export function HudOverlay() {
         </div>
 
         {(activeEmote || activeContextText || contextFeedback || useWireAction) && (
-          <div className={`hud-context-stack${nearReticle ? ' hud-context-at-reticle' : ''}`}>
+          <div className={`hud-context-stack${nearReticle ? ' hud-context-at-reticle' : ''}${!showTouch && !seated && nearbyTargetId && !carriedKind ? ' hud-context-anchored' : ''}`}>
             {activeEmote && EMOTE_BY_ID[activeEmote] && (
               <div className="hud-context-pill hud-emote-toast" role="status">
                 <span className="hud-emote-toast-icon" aria-hidden="true">

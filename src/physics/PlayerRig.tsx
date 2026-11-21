@@ -106,6 +106,7 @@ interface PlayerRigProps {
 const SPAWN_POS: [number, number, number] = [-0.6, 1.15, 4.2];
 const ENABLED_ROTATIONS: [boolean, boolean, boolean] = [false, true, false];
 const BEAM_UP = new THREE.Vector3(0, 1, 0);
+const AIM_PROJECTED = new THREE.Vector3();
 const WHEEL_AXIS = new THREE.Vector3(1, 0, 0);
 /** Altura de trabajo de una plataforma recién fabricada (radio de rueda + margen). */
 const PLATFORM_WORK_HEIGHT = 0.46;
@@ -2828,6 +2829,18 @@ export function PlayerRig({
     const bestMounted = bestId !== null && workshop.isMounted(bestId);
     const bestRideable = Boolean(bestId && bestKind && isRideableMount(bestId, bestKind, workshop));
     gameStore.setNearbyTarget(bestId, bestKind, bestMounted, bestRideable);
+    // Ancla del cartel de contexto: posición en pantalla del objeto mirado (variables CSS, sin re-render).
+    const aimBody = bestId ? grabbableRegistry.getById(bestId)?.getBody() : undefined;
+    const aimStyle = document.documentElement.style;
+    if (aimBody && !carriedIdRef.current) {
+      const at = aimBody.translation();
+      AIM_PROJECTED.set(at.x, at.y + 0.35, at.z).project(camera);
+      if (AIM_PROJECTED.z < 1) {
+        aimStyle.setProperty('--aim-x', `${Math.min(0.92, Math.max(0.08, AIM_PROJECTED.x * 0.5 + 0.5)) * 100}vw`);
+        aimStyle.setProperty('--aim-y', `${Math.min(0.88, Math.max(0.1, 0.5 - AIM_PROJECTED.y * 0.5)) * 100}vh`);
+        aimStyle.setProperty('--aim-on', '1');
+      } else aimStyle.setProperty('--aim-on', '0');
+    } else aimStyle.setProperty('--aim-on', '0');
 
     const actionTargetId = aimedId ?? bestId;
     const interactReq = playerInput.consumeInteractRequest();
