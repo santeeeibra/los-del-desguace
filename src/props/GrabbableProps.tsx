@@ -9,6 +9,7 @@ import {
   type RapierRigidBody,
 } from '@react-three/rapier';
 import * as THREE from 'three';
+import { PlatformColliders, PlatformVisual } from './PlatformPiece';
 import { getSharedTextures, PALETTE } from '../config/visualConfig';
 import { starterPartPosition, stockedPartPosition } from '../environment/workshopLayout';
 import { sampleMountSettle, vehicleFeelState } from '../invention/vehicleFeel';
@@ -334,6 +335,8 @@ const PHYSICS_PROPS: Record<
   gyro: { mass: 2.6, linearDamping: 0.35, angularDamping: 1.6, restitution: 0.08, friction: 0.9 },
   boxingGlove: { mass: 3, linearDamping: 0.6, angularDamping: 0.9, restitution: 0.08, friction: 0.9 },
   droneRotor: { mass: 1.4, linearDamping: 0.38, angularDamping: 0.8, restitution: 0.08, friction: 0.85 },
+  // Plataforma de la Mesa de Corte: la masa real sale del área de chapa (ver platformStore).
+  platform: { mass: 8, linearDamping: 0.7, angularDamping: 1.1, restitution: 0.05, friction: 0.9 },
   flag: { mass: 0.6, linearDamping: 0.5, angularDamping: 0.9, restitution: 0.08, friction: 0.8 },
 };
 
@@ -647,7 +650,7 @@ function GrabbableItem({
         type="dynamic"
         position={position}
         rotation={rotation}
-        mass={phys.mass}
+        mass={kind === 'platform' ? undefined : phys.mass}
         linearDamping={phys.linearDamping}
         angularDamping={phys.angularDamping}
         restitution={phys.restitution}
@@ -689,12 +692,14 @@ function GrabbableItem({
         {(kind === 'boxingGlove' || kind === 'droneRotor' || kind === 'flag') && (
           <CuboidCollider ref={colliderRef} args={[...NEW_PROP_BOUNDS[kind]]} />
         )}
+        {kind === 'platform' && <PlatformColliders id={id} colliderRef={colliderRef} bodyRef={bodyRef} />}
       </RigidBody>
 
       {/* Decoupled visual mesh: syncs to Rapier body when free, and directly to carryAnchor when carried */}
       <group ref={visualGroupRef} position={position} rotation={rotation}>
         <group ref={artworkGroupRef} name="prop-artwork">
         {kind === 'crate' && <PropVisual kind={kind} fallback={legacyCrate} />}
+        {kind === 'platform' && <PlatformVisual id={id} />}
 
         {kind === 'wheel' && <PropVisual kind={kind} scale={0.98} fallback={
           <group>

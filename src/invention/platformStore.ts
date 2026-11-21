@@ -20,6 +20,7 @@ export interface ReleasedPart {
   position: { x: number; y: number; z: number };
   rotation: { x: number; y: number; z: number; w: number };
   axis?: { x: number; y: number; z: number };
+  steer?: boolean;
 }
 
 interface CutHistoryEntry {

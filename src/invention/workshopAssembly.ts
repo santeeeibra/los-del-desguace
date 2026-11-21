@@ -365,6 +365,10 @@ export class WorkshopAssembly {
     return this.mounted.has(partId);
   }
 
+  mountOf(partId: string): WorkshopMount | undefined {
+    return this.mounted.get(partId);
+  }
+
   stationOf(partId: string): WorkshopStation | undefined {
     return this.mounted.get(partId)?.station;
   }

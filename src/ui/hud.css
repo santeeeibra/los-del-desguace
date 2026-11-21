@@ -1436,3 +1436,73 @@
 @media (max-width: 560px) and (orientation: portrait) {
   .hud-context-stack { top: calc(env(safe-area-inset-top, 0px) + 112px); }
 }
+
+/* ── Mesa de Corte Láser ─────────────────────────────────────────────── */
+.laser-overlay.hud-menu-backdrop { align-items: center; }
+.laser-card.hud-menu-card {
+  width: min(460px, calc(100vw - 32px));
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  gap: 8px;
+}
+.laser-tab { display: flex; flex-direction: column; gap: 8px; }
+.laser-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.laser-row .hud-button { min-height: 40px; flex: 1 1 auto; }
+.laser-row .hud-button.is-primary {
+  background: linear-gradient(180deg, #ffe074, #e39a24);
+  color: #361906;
+}
+.laser-row .hud-button.is-danger {
+  background: linear-gradient(180deg, #df6e50, #b14027);
+  color: #fff3e2;
+}
+.laser-select { display: flex; align-items: center; gap: 6px; flex: 1 1 60%; font-family: var(--font-body); font-weight: 800; color: var(--hud-ink); }
+.laser-select select {
+  flex: 1;
+  min-height: 40px;
+  border: 3px solid var(--hud-outline);
+  border-radius: 10px;
+  background: #fae8be;
+  color: var(--hud-ink);
+  font: 700 14px var(--font-body);
+}
+/* Tablero: plano cianotipo fijado a la mesa */
+.laser-board {
+  width: 100%;
+  aspect-ratio: 1;
+  max-height: min(52dvh, 420px);
+  border: 3px solid var(--hud-outline);
+  border-radius: 12px;
+  background: linear-gradient(160deg, #1b4b6e, #12314a);
+  box-shadow: inset 0 2px 0 rgba(190, 238, 255, .25), 0 4px 0 var(--hud-outline);
+  touch-action: none;
+  user-select: none;
+}
+.laser-grid-line { fill: none; stroke: rgba(130, 214, 255, .14); stroke-width: .006; }
+.laser-axis { stroke: rgba(190, 238, 255, .28); stroke-width: .008; stroke-dasharray: .04 .03; }
+.laser-front { fill: #bfe9ff; font: 700 .09px var(--font-display); letter-spacing: .01px; }
+.laser-material rect { fill: #e6b770; stroke: #cf9348; stroke-width: .004; }
+.laser-outline { fill: none; stroke: #ffe074; stroke-width: .018; stroke-linejoin: round; }
+.laser-outline.is-invalid { stroke: #df6e50; stroke-dasharray: .05 .03; }
+.laser-removed rect { fill: rgba(223, 110, 80, .85); }
+.laser-sweep-hit rect { fill: #df4b2f; }
+.laser-cut { fill: rgba(223, 110, 80, .18); stroke: #ff8a6a; stroke-width: .016; stroke-dasharray: .05 .025; }
+.laser-cut.is-invalid { stroke: #ffd2c4; fill: rgba(255, 255, 255, .08); }
+.laser-sweep { fill: none; stroke: rgba(126, 232, 214, .55); stroke-width: .008; }
+.laser-steer-limit { fill: rgba(60, 138, 125, .28); stroke: #7ee8d6; stroke-width: .014; }
+.laser-part polygon, .laser-part > circle:first-child { fill: #47260e; stroke: #2c1607; stroke-width: .012; }
+.laser-part.is-steer polygon { fill: #3c8a7d; stroke: #bff5ea; cursor: pointer; }
+.laser-part.is-selected polygon { stroke: #ffe066; stroke-width: .022; }
+.laser-part.is-loose polygon, .laser-part.is-loose > circle:first-child { fill: #b14027; stroke: #ffd2c4; }
+.laser-weld { fill: #ffe074; stroke: #2c1607; stroke-width: .01; }
+.laser-handle-hit { fill: transparent; cursor: grab; }
+.laser-handle { fill: #ffe066; stroke: #2c1607; stroke-width: .02; pointer-events: none; }
+.laser-point.is-cut .laser-handle { fill: #ff8a6a; }
+.laser-hint, .laser-steer-readout {
+  margin: 0;
+  font: 700 13px/1.35 var(--font-body);
+  color: var(--hud-ink);
+}
+.laser-hint.is-warning { color: #8f2a14; }
+.laser-steer-readout strong { color: #24574f; }
+.laser-message { margin: 0; }

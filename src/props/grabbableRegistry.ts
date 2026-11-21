@@ -25,7 +25,8 @@ export type GrabbableKind =
   | 'gyro'
   | 'boxingGlove'
   | 'droneRotor'
-  | 'flag';
+  | 'flag'
+  | 'platform';
 
 export const NEW_PROP_BOUNDS = {
   boxingGlove: [0.17, 0.16, 0.3],
@@ -160,6 +161,10 @@ export const CARRY_PROFILES: Record<GrabbableKind, CarryProfile> = {
   droneRotor: {
     holdDistance: 0.71, holdHeight: 0, armSpread: 0.24, armPitch: -1, tiltX: 0,
     dropRadius: 0.28, dropHalfExtents: NEW_PROP_BOUNDS.droneRotor, dropHeightOffset: 0.14,
+  },
+  platform: {
+    holdDistance: 1.05, holdHeight: -0.06, armSpread: 0.42, armPitch: -0.92, tiltX: 0.04,
+    dropRadius: 0.7, dropHalfExtents: [0.5, 0.05, 0.6], dropHeightOffset: 0.1,
   },
   flag: {
     holdDistance: 0.68, holdHeight: 0, armSpread: 0.16, armPitch: -1, tiltX: 0,

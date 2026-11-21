@@ -584,7 +584,7 @@ export const gameStore = {
     state = { ...state, resetNonce: state.resetNonce + 1, inventorySlots: starterInventory(), inventorySelection: 0, spawnedProps: [], celebration: null };
     emit();
   },
-  spawnExtraPart(kind: GrabbableKind): SpawnedPropEntry | null {
+  spawnExtraPart(kind: GrabbableKind, position?: [number, number, number]): SpawnedPropEntry | null {
     if (state.spawnedProps.length >= MAX_EXTRA_PROPS) return null;
     const occupied = new Set(state.spawnedProps.map(({ spawnIndex }) => spawnIndex));
     let idx = 0;
@@ -593,7 +593,7 @@ export const gameStore = {
       id: `extra-${kind}-${++nextExtraPartId}`,
       kind,
       spawnIndex: idx,
-      position: extraPartPosition(idx),
+      position: position ?? extraPartPosition(idx),
     };
     state = { ...state, spawnedProps: [...state.spawnedProps, entry] };
     emit();

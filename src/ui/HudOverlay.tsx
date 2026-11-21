@@ -19,6 +19,7 @@ import { buildBlueprintShareUrl, decodeBlueprintCode, deleteBlueprint, encodeBlu
 import { canSelectWirePart, clearPendingWire, contraptionGraph, describeWireDestination, isPartWired, PART_LOGIC_SPECS } from '../logic/contraptionRegistry';
 import { useArenaAndBridgeState } from '../modes/arenaAndBridge';
 import { contractStore, useContractStore, WORKSHOP_CONTRACTS } from '../modes/contracts';
+import { LaserTable } from './LaserTable';
 import { DeliveryHud, DELIVERY_DESCRIPTION, useDeliveryStatusText } from './DeliveryHud';
 import { deliveryStore } from '../modes/delivery/deliveryStore';
 import {
@@ -194,6 +195,7 @@ const ITEM_LABELS: Record<InventoryKind, string> = {
   boxingGlove: 'Puño de resorte',
   droneRotor: 'Hélice de dron',
   flag: 'Bandera del taller',
+  platform: 'Plataforma recortada',
   blueprint: 'Plano Guía',
 };
 
@@ -222,6 +224,7 @@ const ITEM_SHORT: Record<InventoryKind, string> = {
   boxingGlove: 'Puño',
   droneRotor: 'Hélice',
   flag: 'Bandera',
+  platform: 'Plataforma',
   blueprint: 'Plano',
 };
 
@@ -582,6 +585,7 @@ export function HudOverlay() {
   );
   const [finishDismissed, setFinishDismissed] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [laserOpen, setLaserOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [emotesOpen, setEmotesOpen] = useState(false);
   const [menuTab, setMenuTab] = useState<'play' | 'spawner' | 'contracts' | 'character' | 'blueprints' | 'settings'>('play');
@@ -688,7 +692,7 @@ export function HudOverlay() {
   }, [roundWon]);
 
   useEffect(() => {
-    const modalActive = menuOpen || showWelcome || showFinish || showContractFinish || benchOpen;
+    const modalActive = menuOpen || showWelcome || showFinish || showContractFinish || benchOpen || laserOpen;
     playerInput.menuOpen = modalActive || emotesOpen;
     if (modalActive || emotesOpen) {
       setMoreOpen(false);
@@ -700,7 +704,7 @@ export function HudOverlay() {
     }
     if (modalActive) setEmotesOpen(false);
     return () => { playerInput.menuOpen = false; };
-  }, [menuOpen, showWelcome, showFinish, showContractFinish, emotesOpen, benchOpen]);
+  }, [menuOpen, showWelcome, showFinish, showContractFinish, emotesOpen, benchOpen, laserOpen]);
 
   useEffect(() => {
     if (!benchOpen) return;
@@ -1836,6 +1840,9 @@ export function HudOverlay() {
         </div>
       )}
 
+      <LaserTable open={laserOpen && gameMode.mode === 'sandbox' && !seated} onClose={() => setLaserOpen(false)}
+        bolts={<WoodBolts />} labels={ITEM_SHORT} />
+
       {isDelivery && <DeliveryHud bolts={<WoodBolts />} hidden={!sceneReady || menuOpen || showWelcome} />}
 
       {impactFeedback && <div className="hud-impact" aria-hidden="true">{impactFeedback === 'bump' ? '¡PUM!' : '¡PLAF!'}</div>}
@@ -1983,6 +1990,11 @@ export function HudOverlay() {
                   onClick={() => playerInput.triggerCartAction('repair')}>Reparar</button>
                 <button type="button" className="hud-button" disabled={Boolean(carriedKind || placingStructure)}
                   onClick={openBench}>Banco RPM</button>
+                {gameMode.mode === 'sandbox' && (
+                  <button type="button" className="hud-button is-accent" onClick={() => { setLaserOpen(true); setToolsOpen(false); }}>
+                    Mesa de corte
+                  </button>
+                )}
               </div>
               <div className="hud-build-row">
                 <button type="button" className="hud-button hud-wrench" aria-pressed={wrenchEquipped}
