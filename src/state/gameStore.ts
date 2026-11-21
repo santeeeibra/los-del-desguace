@@ -487,9 +487,12 @@ export const gameStore = {
       wireHintClearTimer = null;
     }
     const next = state.welderEquipped ? 'grinder' : state.grinderEquipped ? 'none' : 'welder';
+    // En táctil no hay clic derecho: al equipar queda la mira fija para poder apuntar.
+    const touch = state.touchMode === 'on' || (state.touchMode === 'auto' && state.isTouchDevice);
+    const lockAim = touch && next !== 'none';
     state = {
       ...state, wrenchEquipped: next !== 'none', welderEquipped: next === 'welder', grinderEquipped: next === 'grinder',
-      wrenchAiming: false, wrenchAimLocked: false, wrenchTarget: null, weldProgress: 0,
+      wrenchAiming: lockAim, wrenchAimLocked: lockAim, wrenchTarget: null, weldProgress: 0,
       aimedWorkshopSlot: null, laserHint: null, laserPlacementReady: false, partMountReady: false, wireHint: null, pendingWireFrom: null, wiringActive: false,
     };
     emit();

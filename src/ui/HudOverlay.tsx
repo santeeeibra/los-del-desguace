@@ -558,6 +558,7 @@ export function HudOverlay() {
   const nearCutStation = useGameStore((s) => s.nearCutStation);
   const canOpenCutStationRef = useRef(false);
   const grinderEquipped = useGameStore((s) => s.grinderEquipped);
+  const welderEquipped = useGameStore((s) => s.welderEquipped);
   const nearbyTargetMounted = useGameStore((s) => s.nearbyTargetMounted);
   const nearbyTargetRideable = useGameStore((s) => s.nearbyTargetRideable);
   const workshopSlot = useGameStore((s) => s.workshopSlot);
@@ -2052,6 +2053,12 @@ export function HudOverlay() {
                   title="Equipar o guardar la Llave Mágica" onClick={() => gameStore.toggleWrench()}>
                   Llave{!showTouch && <kbd>X</kbd>}
                 </button>
+                {showTouch && (
+                  <button type="button" className="hud-button hud-wrench" aria-pressed={welderEquipped || grinderEquipped}
+                    title="Cambiar de herramienta: soldadora, amoladora, guardar" onClick={() => gameStore.toggleWelder()}>
+                    {grinderEquipped ? 'Amoladora' : welderEquipped ? 'Soldadora' : 'Soldar / Cortar'}
+                  </button>
+                )}
                 <button type="button" className="hud-button hud-cable-tool" aria-pressed={wiringActive}
                   disabled={Boolean(carriedKind || placingStructure || assemblyInteraction === 'drop')}
                   onClick={wiringActive ? cancelWire : startWiring}>
