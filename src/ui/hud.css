@@ -527,7 +527,8 @@
   font-size: 13px;
 }
 .hud-pad-interact small { font-size: 10px; letter-spacing: 0; }
-.hud-pad-interact:disabled { opacity: .62; }
+.hud-pad-interact { transition: opacity .18s, transform .18s; }
+.hud-pad-interact:disabled { opacity: 0; visibility: hidden; pointer-events: none; transform: scale(.85); }
 .hud-pad-run[data-active="true"] {
   color: #361906;
   background: radial-gradient(circle at 40% 26%, #ffe694, #df9320);
@@ -1665,3 +1666,6 @@
   transition: opacity .18s;
   opacity: var(--aim-on, 0);
 }
+
+/* Táctil: "Más" solo aparece cuando hay acciones para lo que mirás */
+.hud-layer[data-touch="true"] .hud-action-tools > .hud-ctx-btn[aria-expanded]:disabled { display: none; }
