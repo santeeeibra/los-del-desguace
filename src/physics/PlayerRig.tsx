@@ -74,6 +74,7 @@ import {
 } from '../logic/contraptionRegistry';
 import {
   listBlueprints,
+  PRESET_BLUEPRINTS,
   readBlueprintFromUrl,
   saveBlueprint,
   type ContraptionBlueprint,
@@ -81,6 +82,7 @@ import {
 import { arenaAndBridgeStore, BRIDGE_SPAN_Z_MAX, BRIDGE_SPAN_Z_MIN } from '../modes/arenaAndBridge';
 import { BOWLING_BARREL_IDS, contractStore } from '../modes/contracts';
 import { isInTowerNutReach } from '../modes/towerMirador';
+import { presetsAllowedFor } from '../modes/devAccess';
 import { buildToolsLocked, gameModeStore } from '../modes/gameModes';
 import { multiplayerStore } from '../multiplayer/multiplayerStore';
 import { rotatedHalfHeight, rotatedSupportDistance, wrenchStep, WRENCH_STEP, type WrenchAxis } from '../invention/wrenchRotation';
@@ -229,6 +231,8 @@ export function PlayerRig({
   const pushedAssemblyRef = useRef<WorkshopStation | null>(null);
   const lastCustomStationRef = useRef<WorkshopStation | null>(null);
   const lastIntactBlueprintRef = useRef<ContraptionBlueprint | null>(null);
+  /** true si el objetivo de `H` vino de un preset y no de algo armado por el jugador. */
+  const lastIntactIsPresetRef = useRef(false);
   const sharedLoadedRef = useRef(false);
   const prevCartSpeedRef = useRef(0);
   const weldBreakCooldownRef = useRef(0);
@@ -308,6 +312,7 @@ export function PlayerRig({
       const snap = captureCartBlueprint('Último armado', workshop, workshopPhysics, contraptionGraph, station);
       if (snap) {
         lastIntactBlueprintRef.current = snap;
+        lastIntactIsPresetRef.current = false;
         contractStore.setBrokenWelds(0, true);
       }
     }
@@ -1278,6 +1283,7 @@ export function PlayerRig({
     resetContraptionGraph();
     lastCustomStationRef.current = null;
     lastIntactBlueprintRef.current = null;
+    lastIntactIsPresetRef.current = false;
     prevCartSpeedRef.current = 0;
     weldBreakCooldownRef.current = 0;
     contractStore.setBrokenWelds(0, false);
@@ -2060,6 +2066,7 @@ export function PlayerRig({
         );
         if (!error) {
           lastIntactBlueprintRef.current = shared;
+          lastIntactIsPresetRef.current = false;
           lastCustomStationRef.current = shared.rootPartId ? `custom:${shared.rootPartId}` : null;
           contractStore.setBrokenWelds(0, true);
           clearPendingWire();
@@ -2110,12 +2117,20 @@ export function PlayerRig({
         const invSlots = gameStore.getState().inventorySlots;
         const unavailableIds = new Set(invSlots.flatMap((item) => item ? [item.id] : []));
         const isPreset = blueprintAction.type === 'preset';
+        // Sandbox/Dev vs MVP: los presets (también los cargados desde la lista de planos) solo en Taller Libre,
+        // salvo el armado del tutorial (`startContract`) o el flag de desarrollador.
+        const isPresetBlueprint = isPreset || PRESET_BLUEPRINTS.some((preset) => preset.id === blueprint.id);
+        const tutorialPreset = blueprintAction.type === 'preset' && Boolean(blueprintAction.startContract);
+        const presetBlocked = isPresetBlueprint && !tutorialPreset &&
+          !presetsAllowedFor(gameModeStore.getState().mode, expeditionStore.getState().activeLevelId);
         const loadPoint = isPreset ? (blueprint.rootPartId ? FREE_BUILD_ORIGIN : WORKSHOP_ORIGIN) : undefined;
         const retrieve = isPreset
           ? new Set(blueprint.parts.map((part) => part.partId).filter((id) => unavailableIds.has(id)))
           : undefined;
-        let error = restoreCartBlueprint(blueprint, cart, workshop, workshopPhysics,
-          contraptionGraph, { world, rapier }, unavailableIds, loadPoint, retrieve);
+        let error = presetBlocked
+          ? 'Los armados automáticos son solo del Taller Libre'
+          : restoreCartBlueprint(blueprint, cart, workshop, workshopPhysics,
+            contraptionGraph, { world, rapier }, unavailableIds, loadPoint, retrieve);
         if (error?.startsWith('Liberá ') && isPreset && blueprint.rootPartId) {
           error = restoreCartBlueprint(blueprint, cart, workshop, workshopPhysics,
             contraptionGraph, { world, rapier }, unavailableIds, FREE_BUILD_SPARE_ORIGIN, retrieve);
@@ -2125,6 +2140,7 @@ export function PlayerRig({
             if (item && retrieve?.has(item.id)) gameStore.removeInventory(index);
           });
           lastIntactBlueprintRef.current = blueprint;
+          lastIntactIsPresetRef.current = isPresetBlueprint;
           lastCustomStationRef.current = blueprint.rootPartId ? `custom:${blueprint.rootPartId}` : null;
           prevCartSpeedRef.current = 0;
           weldBreakCooldownRef.current = 0;
@@ -2158,7 +2174,10 @@ export function PlayerRig({
         gameStore.setWireHint(endRun ? 'De vuelta en el taller' : 'Prueba reiniciada');
       };
       const cart = cartBodyRef.current;
-      const blueprint = lastIntactBlueprintRef.current;
+      // `H` reconstruye solo lo armado por el jugador: un preset solo vale como objetivo en Taller Libre.
+      const presetTargetBlocked = lastIntactIsPresetRef.current &&
+        !presetsAllowedFor(gameModeStore.getState().mode, expeditionStore.getState().activeLevelId);
+      const blueprint = presetTargetBlocked ? null : lastIntactBlueprintRef.current;
       if (carriedIdRef.current || heldAssemblyRef.current) {
         gameStore.setWireHint(resetRun ? 'Dejá lo que llevás para volver al taller' : 'Dejá la pieza que llevás para reparar');
       } else if (!cart?.isValid() || !blueprint) {
@@ -2647,6 +2666,7 @@ export function PlayerRig({
           const snap = captureCartBlueprint('Último armado', workshop, workshopPhysics, contraptionGraph, activeStation);
           if (snap) {
             lastIntactBlueprintRef.current = snap;
+            lastIntactIsPresetRef.current = false;
             contractStore.setBrokenWelds(0, true);
           }
         }

@@ -15,6 +15,7 @@ import { HEAD_SHAPE_OPTIONS } from '../character/faceRigController';
 import type { QualityLevel } from '../config/visualConfig';
 import { playerInput } from '../controls/playerInput';
 import { WORKSHOP_SLOT_BY_ID } from '../invention/workshopAssembly';
+import { dispenserAllowedFor, presetsAllowedFor } from '../modes/devAccess';
 import { buildBlueprintShareUrl, decodeBlueprintCode, deleteBlueprint, encodeBlueprintCode, PRESET_BLUEPRINTS, readBlueprintFromUrl, saveBlueprint } from '../logic/blueprintManager';
 import { canSelectWirePart, clearPendingWire, contraptionGraph, describeWireDestination, isPartWired, PART_LOGIC_SPECS } from '../logic/contraptionRegistry';
 import { useArenaAndBridgeState } from '../modes/arenaAndBridge';
@@ -795,6 +796,9 @@ export function HudOverlay() {
   }, []);
 
   const isDelivery = gameMode.mode === 'delivery';
+  // Sandbox/Dev vs MVP: dispensador infinito y presets de 1 clic solo en Taller Libre (o con ?dev=1).
+  const dispenserAllowed = dispenserAllowedFor(gameMode.mode, expedition.activeLevelId);
+  const presetsAllowed = presetsAllowedFor(gameMode.mode, expedition.activeLevelId);
   const deliveryStatus = useDeliveryStatusText();
   const roundWon =
     (gameMode.mode === 'race' && gameMode.raceFinished) ||
@@ -895,6 +899,9 @@ export function HudOverlay() {
         if (menuOpen && menuTab === 'spawner') {
           playWoodClick();
           setMenuOpen(false);
+        } else if (!dispenserAllowed) {
+          playWoodClick();
+          gameStore.setWireHint('El dispensador es solo del Taller Libre: conseguí piezas en el patio');
         } else {
           openParts();
         }
@@ -910,7 +917,7 @@ export function HudOverlay() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [menuOpen, menuTab, moreOpen, seated, showWelcome, showFinish, showContractFinish, emotesOpen, benchOpen, openParts]);
+  }, [menuOpen, menuTab, moreOpen, seated, showWelcome, showFinish, showContractFinish, emotesOpen, benchOpen, openParts, dispenserAllowed]);
 
   const showTouch = touchMode === 'on' || (touchMode === 'auto' && isTouchDevice);
   const activeTool: ActiveTool = getActiveTool({
@@ -1376,7 +1383,7 @@ export function HudOverlay() {
                 Vestidor (Personaje)
               </button>
               <button type="button" role="tab" aria-selected={menuTab === 'blueprints'} className="hud-menu-tab" onClick={() => { playWoodClick(); setMenuTab('blueprints'); }}>
-                Planos ({PRESET_BLUEPRINTS.length + blueprints.length})
+                Planos ({(presetsAllowed ? PRESET_BLUEPRINTS.length : 0) + blueprints.length})
               </button>
               <button type="button" role="tab" aria-selected={menuTab === 'settings'} className="hud-menu-tab" onClick={() => { playWoodClick(); setMenuTab('settings'); }}>
                 Ajustes y Controles
@@ -1423,7 +1430,7 @@ export function HudOverlay() {
                     </button>
                   )}
                 </div>
-                {!isDelivery && (<>
+                {!isDelivery && presetsAllowed && (<>
                 <div className="hud-menu-subtitle">Inventos Sin Ruedas (Barril, Robot, Globos)</div>
                 <div className="hud-menu-presets">
                   {PRESET_BLUEPRINTS.filter((bp) => bp.category === 'free').map((bp) => (
@@ -1434,6 +1441,7 @@ export function HudOverlay() {
                   ))}
                 </div>
                 </>)}
+                {presetsAllowed && (<>
                 <div className="hud-menu-subtitle">Arranque rápido con presets</div>
                 <div className="hud-menu-presets">
                   {PRESET_BLUEPRINTS.filter((bp) => bp.category !== 'free').map((bp) => (
@@ -1443,6 +1451,7 @@ export function HudOverlay() {
                     </button>
                   ))}
                 </div>
+                </>)}
               </div>
             )}
 
@@ -1503,7 +1512,15 @@ export function HudOverlay() {
               </div>
             )}
 
-            {menuTab === 'spawner' && (
+            {menuTab === 'spawner' && !dispenserAllowed && (
+              <div className="hud-menu-body">
+                <div className="hud-workshop-status" role="status">
+                  El dispensador infinito es solo del Taller Libre. Acá conseguí piezas en las pilas del patio, desarmando autos con la Amoladora (3) o cortando con la Sierra Láser (4).
+                </div>
+              </div>
+            )}
+
+            {menuTab === 'spawner' && dispenserAllowed && (
               <div className="hud-menu-body">
                 <div className="hud-spawner-head">
                   <span>
@@ -1529,6 +1546,7 @@ export function HudOverlay() {
                       type="button"
                       className="hud-spawner-btn"
                       onClick={() => {
+                        if (!dispenserAllowed) return;
                         // En un nivel de invento, las piezas aparecen en la bahía de armado del nivel.
                         const bay = activeExpedition?.bayLocal;
                         const bayPos: [number, number, number] | undefined = activeExpedition && bay
@@ -1827,7 +1845,7 @@ export function HudOverlay() {
                 {shareMsg && <div className="hud-share-msg" role="status">{shareMsg}</div>}
                 {wireHint && <div className="hud-workshop-status" role="status">{wireHint}</div>}
                 <div className="hud-menu-list">
-                  {[...PRESET_BLUEPRINTS, ...blueprints].map((blueprint) => (
+                  {[...(presetsAllowed ? PRESET_BLUEPRINTS : []), ...blueprints].map((blueprint) => (
                     <div className="hud-blueprint-row" key={blueprint.id}>
                       <button type="button" className="hud-button" disabled={!sceneReady || seated} onClick={() => {
                         playerInput.triggerBlueprintAction({ type: 'load', blueprint });
@@ -2250,7 +2268,8 @@ export function HudOverlay() {
             </ol>
           )}
           <div className="hud-guide-actions">
-            <button type="button" className="hud-ctx-btn is-accent" disabled={!sceneReady}
+            <button type="button" className="hud-ctx-btn is-accent" disabled={!sceneReady || !presetsAllowed}
+              title={presetsAllowed ? undefined : 'El armado automático es solo del Taller Libre'}
               onClick={() => playerInput.triggerBlueprintAction({ type: 'preset', blueprint: activeGuide })}>
               Armar automático
             </button>
@@ -2426,9 +2445,11 @@ export function HudOverlay() {
                 })}
               </div>
               <div className="hud-hotbar-side">
-                <button type="button" className="hud-button hud-hotbar-pill" title="Abrir dispensador de piezas (N)" onClick={openParts}>
-                  Piezas{!showTouch && <kbd>N</kbd>}
-                </button>
+                {dispenserAllowed && (
+                  <button type="button" className="hud-button hud-hotbar-pill" title="Abrir dispensador de piezas (N)" onClick={openParts}>
+                    Piezas{!showTouch && <kbd>N</kbd>}
+                  </button>
+                )}
                 <button
                   type="button"
                   className={toolsOpen ? 'hud-button hud-hotbar-pill is-accent' : 'hud-button hud-hotbar-pill'}

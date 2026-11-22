@@ -22,6 +22,11 @@ export interface ExpeditionLevelDef {
   spawnLocal: readonly [number, number, number];
   /** Centro de la bahía de armado del nivel (local): ahí aparecen las piezas del dispensador. */
   bayLocal?: readonly [number, number, number];
+  /**
+   * De dónde salen las piezas: `dispenser` (dispensador infinito, niveles viejos) o `yard`
+   * (pilas limitadas y autos a desarmar en el propio nivel; el dispensador queda bloqueado).
+   */
+  partsSource?: 'dispenser' | 'yard';
   /** Puntos de control intermedios (locales). */
   checkpointsLocal: readonly (readonly [number, number, number])[];
   /** Meta / cima final (local). */
