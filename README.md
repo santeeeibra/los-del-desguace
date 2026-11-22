@@ -1,32 +1,36 @@
-# React + TypeScript + Vite
+# Los del Desguace — Taller El Yunke
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Juego indie 3D de **ingeniería y creatividad en un desguace**. Resolvés problemas físicos (cruzar un abismo, romper un muro de autos, subir una montaña) armando inventos con chatarra, solo o en cooperativo.
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- React 19 + TypeScript + Vite
+- Three.js con React Three Fiber y Drei
+- Física con Rapier (`@react-three/rapier`) y control de personaje con `ecctrl`
+- Tests con Vitest, lint con Oxlint
 
-## React Compiler
+## Cómo correrlo en local
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+npm run dev      # servidor local, normalmente en http://localhost:5173
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Otros comandos:
+
+```bash
+npm test         # tests (Vitest)
+npm run lint     # lint (Oxlint)
+npm run build    # chequeo de tipos + build de producción
+npm run preview  # previsualizar el build
+```
+
+> Probá siempre en `localhost:5173`: la versión publicada puede estar desactualizada.
+
+## Documentación
+
+- [docs/VISION_MVP.md](./docs/VISION_MVP.md): objetivo y pilares de diseño del MVP.
+- [PENDIENTES.md](./PENDIENTES.md): bugs conocidos y trabajo pendiente, por prioridad.
+- [ROADMAP.md](./ROADMAP.md): hoja de ruta hacia el juego final.
+- [docs/RECURSOS_Y_REPOS.md](./docs/RECURSOS_Y_REPOS.md): librerías y repos de referencia.
+- [CLAUDE.md](./CLAUDE.md): especificación técnica y guía de identidad visual.

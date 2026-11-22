@@ -238,14 +238,17 @@ export function createWorkshopPhysics(
       if (!(joint instanceof rapier.RevoluteImpulseJoint) || !joint.isValid()) continue;
       const engine = assembly.engineIdFor(slot);
       const wired = engine ? engineSignal?.(engine) : undefined;
-      const driverThrottle = driver?.station === slot.station ? driver.throttle : undefined;
+      const rawThrottle = driver?.station === slot.station ? driver.throttle : undefined;
+      // Zona muerta: un acelerador casi nulo (joystick/gatillo sin soltar del todo) no debe mover el motor.
+      const driverThrottle = rawThrottle === undefined ? undefined : Math.abs(rawThrottle) < 0.05 ? 0 : rawThrottle;
       const autoPowered = assembly.hasBattery(slot.station);
       const engineDirection = engine ? motorDirection?.(engine) ?? 1 : 1;
       // Si el conductor está sentado: usa su acelerador (o marcha mínima si hay señal cableada activa)
       const testThrottle = bench?.rotors.has(partId) ? testPower : undefined;
       const factor = testThrottle !== undefined ? testThrottle * engineDirection : driverThrottle !== undefined
         ? (wired === 0 && !autoPowered ? 0 : driverThrottle * engineDirection)
-        : (wired ?? engineDirection);
+        // Con asiento montado y sin conductor ni señal cableada, las ruedas no arrancan solas.
+        : (wired ?? (assembly.hasSeat(slot.station) ? 0 : engineDirection));
       const axleDirection = slot.type === 'wheel' ? motorDirection?.(partId) ?? 1 : 1;
       const speed = engine && !parkedParts.has(body) ? SPIN_SPEED * factor * axleDirection : 0;
       if (speed !== 0) active = true;
@@ -254,13 +257,12 @@ export function createWorkshopPhysics(
       mount.speed = speed;
       mount.braking = shouldBrake;
       if (speed !== 0) {
-        joint.configureMotorVelocity(speed, 7.5);
+        joint.configureMotorVelocity(speed, 2.8);
       } else if (shouldBrake) {
-        joint.configureMotorVelocity(0, 14.0);
+        joint.configureMotorVelocity(0, 4.5);
       } else {
-        // Rapier keeps an enabled motor constraint even with a zero velocity factor.
-        world.removeImpulseJoint(joint, true);
-        mount.joint = mount.createJoint();
+        // Rueda libre: apagamos el motor sin destruir ni recrear la unión (no reinicia el solver de Rapier).
+        joint.configureMotor(0, 0, 0, 0);
       }
       body.wakeUp();
     }
@@ -482,33 +484,10 @@ export function createWorkshopPhysics(
     isDrivenWheel(id: string) {
       return (mounts.get(id)?.speed ?? 0) !== 0;
     },
-    stepRunning(cart: RapierRigidBody | null, elapsed: number) {
-      if (!releasedStations.has('cart') || !cart?.isValid()) return;
-      let poweredAxle = false;
-      for (const mount of mounts.values()) {
-        if (mount.slot.station === 'cart' && mount.speed !== 0) {
-          poweredAxle = true;
-          break;
-        }
-      }
-      if (!poweredAxle) return;
-      // Estabilizador giroscópico suave (reduce el cabeceo "sube y baja" con 2 ruedas y en vuelo)
-      const r = cart.rotation();
-      const pitchErr = 2 * (r.w * r.x - r.y * r.z);
-      const rollErr = 2 * (r.w * r.z + r.x * r.y);
-      const mass = cart.mass();
-      const angVel = cart.angvel();
-      cart.applyTorqueImpulse(
-        {
-          x: (-pitchErr * 1.4 - angVel.x * 0.35) * mass * 0.04,
-          y: 0,
-          z: (-rollErr * 1.4 - angVel.z * 0.35) * mass * 0.04,
-        },
-        true
-      );
-      const rumble = Math.sin(elapsed * 42) * 0.65 + Math.cos(elapsed * 67) * 0.35;
-      cart.applyImpulse({ x: rumble * mass * 0.0003, y: 0, z: 0 }, true);
-    },
+    // Intencionalmente sin fuerzas: la estabilización vertical la hace `stabilizeAndFlyAssembly` (con dt) y
+    // la vibración del motor es solo visual (`vehicleFeel.ts` / `WorkshopChassis.tsx`). Se conserva la firma
+    // porque la llaman `PlayerRig.tsx` y los tests.
+    stepRunning(_cart: RapierRigidBody | null, _elapsed: number) {},
     isReleased(station: WorkshopStation) {
       return releasedStations.has(station);
     },
@@ -1046,9 +1025,10 @@ export function createWorkshopPhysics(
     },
     reset(cart?: RapierRigidBody | null) {
       stopBench();
-      for (const { joint, axleMount, slot, body } of mounts.values()) {
+      for (const { joint, axleMount, knuckle, slot, body } of mounts.values()) {
         if (joint.isValid()) world.removeImpulseJoint(joint, true);
         if (axleMount?.isValid()) world.removeRigidBody(axleMount);
+        if (knuckle?.isValid()) world.removeRigidBody(knuckle);
         if (slot.type === 'wheel') setWheelFriction(body, WHEEL_LOOSE_FRICTION);
         unparkPart(body);
       }

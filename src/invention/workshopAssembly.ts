@@ -216,6 +216,13 @@ export class WorkshopAssembly {
     return mount;
   }
 
+  hasSeat(station: WorkshopStation): boolean {
+    for (const mount of this.mounted.values()) {
+      if (mount.station === station && mount.type === 'seat') return true;
+    }
+    return false;
+  }
+
   hasBattery(station: WorkshopStation): boolean {
     for (const mount of this.mounted.values()) {
       if (mount.station === station && mount.type === 'battery') return true;
