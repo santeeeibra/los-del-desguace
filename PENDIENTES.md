@@ -12,11 +12,11 @@ Prioridades: **Alta** (bloquea o rompe la experiencia), **Media** (necesario par
 
 ## Pendientes de Mecánicas MVP (Prioridad Media)
 
-- [ ] Separar el modo `sandbox` del MVP: dispensador infinito (`N`) y presets de 1 clic solo en `sandbox`/desarrollo; en el MVP, piezas en pilas limitadas del patio. `H` reconstruye solo el último diseño armado por el jugador.
-- [ ] Juntas rompibles por impacto/tensión en Rapier.
-- [ ] Módulos sueltos en `custom:${string}` (por ejemplo `magnet` + `thruster` + `switchBox`) sin exigir chasis.
-- [ ] Estado de desgaste `condition: 'ok' | 'broken' | 'discharged'` con reparación: motores trabados en el Banco RPM (`Tab`), baterías descargadas recargadas cableándolas (`5`) a un generador.
-- [ ] Etiquetas físicas reutilizables en objetos del mapa (`breakForce`, `isMagnetic`, `isCuttable`, `conductsPower`).
+- [x] Separar el modo `sandbox` del MVP: dispensador infinito (`N`) y presets de 1 clic solo en `sandbox`/desarrollo; en el MVP, piezas en pilas limitadas del patio. `H` reconstruye solo el último diseño armado por el jugador. *(escrito, sin probar jugando)* Los niveles 1–3 viejos siguen con dispensador a propósito; se ve fuera de Taller Libre con `?dev=1`.
+- [x] Juntas rompibles por impacto/tensión en Rapier. *(escrito, sin probar jugando)* La carga es una estimación (16 veces el peso por defecto): puede pedir ajuste.
+- [x] Módulos sueltos en `custom:${string}` (por ejemplo `magnet` + `thruster` + `switchBox`) sin exigir chasis. *(escrito, sin probar jugando)*
+- [x] Estado de desgaste `condition: 'ok' | 'broken' | 'discharged'` con reparación: motores trabados en el Banco RPM (`Tab`), baterías descargadas recargadas cableándolas (`5`) a un generador. *(escrito, sin probar jugando)* Falta probar la recarga en el generador del nivel nocturno.
+- [x] Etiquetas físicas reutilizables en objetos del mapa (`breakForce`, `isMagnetic`, `isCuttable`, `conductsPower`). *(escrito, sin probar jugando)*
 - [ ] Economía de la Sierra Láser (`4`) + Mesa Láser (`src/ui/LaserTable.tsx`): conseguir y fabricar piezas con material limitado.
 - [ ] Transformar `src/modes/contracts.ts` en desafíos sin pistas ni solución a pie.
 - [ ] Permitir ubicar uniones sobre piezas ya montadas. Reusar las uniones fijas, los ejes y la transmisión que prueban el carrito y el tambor.
@@ -28,7 +28,7 @@ Prioridades: **Alta** (bloquea o rompe la experiencia), **Media** (necesario par
 
 ## Pendientes de Niveles y Arte (Prioridad Media)
 
-- [ ] Nivel nocturno *"Operación: Pilas del Control"* (ver [docs/VISION_MVP.md](./docs/VISION_MVP.md)).
+- [x] Nivel nocturno *"Operación: Pilas del Control"* (ver [docs/VISION_MVP.md](./docs/VISION_MVP.md)). *(escrito, sin probar jugando)* Pendiente en este nivel: los autos viejos son cascarones decorativos con sus piezas sueltas al lado (no están soldadas todavía); el domo del faro todavía no se apunta con el imán ni con la Sierra (hay que registrarlo como pieza agarrable); falta una escalada magnética real en los postes y medallas por tiempo.
 - [ ] Arte 3D del Nivel 1 (puente). Tiene código, falta arte.
 - [ ] Definición y pulido de los Niveles 2 (autos a romper) y 3 (helicóptero con imán). Son propuesta: validar con el creador antes de modelar.
 - [ ] [Pedido para Antigravity: arte 3D de los niveles](./docs/PEDIDO_ANTIGRAVITY_NIVELES.md).

@@ -18,7 +18,7 @@ import { ScrapyardWorkshop } from '../environment/ScrapyardWorkshop';
 import { TestTrackAndYard } from '../environment/TestTrackAndYard';
 import { TowerMirador } from '../environment/TowerMirador';
 import { TrackCheckpoints } from '../environment/TrackCheckpoints';
-import { useExpeditionStore } from '../modes/expeditionLevels';
+import { EXPEDITION_LEVEL_BY_ID, useExpeditionStore } from '../modes/expeditionLevels';
 import { BlueprintHolograms } from '../invention/BlueprintHolograms';
 import { WorkshopChassis, WorkshopDrumStand } from '../invention/WorkshopChassis';
 import { LogicCables } from '../logic/LogicCables';
@@ -79,13 +79,16 @@ function ProceduralSkyDome() {
 
 const SUN_OFFSET = new THREE.Vector3(18, 26, 20);
 const SHADOW_TEXEL_SNAP = 0.25;
+const NIGHT_COLOR = '#070b16';
 
 function FollowSunLight({
   targetSourceRef,
+  dim = false,
   castShadow,
   shadowMapSize,
 }: {
   targetSourceRef: RefObject<CameraTargetSource>;
+  dim?: boolean;
   castShadow: boolean;
   shadowMapSize: number;
 }) {
@@ -112,7 +115,7 @@ function FollowSunLight({
         ref={lightRef}
         target={targetObj}
         position={[18, 26, 20]}
-        intensity={2.45}
+        intensity={dim ? 0.12 : 2.45}
         color={PALETTE.sunColor}
         castShadow={castShadow}
         shadow-mapSize-width={shadowMapSize}
@@ -136,6 +139,8 @@ export function DesguaceScene() {
   const expedition = useExpeditionStore();
   const preset = QUALITY_PRESETS[quality];
   const cartBodyRef = useRef<RapierRigidBody>(null);
+
+  const isNight = expedition.activeLevelId !== null && EXPEDITION_LEVEL_BY_ID[expedition.activeLevelId].night === true;
 
   const cameraSourceRef = useRef<CameraTargetSource>({
     getTargetPosition: () => false,
@@ -162,23 +167,29 @@ export function DesguaceScene() {
         toneMappingExposure: 1.05,
       }}
     >
-      <color attach="background" args={[PALETTE.fogColor]} />
-      <fog attach="fog" args={[PALETTE.fogColor, expedition.activeLevelId ? 54 : 36, expedition.activeLevelId ? 150 : 84]} />
+      <color attach="background" args={[isNight ? NIGHT_COLOR : PALETTE.fogColor]} />
+      {isNight ? (
+        <fogExp2 attach="fog" args={[NIGHT_COLOR, 0.026]} />
+      ) : (
+        <fog attach="fog" args={[PALETTE.fogColor, expedition.activeLevelId ? 54 : 36, expedition.activeLevelId ? 150 : 84]} />
+      )}
 
-      <ProceduralSkyDome />
+      {!isNight && <ProceduralSkyDome />}
 
       {/* Warm golden-hour key sunlight following the player for crisp shadows */}
       <FollowSunLight
         targetSourceRef={cameraSourceRef}
+        dim={isNight}
         castShadow={preset.shadows}
         shadowMapSize={preset.shadowMapSize}
       />
 
       {/* Cool sky / warm earth fill */}
-      <hemisphereLight args={[PALETTE.hemiSky, PALETTE.hemiGround, 0.72]} />
+      <hemisphereLight args={isNight ? ['#1d2a44', '#0c0e14', 0.16] : [PALETTE.hemiSky, PALETTE.hemiGround, 0.72]} />
+      {isNight && <ambientLight color="#2a3555" intensity={0.12} />}
 
       {/* Offline procedural IBL environment for crisp metal, brass & goggle reflections */}
-      <Environment resolution={preset.envResolution} frames={1}>
+      <Environment resolution={preset.envResolution} frames={1} environmentIntensity={isNight ? 0.05 : 1}>
         <group rotation={[-Math.PI / 3, 0, 0]}>
           <Lightformer
             form="circle"

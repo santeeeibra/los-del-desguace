@@ -14,6 +14,7 @@ export const LEVEL_MODEL_URLS: Record<ExpeditionLevelId, string> = {
   'level-1-swamp': `${BASE}models/levels/level-1-puente.glb`,
   'level-2-wind': `${BASE}models/levels/level-2-autos.glb`,
   'level-3-crusher': `${BASE}models/levels/level-3-olla.glb`,
+  'level-4-batteries': `${BASE}models/levels/level-4-pilas.glb`,
 };
 
 /** `true` cuando el nivel ya tiene su .glb cargado: los bloques de prueba se ocultan. */

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { CuboidCollider, RigidBody, type RapierRigidBody } from '@react-three/rapier';
+import { CuboidCollider, CylinderCollider, RigidBody, type RapierRigidBody } from '@react-three/rapier';
 import * as THREE from 'three';
 import type { CameraTargetSource } from '../controls/ThirdPersonCamera';
 import { playWeldClank } from '../audio/sfxEngine';
@@ -11,6 +11,12 @@ import {
   type ExpeditionLevelDef,
 } from '../modes/expeditionLevels';
 import { gameStore } from '../state/gameStore';
+import { weightMultiple } from '../physics/jointLoad';
+import { registerChargeStation } from '../props/chargeStations';
+import { resetPartConditions, setPartCondition } from '../props/partCondition';
+import { registerMagneticAnchor, registerWorldTags } from '../props/worldTags';
+import type { GrabbableKind } from '../props/grabbableRegistry';
+import { BreakableFixedJoint } from './BreakableJoint';
 import { CarBarrier } from './CarBarriers';
 import { LevelArt, useGreyboxVisible } from './LevelArt';
 
@@ -621,6 +627,248 @@ function Level3CrusherPlant({
   );
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   NIVEL 4 — OPERACIÓN: PILAS DEL CONTROL (nocturno, vertical)
+   Bahía + patio con faro y autos viejos → rampa 4x4 con postes magnéticos → meseta → cima.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const L4_RAMP1 = { z0: 56, z1: 100, rise: 18 };
+const L4_RAMP2 = { z0: 108, z1: 128, y0: 18, y1: 30 };
+const L4_LIGHTHOUSE: [number, number, number] = [-16, 0, 34];
+const L4_DOME_ID = 'level4-lighthouse-dome';
+
+/** Piezas del patio (locales). `condition` deja la pieza descargada o rota para reparar. */
+const L4_YARD_PARTS: { kind: GrabbableKind; pos: [number, number, number]; condition?: 'broken' | 'discharged' }[] = [
+  { kind: 'chassis', pos: [16, 1.4, 36] },
+  { kind: 'wheel', pos: [13, 1, 32] },
+  { kind: 'wheel', pos: [19, 1, 32] },
+  { kind: 'wheel', pos: [13, 1, 40] },
+  { kind: 'wheel', pos: [19, 1, 40] },
+  { kind: 'seat', pos: [21, 1, 44] },
+  { kind: 'part', pos: [22, 1, 34], condition: 'broken' },
+  { kind: 'battery', pos: [22, 1, 38], condition: 'discharged' },
+  { kind: 'crate', pos: [-6, 1, 9] },
+  { kind: 'crate', pos: [-8, 1, 9] },
+  { kind: 'thruster', pos: [-4, 1, 12] },
+  { kind: 'thruster', pos: [-6, 1, 12] },
+  { kind: 'magnet', pos: [-10, 1, 11] },
+];
+
+function ramp1Y(z: number) {
+  return ((z - L4_RAMP1.z0) / (L4_RAMP1.z1 - L4_RAMP1.z0)) * L4_RAMP1.rise;
+}
+
+function Lighthouse({ resetKey }: { resetKey: number }) {
+  const domeRef = useRef<RapierRigidBody>(null);
+  const towerRef = useRef<RapierRigidBody>(null);
+  const beamRef = useRef<THREE.Group>(null);
+  const target = useMemo(() => new THREE.Object3D(), []);
+  const [fallen, setFallen] = useState(false);
+  const DOME_MASS = 80;
+
+  useEffect(() => {
+    setFallen(false);
+    return registerWorldTags(L4_DOME_ID, {
+      isMagnetic: true,
+      isCuttable: true,
+      conductsPower: false,
+      breakForce: weightMultiple(DOME_MASS, 14),
+    });
+  }, [resetKey]);
+
+  useFrame((_, dt) => {
+    if (beamRef.current) beamRef.current.rotation.y += dt * 0.7;
+  });
+
+  return (
+    <group position={L4_LIGHTHOUSE}>
+      <RigidBody ref={towerRef} type="fixed" position={[0, 5, 0]} colliders={false}>
+        <CylinderCollider args={[5, 1.7]} />
+        <mesh material={MATS.rust} castShadow receiveShadow>
+          <cylinderGeometry args={[1.2, 1.7, 10, 12]} />
+        </mesh>
+        <mesh position={[0, 1.5, 0]} material={MATS.hazardYellow}>
+          <cylinderGeometry args={[1.5, 1.55, 1.1, 12]} />
+        </mesh>
+        <mesh position={[0, -1.5, 0]} material={MATS.hazardYellow}>
+          <cylinderGeometry args={[1.62, 1.66, 1.1, 12]} />
+        </mesh>
+      </RigidBody>
+      <RigidBody ref={domeRef} type="dynamic" position={[0, 10.9, 0]} colliders={false} key={`dome-${resetKey}`}>
+        <CylinderCollider args={[0.8, 1.4]} mass={DOME_MASS} />
+        <mesh material={MATS.steel} castShadow>
+          <cylinderGeometry args={[1.4, 1.4, 1.6, 12]} />
+        </mesh>
+        <mesh position={[0, 0.2, 0]}>
+          <cylinderGeometry args={[1.05, 1.05, 1.1, 12]} />
+          <meshStandardMaterial color="#fff2b0" emissive="#ffe27a" emissiveIntensity={3} />
+        </mesh>
+        <group ref={beamRef} position={[0, 0.2, 0]}>
+          <spotLight
+            position={[0, 0, 0]}
+            target={target}
+            color="#fff0c0"
+            intensity={900}
+            angle={0.42}
+            penumbra={0.55}
+            distance={110}
+            decay={1.6}
+          />
+          <primitive object={target} position={[40, -3, 0]} />
+        </group>
+      </RigidBody>
+      {!fallen && (
+        <BreakableFixedJoint
+          getBodyA={() => towerRef.current}
+          getBodyB={() => domeRef.current}
+          limits={{ breakForce: weightMultiple(DOME_MASS, 14), breakTorque: 900 }}
+          grindableIds={[L4_DOME_ID]}
+          watchConsumedIds={[L4_DOME_ID]}
+          onBreak={() => gameStore.setWireHint('¡Se cayó el faro!')}
+          resetKey={resetKey}
+        />
+      )}
+    </group>
+  );
+}
+
+function MagneticPole({ id, pos, height, origin }: { id: string; pos: [number, number, number]; height: number; origin: readonly [number, number, number] }) {
+  useEffect(
+    () =>
+      registerMagneticAnchor(id, {
+        x: origin[0] + pos[0],
+        z: origin[2] + pos[2],
+        yMin: origin[1] + pos[1],
+        yMax: origin[1] + pos[1] + height,
+        range: 2.2,
+      }),
+    [id, pos, height, origin],
+  );
+  return (
+    <RigidBody type="fixed" position={[pos[0], pos[1] + height / 2, pos[2]]} colliders={false}>
+      <CylinderCollider args={[height / 2, 0.22]} />
+      <mesh material={MATS.steel} castShadow>
+        <cylinderGeometry args={[0.18, 0.18, height, 8]} />
+      </mesh>
+      <mesh position={[0, height / 2 - 0.2, 0]} material={MATS.hazardYellow}>
+        <cylinderGeometry args={[0.24, 0.24, 0.4, 8]} />
+      </mesh>
+    </RigidBody>
+  );
+}
+
+function ChargeStationProp({ id, pos }: { id: string; pos: [number, number, number] }) {
+  useEffect(() => registerChargeStation(id, pos), [id, pos]);
+  return (
+    <group position={pos}>
+      <Block pos={[0, 0.9, 0]} size={[1.6, 1.8, 1.2]} mat={MATS.craneOrange} />
+      <mesh position={[0, 2.1, 0]}>
+        <boxGeometry args={[0.9, 0.5, 0.2]} />
+        <meshStandardMaterial color="#6cf2a8" emissive="#35e08a" emissiveIntensity={2.2} />
+      </mesh>
+      <pointLight position={[0, 2.4, 0.8]} color="#6cf2a8" intensity={14} distance={9} decay={2} />
+    </group>
+  );
+}
+
+function DonorCarShell({ pos, rotY = 0 }: { pos: [number, number, number]; rotY?: number }) {
+  return (
+    <group position={pos} rotation={[0, rotY, 0]}>
+      <Block pos={[0, 0.7, 0]} size={[2.2, 0.9, 4.4]} mat={MATS.rust} />
+      <Block pos={[0, 1.5, -0.3]} size={[1.9, 0.8, 2.2]} mat={MATS.woodDark} />
+    </group>
+  );
+}
+
+function Level4Batteries({
+  def,
+  playerSourceRef,
+  checkpointIndex,
+  goldenNutCollected,
+  completedNow,
+}: {
+  def: ExpeditionLevelDef;
+  playerSourceRef: React.RefObject<CameraTargetSource>;
+  checkpointIndex: number;
+  goldenNutCollected: boolean;
+  completedNow: boolean;
+}) {
+  useExpeditionTracker(def, playerSourceRef, checkpointIndex, goldenNutCollected, completedNow);
+  const { runNonce } = useExpeditionStore();
+
+  // Piezas del patio: se crean al iniciar el nivel y se quitan al salir o reintentar.
+  useEffect(() => {
+    resetPartConditions();
+    const ids: string[] = [];
+    for (const p of L4_YARD_PARTS) {
+      const entry = gameStore.spawnExtraPart(p.kind, [def.origin[0] + p.pos[0], def.origin[1] + p.pos[1], def.origin[2] + p.pos[2]]);
+      if (!entry) continue;
+      ids.push(entry.id);
+      if (p.condition) setPartCondition(entry.id, p.condition);
+    }
+    return () => {
+      for (const id of ids) gameStore.removeExtraPart(id);
+    };
+  }, [runNonce, def.origin]);
+
+  const rampLen1 = Math.hypot(L4_RAMP1.z1 - L4_RAMP1.z0, L4_RAMP1.rise);
+  const ang1 = Math.atan2(L4_RAMP1.rise, L4_RAMP1.z1 - L4_RAMP1.z0);
+  const rampLen2 = Math.hypot(L4_RAMP2.z1 - L4_RAMP2.z0, L4_RAMP2.y1 - L4_RAMP2.y0);
+  const ang2 = Math.atan2(L4_RAMP2.y1 - L4_RAMP2.y0, L4_RAMP2.z1 - L4_RAMP2.z0);
+
+  return (
+    <group position={def.origin}>
+      {/* Bahía de armado (z = 0..16) y patio (z = 16..56) */}
+      <Block pos={[0, -6.5, 28]} size={[60, 13, 56]} mat={MATS.deck} />
+      <Block pos={[0, 0.4, -0.8]} size={[60, 1, 0.4]} mat={MATS.woodDark} />
+      <Block pos={[-30.2, 0.8, 28]} size={[0.4, 1.8, 56]} mat={MATS.woodDark} />
+      <Block pos={[30.2, 0.8, 28]} size={[0.4, 1.8, 56]} mat={MATS.woodDark} />
+      <GreyboxOnly>
+        <mesh position={[0, 0.03, 8]} material={MATS.hazardYellow} receiveShadow>
+          <boxGeometry args={[12, 0.06, 10]} />
+        </mesh>
+      </GreyboxOnly>
+
+      <ChargeStationProp id="level4-generator" pos={[11, 0, 8]} />
+      <Lighthouse resetKey={runNonce} />
+      <DonorCarShell pos={[16, 0, 36]} rotY={0.2} />
+      <DonorCarShell pos={[24, 0, 46]} rotY={-0.5} />
+      <DonorCarShell pos={[10, 0, 48]} rotY={1.1} />
+
+      {/* Rampa 1 (ruta 4x4) con postes metálicos a los costados para trepar con imán */}
+      <Block pos={[0, L4_RAMP1.rise / 2 - 0.5, (L4_RAMP1.z0 + L4_RAMP1.z1) / 2]} size={[12, 1, rampLen1]} rot={[-ang1, 0, 0]} mat={MATS.deckDark} />
+      {[66, 78, 90].map((z, i) => (
+        <group key={z}>
+          <MagneticPole id={`level4-pole-l${i}`} pos={[-9, ramp1Y(z) - 1, z]} height={14} origin={def.origin} />
+          <MagneticPole id={`level4-pole-r${i}`} pos={[9, ramp1Y(z) - 1, z]} height={14} origin={def.origin} />
+        </group>
+      ))}
+      <CheckpointBeacon pos={[0, ramp1Y(80), 80]} active={checkpointIndex >= 1} />
+
+      {/* Meseta (z = 100..108) y rampa 2 */}
+      <Block pos={[0, L4_RAMP2.y0 - 0.5, 104]} size={[14, 1, 8.4]} mat={MATS.deck} />
+      <CheckpointBeacon pos={[0, L4_RAMP2.y0, 104]} active={checkpointIndex >= 2} />
+      <Block pos={[0, (L4_RAMP2.y0 + L4_RAMP2.y1) / 2 - 0.5, (L4_RAMP2.z0 + L4_RAMP2.z1) / 2]} size={[10, 1, rampLen2]} rot={[-ang2, 0, 0]} mat={MATS.deckDark} />
+
+      {/* Cima con las pilas del control */}
+      <Block pos={[0, L4_RAMP2.y1 - 0.5, 134]} size={[16, 1, 12]} mat={MATS.deck} />
+      <SummitArch pos={[0, L4_RAMP2.y1, 134]} completed={completedNow} />
+      {[-0.5, 0.5].map((dx) => (
+        <mesh key={dx} position={[dx, L4_RAMP2.y1 + 1.3, 134]} rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[0.16, 0.16, 0.9, 10]} />
+          <meshStandardMaterial color="#ffd23a" emissive="#ffb800" emissiveIntensity={completedNow ? 0.4 : 2.4} />
+        </mesh>
+      ))}
+
+      {/* Ruta escondida a la Tuerca Dorada: escalones por el costado izquierdo, fuera del camino obvio */}
+      <Block pos={[-22, 0.6, 66]} size={[3, 1.2, 3]} mat={MATS.wood} />
+      <Block pos={[-22, 1.6, 70]} size={[3, 1.2, 3]} mat={MATS.wood} />
+      <Block pos={[-22, 2.6, 74]} size={[3, 1.2, 3]} mat={MATS.wood} />
+      <Block pos={[-22, 3.6, 79]} size={[5, 1.2, 5]} mat={MATS.woodDark} />
+      <GoldenNutPickup pos={[def.goldenNutLocal[0], def.goldenNutLocal[1], def.goldenNutLocal[2]]} collected={goldenNutCollected} />
+    </group>
+  );
+}
+
 /**
  * Monta únicamente el nivel de expedición activo (0 costo de GPU/física cuando estás en el taller).
  */
@@ -654,6 +902,7 @@ export function ExpeditionLevels({
       {activeLevelId === 'level-1-swamp' && <Level1BridgeAbyss {...levelProps} />}
       {activeLevelId === 'level-2-wind' && <Level2CarAlley {...levelProps} />}
       {activeLevelId === 'level-3-crusher' && <Level3CrusherPlant {...levelProps} />}
+      {activeLevelId === 'level-4-batteries' && <Level4Batteries {...levelProps} />}
     </LevelArt>
   );
 }

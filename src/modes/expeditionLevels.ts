@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { playSuccessChime, playWoodClick } from '../audio/sfxEngine';
 
-export type ExpeditionLevelId = 'level-1-swamp' | 'level-2-wind' | 'level-3-crusher';
+export type ExpeditionLevelId = 'level-1-swamp' | 'level-2-wind' | 'level-3-crusher' | 'level-4-batteries';
 
 export interface Vec3Tuple {
   readonly 0: number;
@@ -11,7 +11,7 @@ export interface Vec3Tuple {
 
 export interface ExpeditionLevelDef {
   id: ExpeditionLevelId;
-  number: 1 | 2 | 3;
+  number: 1 | 2 | 3 | 4;
   title: string;
   subtitle: string;
   badge: string;
@@ -27,6 +27,8 @@ export interface ExpeditionLevelDef {
    * (pilas limitadas y autos a desarmar en el propio nivel; el dispensador queda bloqueado).
    */
   partsSource?: 'dispenser' | 'yard';
+  /** Nivel nocturno: niebla densa, luz ambiental baja y sin cúpula de cielo. */
+  night?: boolean;
   /** Puntos de control intermedios (locales). */
   checkpointsLocal: readonly (readonly [number, number, number])[];
   /** Meta / cima final (local). */
@@ -96,12 +98,35 @@ export const EXPEDITION_LEVELS: readonly ExpeditionLevelDef[] = [
     goldenNutLocal: [0, 7.2, 27],
     fallKillY: -7,
   },
+  {
+    id: 'level-4-batteries',
+    number: 4,
+    title: 'Operación: Pilas del Control',
+    subtitle: 'De noche: llegá a la cima y recuperá las pilas del control remoto',
+    badge: 'Noche · Montaña',
+    lengthLabel: 'Subida nocturna con niebla',
+    summary:
+      'Las pilas del control de la tele quedaron en la cima. Es de noche y hay niebla. Desarmá los autos viejos del pie de la montaña para sacar ruedas, chasis, una batería descargada y un motor roto; arreglá el motor en la bahía, recargá la batería en el generador y armá algo que suba. El faro de la base es una luz fuerte: podés derribarlo, tirarlo con el imán o cortarlo con la Sierra. Hay postes metálicos en la ladera para trepar con imán.',
+    origin: [560, 0, 0],
+    spawnLocal: [0, 1.8, 4],
+    bayLocal: [0, 0, 8],
+    partsSource: 'yard',
+    night: true,
+    checkpointsLocal: [
+      [0, 10.4, 80],
+      [0, 19.8, 104],
+    ],
+    goalLocal: [0, 31.6, 134],
+    goldenNutLocal: [-22, 5.0, 79],
+    fallKillY: -6,
+  },
 ] as const;
 
 export const EXPEDITION_LEVEL_BY_ID: Record<ExpeditionLevelId, ExpeditionLevelDef> = {
   'level-1-swamp': EXPEDITION_LEVELS[0],
   'level-2-wind': EXPEDITION_LEVELS[1],
   'level-3-crusher': EXPEDITION_LEVELS[2],
+  'level-4-batteries': EXPEDITION_LEVELS[3],
 };
 
 export interface ExpeditionProgressEntry {
@@ -131,6 +156,7 @@ function defaultProgress(): Record<ExpeditionLevelId, ExpeditionProgressEntry> {
     'level-1-swamp': { completed: false, bestTimeSec: null, goldenNut: false },
     'level-2-wind': { completed: false, bestTimeSec: null, goldenNut: false },
     'level-3-crusher': { completed: false, bestTimeSec: null, goldenNut: false },
+    'level-4-batteries': { completed: false, bestTimeSec: null, goldenNut: false },
   };
 }
 

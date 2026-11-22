@@ -2206,7 +2206,7 @@ export function HudOverlay() {
               >
                 Reintentar
               </button>
-              {activeExpedition.number < 3 && (
+              {activeExpedition.number < EXPEDITION_LEVELS.length && (
                 <button
                   type="button"
                   className="hud-button is-accent"
