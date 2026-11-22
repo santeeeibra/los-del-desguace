@@ -13,6 +13,12 @@ export interface FragmentRecord {
   points: V3[];
   /** Planos de todos los cortes que dieron forma al trozo (para pintar las caras del tajo). */
   cutPlanes: CutPlane[];
+  /** Planos orientados para Three.js clippingPlanes (n·p + d >= 0 es el lado conservado). */
+  clipPlanes?: CutPlane[];
+  /** Posición del origen de la pieza original en coordenadas locales del trozo (para recortar el modelo 3D real). */
+  sourceOffset?: V3;
+  /** Rotación de la pieza original en coordenadas locales del trozo. */
+  sourceQuat?: [number, number, number, number];
   mass: number;
   sourceKind: GrabbableKind;
   base: [number, number, number];
@@ -40,7 +46,7 @@ const KIND_COLORS: Partial<Record<GrabbableKind, { base: [number, number, number
   chassis: { base: WOOD, cut: WOOD_CUT },
   cargoRack: { base: WOOD, cut: WOOD_CUT },
   platform: { base: [0.7, 0.47, 0.22], cut: WOOD_CUT },
-  wheel: { base: [0.12, 0.12, 0.13], cut: [0.8, 0.62, 0.2] },
+  wheel: { base: [0.14, 0.14, 0.15], cut: [0.24, 0.22, 0.21] },
   part: { base: [0.72, 0.25, 0.2], cut: METAL_CUT },
   canister: { base: [0.18, 0.5, 0.5], cut: METAL_CUT },
   battery: { base: [0.3, 0.32, 0.34], cut: METAL_CUT },

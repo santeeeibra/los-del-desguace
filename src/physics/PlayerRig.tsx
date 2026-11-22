@@ -93,9 +93,20 @@ import {
   type GrabbableKind,
 } from '../props/grabbableRegistry';
 import { gameStore, useGameStore, MAX_EXTRA_PROPS } from '../state/gameStore';
+import { EXPEDITION_LEVEL_BY_ID, expeditionStore, mudDragMultiplier, windGustFactor } from '../modes/expeditionLevels';
 import { fragmentColors, fragmentStore } from '../invention/fragmentStore';
 import { liveCut } from '../invention/liveCut';
-import { ballPoints, cuboidPoints, cylinderPoints, planeRelativeTo, slicePoints, type V3 } from '../invention/sliceGeometry';
+import {
+  ballPoints,
+  buildFragmentGeometry,
+  clipPlaneForSide,
+  cuboidPoints,
+  cylinderPoints,
+  planeRelativeTo,
+  slicePoints,
+  type CutPlane,
+  type V3,
+} from '../invention/sliceGeometry';
 
 interface PlayerRigProps {
   maxDustPuffs: number;
@@ -110,9 +121,9 @@ const SPAWN_POS: [number, number, number] = [-0.6, 1.15, 4.2];
 const ENABLED_ROTATIONS: [boolean, boolean, boolean] = [false, true, false];
 const BEAM_UP = new THREE.Vector3(0, 1, 0);
 /** Segundos que hay que mantener la tecla para soldar con la soldadora. */
-const WELD_SECONDS = 0.7;
+const WELD_SECONDS = 0.36;
 /** Segundos que hay que mantener la tecla para cortar una soldadura con la amoladora. */
-const GRIND_SECONDS = 0.9;
+const GRIND_SECONDS = 0.36;
 const AIM_PROJECTED = new THREE.Vector3();
 const WHEEL_AXIS = new THREE.Vector3(1, 0, 0);
 /** Altura de trabajo de una plataforma recién fabricada (radio de rueda + margen). */
@@ -188,6 +199,8 @@ export function PlayerRig({
   const welderEquipped = useGameStore((s) => s.welderEquipped);
   const grinderEquipped = useGameStore((s) => s.grinderEquipped);
   const sawEquipped = useGameStore((s) => s.sawEquipped);
+  const wireToolEquipped = useGameStore((s) => s.wireToolEquipped);
+  const toolWorking = useGameStore((s) => s.weldProgress > 0 || s.sawPhase === 'trace' || s.sawPhase === 'cut');
   const characterConfig = useGameStore((s) => s.characterConfig);
   const activeEmote = useGameStore((s) => s.activeEmote);
   const customAppearance = useMemo(
@@ -1022,6 +1035,15 @@ export function PlayerRig({
         const parentPlanes = parentRecord?.cutPlanes.map((plane) => ({
           n: new THREE.Vector3(...plane.n).applyQuaternion(rot), d: plane.d,
         })) ?? [];
+        const parentClipPlanes = parentRecord?.clipPlanes?.map((plane) => ({
+          n: new THREE.Vector3(...plane.n).applyQuaternion(rot), d: plane.d,
+        })) ?? [];
+        const parentSourceOffset = parentRecord?.sourceOffset
+          ? new THREE.Vector3(...parentRecord.sourceOffset).applyQuaternion(rot).add(origin)
+          : origin.clone();
+        const parentSourceQuat = parentRecord?.sourceQuat
+          ? rot.clone().multiply(new THREE.Quaternion(...parentRecord.sourceQuat))
+          : rot.clone();
         const sourceMass = body.mass();
         const totalVolume = result.above.volume + result.below.volume;
         const linvel = body.linvel();
@@ -1036,10 +1058,22 @@ export function PlayerRig({
             ...parentPlanes.map((plane) => planeRelativeTo(plane.n, plane.n.dot(origin) + plane.d, half.centroid)),
             planeRelativeTo(normal, d, half.centroid),
           ];
+          const deltaFromOrigin = half.centroid.clone().sub(origin);
+          const clipPlanes: CutPlane[] = [
+            ...parentClipPlanes.map((plane) => ({
+              n: [plane.n.x, plane.n.y, plane.n.z] as V3,
+              d: plane.n.dot(deltaFromOrigin) + plane.d,
+            })),
+            clipPlaneForSide(normal, d, half.centroid, sign),
+          ];
+          const sourceOffsetVec = parentSourceOffset.clone().sub(half.centroid);
           fragmentStore.create({
             id: entryNew.id,
             points: local.map((p) => [p.x, p.y, p.z] as V3),
             cutPlanes: planes,
+            clipPlanes,
+            sourceOffset: [sourceOffsetVec.x, sourceOffsetVec.y, sourceOffsetVec.z],
+            sourceQuat: [parentSourceQuat.x, parentSourceQuat.y, parentSourceQuat.z, parentSourceQuat.w],
             mass: Math.max(0.15, sourceMass * (half.volume / totalVolume)),
             sourceKind: parentRecord?.sourceKind ?? entry.kind,
             base: colors.base,
@@ -1505,22 +1539,38 @@ export function PlayerRig({
     gameStore.triggerRotatingTarget(id);
   };
 
+  const carryVolumeFor = (id: string, shape: RapierCollider['shape']) => {
+    if (shape instanceof rapier.Cuboid || shape instanceof rapier.Cylinder) return shape;
+    const rec = fragmentStore.get(id);
+    if (rec?.points?.length) return { points: rec.points };
+    return null;
+  };
+
+  const effectivePartType = (id: string | null, kind: GrabbableKind) => {
+    if (kind === 'fragment' && id) {
+      const src = fragmentStore.get(id)?.sourceKind;
+      if (src === 'wheel') return 'wheel' as const;
+    }
+    return workshopPartTypeForKind(kind);
+  };
+
   const rotateAimedItem = (id: string, axis: WrenchAxis, direction: number) => {
     const entry = grabbableRegistry.getById(id);
     const body = entry?.getBody();
     const collider = entry?.getCollider();
     if (!entry || !body || !collider || workshop.isMounted(id)) return;
     const shape = collider.shape;
-    if (!(shape instanceof rapier.Cylinder || shape instanceof rapier.Cuboid)) return;
+    const volume = carryVolumeFor(id, shape);
+    if (!volume) return;
     const origin = body.translation();
     const oldRotation = scratchBodyQuat.current.copy(body.rotation());
     scratchShapeQuat.current.copy(collider.rotation());
-    const oldHeight = rotatedHalfHeight(shape, scratchShapeQuat.current);
+    const oldHeight = rotatedHalfHeight(volume, scratchShapeQuat.current);
     for (const fraction of [0.5, 1]) {
       scratchDropQuat.current.copy(oldRotation).multiply(wrenchStep(wrenchStepQuat.current, axis, direction * fraction));
       scratchShapeQuat.current.copy(scratchDropQuat.current);
       if (entry.kind === 'wheel') scratchShapeQuat.current.multiply(scratchWheelOffsetQuat.current);
-      scratchItemPos.current.set(origin.x, origin.y + rotatedHalfHeight(shape, scratchShapeQuat.current) - oldHeight + 0.012, origin.z);
+      scratchItemPos.current.set(origin.x, origin.y + rotatedHalfHeight(volume, scratchShapeQuat.current) - oldHeight + 0.012, origin.z);
       if (world.intersectionWithShape(scratchItemPos.current, scratchShapeQuat.current, shape,
         rapier.QueryFilterFlags.EXCLUDE_SENSORS, undefined, collider, body)) {
         playBlockedClick();
@@ -1627,15 +1677,18 @@ export function PlayerRig({
     const collider = entry?.getCollider();
     if (!entry || !body || !collider || hit.timeOfImpact < 0.08) return false;
     const shape = collider.shape;
-    if (!(shape instanceof rapier.Cuboid || shape instanceof rapier.Cylinder)) return false;
+    const volume = carryVolumeFor(id!, shape);
+    if (!volume) return false;
     const normal = wrenchMarkerDirection.current.copy(hit.normal);
     if (normal.lengthSq() < 0.5) return false;
     normal.normalize();
-    const rotation = wrenchPlacedRotation.current.copy(alignedRotation ?? carryExactQuatRef.current);
+    // Los trozos conservan siempre su rotación exacta en mano para que el fantasma coincida 1:1.
+    const useAligned = entry.kind !== 'fragment' ? alignedRotation : undefined;
+    const rotation = wrenchPlacedRotation.current.copy(useAligned ?? carryExactQuatRef.current);
     const shapeRotation = scratchShapeQuat.current.copy(rotation);
     if (entry.kind === 'wheel') shapeRotation.multiply(scratchWheelOffsetQuat.current);
     const clearance = alignedRotation ? 0.02 : 0.045;
-    const offset = rotatedSupportDistance(shape, shapeRotation, normal) + clearance;
+    const offset = rotatedSupportDistance(volume, shapeRotation, normal) + clearance;
     const position = wrenchPlacedPosition.current.copy(wrenchStart.current)
       .addScaledVector(wrenchDirection.current, hit.timeOfImpact).addScaledVector(normal, offset);
     const snapParent = alignedRotation && entry.kind === 'wheel' ? weldSnapParentRef.current : null;
@@ -1742,7 +1795,7 @@ export function PlayerRig({
     const collider = entry?.getCollider();
     if (!id || !entry || !body || !collider) return;
 
-    const mountType = workshopPartTypeForKind(entry.kind);
+    const mountType = effectivePartType(id, entry.kind);
     const parentEntry = parentId === '__cart__' ? undefined : grabbableRegistry.getById(parentId);
     const parentType = parentEntry ? workshopPartTypeForKind(parentEntry.kind) : 'fixture';
     const axis = axle ? { x: axle.x, y: axle.y, z: axle.z } : undefined;
@@ -2424,6 +2477,29 @@ export function PlayerRig({
 
     // 5. Find best grabbable candidate when hands are free (unified reach + wall line-of-sight across all views)
     scratchPlayerPos.current.copy(ctrl.currPos);
+    // Fuerzas ambientales livianas en Niveles de Expedición (barro en Nivel 1, ráfagas laterales en Nivel 2)
+    const expState = expeditionStore.getState();
+    if (expState.activeLevelId && ctrl.body?.isValid() && !seatedIdRef.current) {
+      const def = EXPEDITION_LEVEL_BY_ID[expState.activeLevelId];
+      const lx = ctrl.currPos.x - def.origin[0];
+      const ly = ctrl.currPos.y - def.origin[1];
+      const lz = ctrl.currPos.z - def.origin[2];
+      if (expState.activeLevelId === 'level-1-swamp' && lz > 11 && lz < 37 && Math.abs(lx) < 8.6 && ly < 0.75) {
+        const v = ctrl.body.linvel();
+        const drag = mudDragMultiplier(dt, 4.8);
+        ctrl.body.setLinvel({ x: v.x * drag, y: v.y, z: v.z * drag }, true);
+      } else if (expState.activeLevelId === 'level-2-wind') {
+        const now = performance.now() * 0.001;
+        let windX = 0;
+        if (lz > 16 && lz < 28 && ly > 1.5 && ly < 8.5) windX = 10.5 * windGustFactor(now, 0);
+        else if (lz > 43 && lz < 53 && ly > 8 && ly < 15.5) windX = -12.0 * windGustFactor(now, 1.5);
+        else if (lz > 54 && lz < 65 && ly > 11 && ly < 18.5) windX = 12.0 * windGustFactor(now, 3.8);
+        if (Math.abs(windX) > 0.2) {
+          const v = ctrl.body.linvel();
+          ctrl.body.setLinvel({ x: v.x + windX * dt, y: v.y, z: v.z }, true);
+        }
+      }
+    }
     const inventoryAction = playerInput.consumeInventoryAction();
     let inventoryPickup: number | null = null;
     if (inventoryAction !== null) {
@@ -2665,7 +2741,7 @@ export function PlayerRig({
     const hitCartFree = Boolean(cart && hitBody && hitBody.handle === cart.handle);
     const freeTargetId = aimedId ?? (hitCartFree ? '__cart__' : undefined);
     const aimedPartMount = Boolean(aiming && carriedKind && !aimedSlot && laserHit && hitBody && freeTargetId);
-    const partMountType = carriedKind ? workshopPartTypeForKind(carriedKind) : null;
+    const partMountType = carriedKind ? effectivePartType(carriedIdRef.current, carriedKind) : null;
     const aimedPartStation = aimedId ? workshop.stationOf(aimedId) : hitCartFree ? 'cart' : undefined;
     const aimedPartReleased = Boolean(aimedPartStation && workshopPhysics.isReleased(aimedPartStation));
     const partMountAllowed = Boolean(
@@ -2750,16 +2826,21 @@ export function PlayerRig({
           laserHint = 'Sin espacio para montar';
         }
         const shape = collider.shape;
+        const fragRecord = carriedKind === 'fragment' ? fragmentStore.get(carriedIdRef.current) : undefined;
         const poseAvailable = slotPose || placementCandidateRef.current;
-        if (poseAvailable && (shape instanceof rapier.Cuboid || shape instanceof rapier.Cylinder)) {
+        if (poseAvailable && (shape instanceof rapier.Cuboid || shape instanceof rapier.Cylinder || Boolean(fragRecord))) {
           preview.position.copy(slotPose?.position ?? wrenchPlacedPosition.current);
           preview.quaternion.copy(slotPose?.rotation ?? wrenchPlacedRotation.current);
-          const artwork = entry?.getVisualGroup()?.getObjectByName('prop-artwork') ?? null;
+          const artwork = fragRecord ? null : (entry?.getVisualGroup()?.getObjectByName('prop-artwork') ?? null);
           const material = box.material as THREE.MeshBasicMaterial;
-          if (placementSourceRef.current !== artwork) {
-            placementSourceRef.current = artwork;
+          const sourceKey = fragRecord ? (fragRecord as unknown as THREE.Object3D) : artwork;
+          if (placementSourceRef.current !== sourceKey) {
+            placementSourceRef.current = sourceKey;
             model.clear();
-            if (artwork) {
+            if (fragRecord) {
+              const ghostGeo = buildFragmentGeometry(fragRecord.points, fragRecord.cutPlanes, { base: fragRecord.base, cut: fragRecord.cut });
+              if (ghostGeo) model.add(new THREE.Mesh(ghostGeo, material));
+            } else if (artwork) {
               artwork.updateWorldMatrix(true, true);
               const inverse = placementInverseRef.current.copy(artwork.matrixWorld).invert();
               artwork.traverseVisible((child) => {
@@ -2780,7 +2861,7 @@ export function PlayerRig({
           if (shape instanceof rapier.Cuboid) {
             const { x, y, z } = shape.halfExtents;
             box.scale.set(2 * x, 2 * y, 2 * z);
-          } else {
+          } else if (shape instanceof rapier.Cylinder) {
             cylinder.scale.set(2 * shape.radius, 2 * shape.halfHeight, 2 * shape.radius);
             axis.scale.y = 2 * shape.halfHeight + 0.3;
           }
@@ -2792,12 +2873,25 @@ export function PlayerRig({
     }
     gameStore.setLaserInteraction(aimedSlot?.id ?? null, laserHint, placementReady, partMountReady || Boolean(directWeld));
     if (wrenchBeamMatRef.current && wrenchDotMatRef.current) {
+      const hudTools = gameStore.getState();
       if (partMountReady || Boolean(mountSlot)) {
         wrenchBeamMatRef.current.color.set('#ffe066');
         wrenchDotMatRef.current.color.set('#fff2a6');
       } else if (aiming && carriedKind && !placementReady) {
         wrenchBeamMatRef.current.color.set('#ff7b54');
         wrenchDotMatRef.current.color.set('#ff9e7d');
+      } else if (hudTools.sawEquipped) {
+        wrenchBeamMatRef.current.color.set('#5beeff');
+        wrenchDotMatRef.current.color.set('#b8faff');
+      } else if (hudTools.grinderEquipped) {
+        wrenchBeamMatRef.current.color.set('#ff8248');
+        wrenchDotMatRef.current.color.set('#ffc199');
+      } else if (hudTools.welderEquipped) {
+        wrenchBeamMatRef.current.color.set('#ffd24d');
+        wrenchDotMatRef.current.color.set('#fff0a8');
+      } else if (hudTools.wireToolEquipped || hudTools.wiringActive) {
+        wrenchBeamMatRef.current.color.set('#57f5d5');
+        wrenchDotMatRef.current.color.set('#c4fff2');
       } else {
         wrenchBeamMatRef.current.color.set('#82ffda');
         wrenchDotMatRef.current.color.set('#b7ffe7');
@@ -3061,13 +3155,14 @@ export function PlayerRig({
       }
     }
 
-    // Amoladora: mantener E/F apuntando a una pieza soldada la corta; la pieza cae sola.
+    // Amoladora: mantener clic / E / F apuntando a cualquier pieza soldada la corta y la suelta al instante.
     const usingGrinder = gameStore.getState().grinderEquipped;
     let grindTargetId: string | null = null;
     if (usingGrinder && aiming && !carriedIdRef.current && actionTargetId && !buildToolsLocked()) {
       const grindStation = workshop.stationOf(actionTargetId);
-      if (grindStation && workshop.isMounted(actionTargetId) && customRootId(grindStation) !== actionTargetId &&
-        !workshopPhysics.isReleased(grindStation)) grindTargetId = actionTargetId;
+      if (grindStation && workshop.isMounted(actionTargetId) && customRootId(grindStation) !== actionTargetId) {
+        grindTargetId = actionTargetId;
+      }
     }
     if (grindTargetId && (playerInput.interactHeld || playerInput.weldHeld)) {
       if (grindTargetRef.current !== grindTargetId) {
@@ -3888,6 +3983,8 @@ export function PlayerRig({
             welderEquipped={welderEquipped}
             grinderEquipped={grinderEquipped}
             sawEquipped={sawEquipped}
+            wireEquipped={wireToolEquipped}
+            toolWorking={toolWorking}
             seated={seated}
             alignToGround
             wrenchTipRef={wrenchTipRef}

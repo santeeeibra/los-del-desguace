@@ -7,6 +7,9 @@ import * as THREE from 'three';
 import type { CameraTargetSource } from './ThirdPersonCamera';
 import { playerInput } from './playerInput';
 import { snapshotPrimaryInteractRequest, type InteractRequest } from '../invention/interactResolution';
+import { clearPendingWire } from '../logic/contraptionRegistry';
+import { buildToolsLocked } from '../modes/gameModes';
+import { playWoodClick } from '../audio/sfxEngine';
 import { gameStore, useGameStore, type CameraViewMode } from '../state/gameStore';
 
 interface GameCameraRigProps {
@@ -169,6 +172,7 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
     const dom = gl.domElement;
     let aimPointerId: number | null = null;
     let leftTap: { id: number; x: number; y: number; time: number; request: InteractRequest } | null = null;
+    let rightTap: { id: number; x: number; y: number; time: number } | null = null;
     let wasPointerLocked = document.pointerLockElement === dom;
 
     const applyLookDelta = (dx: number, dy: number) => {
@@ -198,18 +202,45 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
       }
     };
 
-    let mousePush = false;
+    let mouseHoldActive = false;
+    const needsHold = () => {
+      const s = gameStore.getState();
+      return s.assemblyInteraction === 'push' || s.welderEquipped || s.grinderEquipped || s.sawEquipped;
+    };
     const usePrimaryAction = (request?: InteractRequest) => {
-      if (gameStore.getState().assemblyInteraction === 'push') {
-        mousePush = true;
+      if (needsHold()) {
+        mouseHoldActive = true;
         playerInput.interactHeld = true;
       }
       playerInput.triggerInteract(request);
     };
-    const stopMousePush = () => {
-      if (!mousePush) return;
-      mousePush = false;
+    const stopMouseHold = () => {
+      if (!mouseHoldActive) return;
+      mouseHoldActive = false;
       playerInput.interactHeld = false;
+    };
+    const useSecondaryAction = () => {
+      const s = gameStore.getState();
+      if (s.seated) return;
+      if (s.wiringActive) {
+        if (s.pendingWireFrom) {
+          clearPendingWire();
+          gameStore.setWireHint('Cable cancelado');
+        } else {
+          gameStore.selectTool('hand');
+        }
+        playWoodClick();
+        return;
+      }
+      if (s.carriedKind || (s.wrenchAiming && s.wrenchTarget === 'piece')) {
+        gameStore.cycleWrenchAxis();
+        playWoodClick();
+        return;
+      }
+      if (s.wrenchEquipped) {
+        gameStore.selectTool('hand');
+        playWoodClick();
+      }
     };
 
     const onPointerDown = (e: PointerEvent) => {
@@ -223,25 +254,30 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
           usePrimaryAction();
           return;
         }
-        if (e.button === 2 && gameStore.getState().wrenchEquipped) {
-          aimPointerId = e.pointerId;
-          gameStore.setWrenchAiming(true);
+        if (e.button === 2 && !playerInput.menuOpen) {
+          useSecondaryAction();
           return;
         }
       }
-      if (e.pointerType === 'mouse' && e.button === 2 && gameStore.getState().wrenchEquipped) {
-        aimPointerId = e.pointerId;
-        gameStore.setWrenchAiming(true);
+      if (e.pointerType === 'mouse' && e.button === 2 && !playerInput.menuOpen) {
+        rightTap = { id: e.pointerId, x: e.clientX, y: e.clientY, time: performance.now() };
+        if (gameStore.getState().wrenchEquipped && !gameStore.getState().wrenchAimLocked) {
+          aimPointerId = e.pointerId;
+          gameStore.setWrenchAiming(true);
+        }
       }
       if (e.pointerType === 'mouse' && e.button === 0 && !playerInput.menuOpen) {
-        if (gameStore.getState().assemblyInteraction === 'push') usePrimaryAction();
-        else leftTap = {
-          id: e.pointerId,
-          x: e.clientX,
-          y: e.clientY,
-          time: performance.now(),
-          request: snapshotPrimaryInteractRequest(gameStore.getState()),
-        };
+        if (needsHold()) {
+          usePrimaryAction();
+        } else {
+          leftTap = {
+            id: e.pointerId,
+            x: e.clientX,
+            y: e.clientY,
+            time: performance.now(),
+            request: snapshotPrimaryInteractRequest(gameStore.getState()),
+          };
+        }
         if (gameStore.getState().mouseLookMode === 'pointerLock' && document.pointerLockElement !== dom) {
           try {
             Promise.resolve(dom.requestPointerLock?.()).catch(() => {});
@@ -284,13 +320,22 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
     };
 
     const releaseDrag = (e: PointerEvent) => {
-      if (e.type === 'pointercancel' && e.pointerType === 'mouse') stopMousePush();
+      if ((e.type === 'pointerup' || e.type === 'pointercancel') && e.pointerType === 'mouse' && e.button === 0) {
+        stopMouseHold();
+      }
       if (leftTap && leftTap.id === e.pointerId) {
         const moved = Math.hypot(e.clientX - leftTap.x, e.clientY - leftTap.y);
         if (e.type === 'pointerup' && moved < 6 && performance.now() - leftTap.time < 260 && !playerInput.menuOpen) {
           usePrimaryAction(leftTap.request);
         }
         leftTap = null;
+      }
+      if (rightTap && rightTap.id === e.pointerId) {
+        const moved = Math.hypot(e.clientX - rightTap.x, e.clientY - rightTap.y);
+        if (e.type === 'pointerup' && moved < 6 && performance.now() - rightTap.time < 260 && !playerInput.menuOpen) {
+          useSecondaryAction();
+        }
+        rightTap = null;
       }
       if (aimPointerId === e.pointerId) {
         aimPointerId = null;
@@ -312,13 +357,16 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
       if (playerInput.menuOpen || !e.deltaY) return;
       const hud = gameStore.getState();
       if (!e.altKey && !hud.seated) {
-        if (hud.wrenchAiming && (hud.carriedKind || hud.wrenchTarget)) {
+        if (hud.carriedKind || (hud.wrenchAiming && hud.wrenchTarget)) {
           const backwards = e.deltaY > 0;
           playerInput.triggerCartAction(hud.wrenchTarget === 'base' && !hud.carriedKind
             ? backwards ? 'rotate-base-back' : 'rotate-base'
             : backwards ? 'rotate-back' : 'rotate');
-        } else {
+        } else if (buildToolsLocked()) {
           gameStore.cycleInventory(Math.sign(e.deltaY));
+        } else {
+          gameStore.cycleHotbarTool(Math.sign(e.deltaY));
+          playWoodClick();
         }
         return;
       }
@@ -349,7 +397,7 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
       }
     };
     const onMouseUp = (e: MouseEvent) => {
-      if (e.button === 0) stopMousePush();
+      if (e.button === 0) stopMouseHold();
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
@@ -359,9 +407,10 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
       if (e.code === 'KeyC') keyOrbit.current.right = false;
     };
     const onBlur = () => {
-      stopMousePush();
+      stopMouseHold();
       aimPointerId = null;
       leftTap = null;
+      rightTap = null;
       gameStore.setWrenchAiming(false);
       gameStore.setPointerLocked(false);
       dragPointerId.current = null;
@@ -395,7 +444,7 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('pointerup', releaseDrag);
       window.removeEventListener('mouseup', onMouseUp);
-      stopMousePush();
+      stopMouseHold();
       window.removeEventListener('pointercancel', releaseDrag);
       dom.removeEventListener('wheel', onWheel);
       dom.removeEventListener('contextmenu', onContextMenu);

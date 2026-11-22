@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { extraPartPosition } from '../environment/workshopLayout';
-import { playImpact } from '../audio/sfxEngine';
+import { playImpact, playToolEquip } from '../audio/sfxEngine';
 import { buildToolsLocked } from '../modes/gameModes';
 import {
   EMOTE_BY_ID,
@@ -19,6 +19,17 @@ import { emptyInventory, INVENTORY_SIZE, placeInInventory, type InventoryItem, t
 export type TouchOverlayMode = 'auto' | 'on' | 'off';
 export type CameraViewMode = 'firstPerson' | 'thirdPersonClose' | 'thirdPersonWide';
 export type MouseLookMode = 'pointerLock' | 'drag';
+export type ActiveTool = 'hand' | 'wrench' | 'welder' | 'grinder' | 'saw' | 'wire';
+export const HOTBAR_TOOLS = ['wrench', 'welder', 'grinder', 'saw', 'wire'] as const;
+
+export function getActiveTool(s: Pick<GameHudState, 'wrenchEquipped' | 'welderEquipped' | 'grinderEquipped' | 'sawEquipped' | 'wiringActive' | 'wireToolEquipped'>): ActiveTool {
+  if (s.wireToolEquipped || s.wiringActive) return 'wire';
+  if (s.sawEquipped) return 'saw';
+  if (s.grinderEquipped) return 'grinder';
+  if (s.welderEquipped) return 'welder';
+  if (s.wrenchEquipped) return 'wrench';
+  return 'hand';
+}
 
 const MOUSE_LOOK_STORAGE_KEY = 'los-del-desguace.mouselook.v1';
 const TOWER_NUT_STORAGE_KEY = 'los-del-desguace.mirador-nut.v1';
@@ -119,6 +130,8 @@ export interface GameHudState {
   celebration: { title: string; detail?: string; kind: 'workshop' | 'achievement'; id: number } | null;
   pendingWireFrom: string | null;
   wiringActive: boolean;
+  /** Pinza de cableado equipada en el slot 5 (mantiene el modo cableado entre conexiones). */
+  wireToolEquipped: boolean;
   testBench: { power: number; rpm: number } | null;
   laserPlacementReady: boolean;
   partMountReady: boolean;
@@ -200,6 +213,7 @@ let state: GameHudState = {
   celebration: null,
   pendingWireFrom: null,
   wiringActive: false,
+  wireToolEquipped: false,
   testBench: null,
   laserPlacementReady: false,
   partMountReady: false,
@@ -416,15 +430,58 @@ export const gameStore = {
     }
   },
   setPendingWireFrom(pendingWireFrom: string | null) {
-    const wiringActive = pendingWireFrom !== null;
+    const wiringActive = pendingWireFrom !== null || state.wireToolEquipped;
     if (state.pendingWireFrom === pendingWireFrom && state.wiringActive === wiringActive) return;
     state = { ...state, pendingWireFrom, wiringActive };
     emit();
   },
   beginWiring() {
-    if (state.wiringActive) return;
-    state = { ...state, wiringActive: true };
+    this.selectTool('wire');
+  },
+  /**
+   * Selecciona una herramienta equipable de la barra (con su modelo 3D en mano y mira láser activa al instante).
+   * Volver a seleccionar la misma herramienta la guarda y vuelve a Manos libres.
+   */
+  selectTool(tool: ActiveTool, toggleOffIfSame = true) {
+    if (tool !== 'hand' && buildToolsLocked()) return;
+    if (wireHintClearTimer !== null) {
+      window.clearTimeout(wireHintClearTimer);
+      wireHintClearTimer = null;
+    }
+    const current = getActiveTool(state);
+    const next: ActiveTool = toggleOffIfSame && tool !== 'hand' && current === tool ? 'hand' : tool;
+    if (next !== current) playToolEquip(next);
+    const isLaserTool = next !== 'hand';
+    state = {
+      ...state,
+      wrenchEquipped: next === 'wrench' || next === 'welder' || next === 'grinder' || next === 'saw' || next === 'wire',
+      welderEquipped: next === 'welder',
+      grinderEquipped: next === 'grinder',
+      sawEquipped: next === 'saw',
+      sawPhase: 'idle',
+      wireToolEquipped: next === 'wire',
+      wiringActive: next === 'wire',
+      pendingWireFrom: next === 'wire' ? state.pendingWireFrom : null,
+      wrenchAiming: isLaserTool,
+      wrenchAimLocked: isLaserTool,
+      wrenchTarget: null,
+      weldProgress: 0,
+      aimedWorkshopSlot: null,
+      laserHint: null,
+      laserPlacementReady: false,
+      partMountReady: false,
+      wireHint: null,
+    };
     emit();
+  },
+  /** Recorre las herramientas de la barra con la ruedita (Manos → Llave → Soldadora → Amoladora → Sierra → Cables). */
+  cycleHotbarTool(direction: number) {
+    if (buildToolsLocked()) return;
+    const order: readonly ActiveTool[] = ['hand', ...HOTBAR_TOOLS];
+    const current = getActiveTool(state);
+    const idx = order.indexOf(current);
+    const next = order[(idx + (direction >= 0 ? 1 : -1) + order.length) % order.length];
+    this.selectTool(next, false);
   },
   setTestBench(open: boolean) {
     if (Boolean(state.testBench) === open) return;
@@ -480,44 +537,21 @@ export const gameStore = {
       wireHintClearTimer = null;
     }
     state = {
-      ...state, wrenchEquipped: !state.wrenchEquipped, welderEquipped: false, grinderEquipped: false, sawEquipped: false, sawPhase: 'idle', wrenchAiming: false, wrenchAimLocked: false, wrenchTarget: null,
+      ...state, wrenchEquipped: !state.wrenchEquipped, welderEquipped: false, grinderEquipped: false, sawEquipped: false, sawPhase: 'idle', wireToolEquipped: false, wrenchAiming: false, wrenchAimLocked: false, wrenchTarget: null,
       aimedWorkshopSlot: null, laserHint: null, laserPlacementReady: false, partMountReady: false, wireHint: null, pendingWireFrom: null, wiringActive: false,
     };
     emit();
   },
-  /** Shift+X: llave → soldadora → amoladora → sierra láser → guardar. Las dos usan el mismo rayo de apuntado que la llave. */
+  /** Shift+X: soldadora → amoladora → sierra láser → guardar (mira láser activa al instante). */
   toggleWelder() {
     if (buildToolsLocked() && !state.wrenchEquipped) return;
-    if (wireHintClearTimer !== null) {
-      window.clearTimeout(wireHintClearTimer);
-      wireHintClearTimer = null;
-    }
-    const next = state.welderEquipped ? 'grinder' : state.grinderEquipped ? 'saw' : state.sawEquipped ? 'none' : 'welder';
-    // En táctil no hay clic derecho: al equipar queda la mira fija para poder apuntar.
-    const touch = state.touchMode === 'on' || (state.touchMode === 'auto' && state.isTouchDevice);
-    const lockAim = touch && next !== 'none';
-    state = {
-      ...state, wrenchEquipped: next !== 'none', welderEquipped: next === 'welder', grinderEquipped: next === 'grinder',
-      sawEquipped: next === 'saw', sawPhase: 'idle',
-      wrenchAiming: next === 'saw' || lockAim, wrenchAimLocked: next === 'saw' || lockAim, wrenchTarget: null, weldProgress: 0,
-      aimedWorkshopSlot: null, laserHint: null, laserPlacementReady: false, partMountReady: false, wireHint: null, pendingWireFrom: null, wiringActive: false,
-    };
-    emit();
+    const next: ActiveTool = state.welderEquipped ? 'grinder' : state.grinderEquipped ? 'saw' : state.sawEquipped ? 'hand' : 'welder';
+    this.selectTool(next, false);
   },
   /** Shift+C: equipa o guarda la sierra láser (queda apuntando, lista para trazar). */
   toggleSaw() {
     if (buildToolsLocked() && !state.wrenchEquipped) return;
-    if (wireHintClearTimer !== null) {
-      window.clearTimeout(wireHintClearTimer);
-      wireHintClearTimer = null;
-    }
-    const on = !state.sawEquipped;
-    state = {
-      ...state, wrenchEquipped: on, welderEquipped: false, grinderEquipped: false, sawEquipped: on, sawPhase: 'idle',
-      wrenchAiming: on, wrenchAimLocked: on, wrenchTarget: null, weldProgress: 0,
-      aimedWorkshopSlot: null, laserHint: null, laserPlacementReady: false, partMountReady: false, wireHint: null, pendingWireFrom: null, wiringActive: false,
-    };
-    emit();
+    this.selectTool('saw', true);
   },
   setSawPhase(phase: 'idle' | 'trace' | 'cut') {
     if (state.sawPhase === phase) return;
@@ -571,7 +605,7 @@ export const gameStore = {
     emit();
   },
   cycleWrenchAxis() {
-    if (!state.wrenchEquipped || (!state.carriedId && state.wrenchTarget !== 'piece')) return;
+    if (!state.carriedId && (!state.wrenchEquipped || state.wrenchTarget !== 'piece')) return;
     const next = (WRENCH_AXES.indexOf(state.wrenchAxis) + 1) % WRENCH_AXES.length;
     state = { ...state, wrenchAxis: WRENCH_AXES[next] };
     emit();
@@ -584,7 +618,7 @@ export const gameStore = {
   setCarried(id: string | null, kind: GameHudState['carriedKind']) {
     if (state.carriedId === id && state.carriedKind === kind) return;
     state = id
-      ? { ...state, carriedId: id, carriedKind: kind, pendingWireFrom: null, wiringActive: false }
+      ? { ...state, carriedId: id, carriedKind: kind, pendingWireFrom: null, wiringActive: false, wireToolEquipped: false }
       : { ...state, carriedId: null, carriedKind: kind };
     emit();
   },

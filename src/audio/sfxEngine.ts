@@ -744,6 +744,71 @@ export function setRollingAudio(active: boolean, speedNorm = 0, slipNorm = 0): v
   skidFilter.frequency.setTargetAtTime(targetSkidFreq, now, 0.05);
 }
 
+export type ToolSoundId = 'hand' | 'wrench' | 'welder' | 'grinder' | 'saw' | 'wire';
+
+function scheduleNoiseBurst(
+  ctx: AudioContext,
+  out: GainNode,
+  filterType: BiquadFilterType,
+  freq: number,
+  q: number,
+  startTime: number,
+  duration: number,
+  peakGain: number,
+): void {
+  const src = ctx.createBufferSource();
+  src.buffer = getNoiseBuffer(ctx);
+  const filter = ctx.createBiquadFilter();
+  filter.type = filterType;
+  filter.frequency.setValueAtTime(freq, startTime);
+  filter.Q.value = q;
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.001, startTime);
+  gain.gain.linearRampToValueAtTime(peakGain, startTime + Math.min(0.012, duration * 0.25));
+  gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+  src.onended = () => disconnectNodes(src, filter, gain);
+  src.connect(filter);
+  filter.connect(gain);
+  gain.connect(out);
+  src.start(startTime);
+  src.stop(startTime + duration + 0.01);
+}
+
+/**
+ * Sonido característico al equipar o guardar cada herramienta 3D del cinturón.
+ * Enseña al jugador qué tiene en la mano sin depender de texto en pantalla.
+ */
+export function playToolEquip(tool: ToolSoundId): void {
+  runWithAudio((ctx, out) => {
+    const now = ctx.currentTime;
+    switch (tool) {
+      case 'wrench':
+        scheduleTone(ctx, out, 'triangle', 780, 520, now, 0.045, 0.14);
+        scheduleTone(ctx, out, 'sine', 1320, 980, now + 0.038, 0.055, 0.11);
+        break;
+      case 'welder':
+        scheduleTone(ctx, out, 'sawtooth', 220, 340, now, 0.075, 0.08);
+        scheduleNoiseBurst(ctx, out, 'bandpass', 3100, 2.2, now + 0.03, 0.055, 0.11);
+        break;
+      case 'grinder':
+        scheduleTone(ctx, out, 'sawtooth', 190, 560, now, 0.12, 0.075);
+        scheduleNoiseBurst(ctx, out, 'highpass', 1800, 1.4, now + 0.015, 0.11, 0.07);
+        break;
+      case 'saw':
+        scheduleTone(ctx, out, 'sine', 540, 1180, now, 0.095, 0.11);
+        scheduleTone(ctx, out, 'triangle', 1080, 1460, now + 0.035, 0.07, 0.06);
+        break;
+      case 'wire':
+        scheduleTone(ctx, out, 'square', 620, 880, now, 0.045, 0.06);
+        scheduleTone(ctx, out, 'sine', 1160, 1560, now + 0.03, 0.06, 0.09);
+        break;
+      case 'hand':
+        scheduleTone(ctx, out, 'triangle', 310, 170, now, 0.065, 0.1);
+        break;
+    }
+  });
+}
+
 export const sfxEngine = {
   unlockAudio,
   playSpark,
@@ -759,4 +824,5 @@ export const sfxEngine = {
   playBlockedClick,
   playSuccessChime,
   playWoodClick,
+  playToolEquip,
 };

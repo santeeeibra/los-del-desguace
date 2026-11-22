@@ -19,9 +19,17 @@ import { buildBlueprintShareUrl, decodeBlueprintCode, deleteBlueprint, encodeBlu
 import { canSelectWirePart, clearPendingWire, contraptionGraph, describeWireDestination, isPartWired, PART_LOGIC_SPECS } from '../logic/contraptionRegistry';
 import { useArenaAndBridgeState } from '../modes/arenaAndBridge';
 import { contractStore, useContractStore, WORKSHOP_CONTRACTS } from '../modes/contracts';
+import {
+  EXPEDITION_LEVEL_BY_ID,
+  EXPEDITION_LEVELS,
+  expeditionStore,
+  useExpeditionStore,
+  type ExpeditionLevelId,
+} from '../modes/expeditionLevels';
 import { LaserTable } from './LaserTable';
 import { SceneCutBar } from './SceneCutBar';
 import { ToolIcon } from './ToolIcons';
+import { loadToolThumbnails, type HotbarToolId } from './toolThumbnailRenderer';
 import { sceneCutStore, useSceneCut } from '../invention/sceneCut';
 import { laserTableBridge } from '../invention/laserTableBridge';
 import { DeliveryHud, DELIVERY_DESCRIPTION, useDeliveryStatusText } from './DeliveryHud';
@@ -39,8 +47,11 @@ import type { InventoryKind } from '../state/inventory';
 import {
   CAMERA_VIEW_LABELS,
   gameStore,
+  getActiveTool,
+  HOTBAR_TOOLS,
   MAX_EXTRA_PROPS,
   useGameStore,
+  type ActiveTool,
   type TouchOverlayMode,
 } from '../state/gameStore';
 import { PropSlotIcon } from './PropSlotIcon';
@@ -73,19 +84,56 @@ function HexBolt({ className }: { className: string }) {
 }
 
 const KEY_GUIDE_STORAGE = 'desguace.keyGuideSeen';
-const KEY_GUIDE_AUTO_SHOWS = 3;
+const KEY_GUIDE_AUTO_SHOWS = 1;
 const KEY_GUIDE_ROWS: ReadonlyArray<readonly [string, string]> = [
-  ['E', 'Agarrar / subir / usar lo que mirás'],
-  ['F', 'Soldar o usar el aparato'],
-  ['X · M', 'Llave y mira láser'],
-  ['Shift+X', 'Soldadora / amoladora'],
-  ['L · K', 'Cablear / quitar cables'],
-  ['Shift+C', 'Sierra láser: cortar una pieza'],
-  ['Tab', 'Editor de piezas'],
-  ['G', 'Gestos'],
-  ['Alt+E', 'Más acciones'],
-  ['Esc', 'Menú'],
+  ['1–5', 'Equipar herramientas 3D (Llave, Soldar, Amoladora, Sierra, Cables)'],
+  ['6 · 7–9', 'Plano guía · Bolsillos de piezas (I para guardar)'],
+  ['Clic izq. / E', 'Usar herramienta · Agarrar · Montar · Subir'],
+  ['Ruedita / R', 'Girar pieza (en mano o en mira) · Cambiar herramienta'],
+  ['Clic der. / Z', 'Cambiar eje de giro · Cancelar / Guardar herramienta'],
+  ['N · Tab', 'Dispensador de piezas · Banco del taller'],
+  ['Ctrl+Z · H', 'Deshacer último montaje · Reparar en 1 clic'],
+  ['G · Esc', 'Gestos · Menú principal'],
 ];
+
+const HOTBAR_TOOL_META: Record<HotbarToolId, { key: string; short: string; name: string; tip: string }> = {
+  wrench: {
+    key: '1',
+    short: 'Llave',
+    name: 'Llave Láser',
+    tip: 'Llave Láser (1) — Agarrá, mové, girá en 3 ejes y montá piezas a distancia',
+  },
+  welder: {
+    key: '2',
+    short: 'Soldar',
+    name: 'Soldadora',
+    tip: 'Soldadora (2) — Mantené clic izquierdo para soldar con arco y chispas',
+  },
+  grinder: {
+    key: '3',
+    short: 'Amolar',
+    name: 'Amoladora',
+    tip: 'Amoladora (3) — Mantené clic izquierdo sobre cualquier pieza soldada para soltarla',
+  },
+  saw: {
+    key: '4',
+    short: 'Sierra',
+    name: 'Sierra Láser',
+    tip: 'Sierra Láser (4) — Mantené clic izquierdo y arrastrá sobre una pieza para rebanarla',
+  },
+  wire: {
+    key: '5',
+    short: 'Cables',
+    name: 'Pinza de Cables',
+    tip: 'Cables (5) — Clic en origen y clic en destino para conectar energía y lógica',
+  },
+};
+
+const AXIS_LABELS: Record<'vertical' | 'lateral' | 'frontal', string> = {
+  vertical: 'Vertical',
+  lateral: 'Lateral',
+  frontal: 'Frontal',
+};
 
 const WoodBolts = memo(function WoodBolts() {
   return (
@@ -576,6 +624,7 @@ export function HudOverlay() {
   const towerNutFound = useGameStore((s) => s.towerNutFound);
   const pendingWireFrom = useGameStore((s) => s.pendingWireFrom);
   const wiringActive = useGameStore((s) => s.wiringActive);
+  const wireToolEquipped = useGameStore((s) => s.wireToolEquipped);
   const testBench = useGameStore((s) => s.testBench);
   const benchOpen = testBench !== null;
   const laserPlacementReady = useGameStore((s) => s.laserPlacementReady);
@@ -588,7 +637,6 @@ export function HudOverlay() {
   const seatedFlightMode = useGameStore((s) => s.seatedFlightMode);
   const wrenchEquipped = useGameStore((s) => s.wrenchEquipped);
   const wrenchAiming = useGameStore((s) => s.wrenchAiming);
-  const wrenchAimLocked = useGameStore((s) => s.wrenchAimLocked);
   const wrenchAxis = useGameStore((s) => s.wrenchAxis);
   const wrenchTarget = useGameStore((s) => s.wrenchTarget);
   const inventorySlots = useGameStore((s) => s.inventorySlots);
@@ -605,6 +653,9 @@ export function HudOverlay() {
   const activeEmote = useGameStore((s) => s.activeEmote);
   const gameMode = useGameModeStore((state) => state);
   const contractState = useContractStore((s) => s);
+  const expedition = useExpeditionStore();
+  const activeExpedition = expedition.activeLevelId ? EXPEDITION_LEVEL_BY_ID[expedition.activeLevelId] : null;
+  const completedLevelsCount = EXPEDITION_LEVELS.filter((lvl) => expedition.progress[lvl.id].completed).length;
   const arenaBridge = useArenaAndBridgeState();
   const net = useMultiplayerStore();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -618,18 +669,18 @@ export function HudOverlay() {
   const [cutCandidate, setCutCandidate] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [emotesOpen, setEmotesOpen] = useState(false);
-  const [keyGuideOpen, setKeyGuideOpen] = useState(() => {
-    try { return Number(localStorage.getItem(KEY_GUIDE_STORAGE) ?? 0) < KEY_GUIDE_AUTO_SHOWS; } catch { return true; }
-  });
+  const [toolThumbs, setToolThumbs] = useState<Partial<Record<HotbarToolId, string>>>({});
+  useEffect(() => {
+    let alive = true;
+    loadToolThumbnails().then((thumbs) => {
+      if (alive) setToolThumbs({ ...thumbs });
+    });
+    return () => { alive = false; };
+  }, []);
+  const [keyGuideOpen, setKeyGuideOpen] = useState(false);
   const closeKeyGuide = useCallback(() => {
     setKeyGuideOpen(false);
     try { localStorage.setItem(KEY_GUIDE_STORAGE, String(KEY_GUIDE_AUTO_SHOWS)); } catch { /* sin storage */ }
-  }, []);
-  useEffect(() => {
-    try {
-      const seen = Number(localStorage.getItem(KEY_GUIDE_STORAGE) ?? 0);
-      if (seen < KEY_GUIDE_AUTO_SHOWS) localStorage.setItem(KEY_GUIDE_STORAGE, String(seen + 1));
-    } catch { /* sin storage */ }
   }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -652,7 +703,7 @@ export function HudOverlay() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
-  const [menuTab, setMenuTab] = useState<'play' | 'spawner' | 'contracts' | 'character' | 'blueprints' | 'settings'>('play');
+  const [menuTab, setMenuTab] = useState<'play' | 'levels' | 'spawner' | 'contracts' | 'character' | 'blueprints' | 'settings'>('play');
   const [planName, setPlanName] = useState('');
   const [importCode, setImportCode] = useState('');
   const [shareMsg, setShareMsg] = useState<string | null>(null);
@@ -861,15 +912,25 @@ export function HudOverlay() {
   }, [menuOpen, menuTab, moreOpen, seated, showWelcome, showFinish, showContractFinish, emotesOpen, benchOpen, openParts]);
 
   const showTouch = touchMode === 'on' || (touchMode === 'auto' && isTouchDevice);
+  const activeTool: ActiveTool = getActiveTool({
+    wrenchEquipped,
+    welderEquipped,
+    grinderEquipped,
+    sawEquipped,
+    wiringActive,
+    wireToolEquipped,
+  });
   const assemblyLabels = {
     release: 'Liberar', lift: 'Levantar', push: 'Empujar', heavy: 'Muy pesado',
     drop: 'Apoyar', position: 'Mover', place: 'Fijar aquí',
   } as const;
   const interactLabel = seated ? 'Salir del asiento'
-    : sawEquipped && !carriedKind ? 'Marcar corte'
+    : sawEquipped && !carriedKind
+      ? (sawPhase === 'trace' ? 'Soltá para cortar' : sawPhase === 'cut' ? 'Cortando…' : 'Trazar corte')
+    : grinderEquipped && !carriedKind && nearbyTargetMounted ? 'Cortar unión'
     : assemblyInteraction ? assemblyLabels[assemblyInteraction]
     : workshopSlot ? 'Montar'
-    : partMountReady ? 'Soldar'
+    : partMountReady ? (welderEquipped ? 'Soldar aquí' : 'Montar aquí')
     : carriedKind ? (wrenchAiming ? 'Colocar' : 'Soltar')
     : nearbyTargetRideable ? 'Subir'
     : nearbyTargetMounted ? 'Retirar'
@@ -877,15 +938,13 @@ export function HudOverlay() {
   const slotInView = workshopSlot ?? aimedWorkshopSlot;
   const targetLabel = seated
     ? seatedFlightMode
-      ? (showTouch
-        ? 'Volando'
-        : 'Volando · W/S Avanzar · A/D Girar · Espacio Ascender · Shift Descender')
-      : (showTouch
-        ? 'Conduciendo · ◀ ▶ Doblar · Pedales'
-        : 'Conduciendo · W/S Acelerar · A/D Doblar · Espacio Turbo')
+      ? 'Volando'
+      : 'Conduciendo'
     : slotInView ? WORKSHOP_SLOT_BY_ID.get(slotInView)?.label
     : carriedKind ? ITEM_LABELS[carriedKind] : nearbyTargetKind ? ITEM_LABELS[nearbyTargetKind] : null;
   const canInteract = seated || Boolean(assemblyInteraction || workshopSlot || partMountReady ||
+    (sawEquipped && !carriedKind && Boolean(nearbyTargetKind)) ||
+    (grinderEquipped && !carriedKind && nearbyTargetMounted) ||
     (carriedKind ? laserPlacementReady || (!wrenchAiming && !laserHint) : nearbyTargetKind));
 
   function cycleTouchMode() {
@@ -893,12 +952,32 @@ export function HudOverlay() {
     gameStore.setTouchMode(order[(order.indexOf(touchMode) + 1) % order.length]);
   }
 
-  const canRotatePiece = wrenchEquipped && Boolean(carriedKind || wrenchTarget === 'piece');
+  const canRotatePiece = Boolean(carriedKind || (wrenchEquipped && wrenchTarget === 'piece'));
+  // Solo mostrar feedback útil (errores, pistas de láser/cable o estado cuando realmente apuntás a la base)
   const contextFeedback = dropBlockedHint
     ? BLOCKED_MESSAGES[dropBlockedHint]
-    : (carriedKind ? laserHint ?? wireHint : wireHint ?? laserHint) ?? workshopStatus;
+    : (carriedKind ? laserHint ?? wireHint : wireHint ?? laserHint) ??
+      (wrenchTarget === 'base' ? workshopStatus : null);
   const sourceLabel = pendingWireFrom ? contraptionGraph.getNode(pendingWireFrom)?.label : null;
-  const activeContextText = assemblyInteraction ? 'Invento' : targetLabel ?? (wrenchTarget === 'base' ? 'Base en la mira' : null);
+  const activeContextText = assemblyInteraction ? 'Invento' : targetLabel ?? (wrenchTarget === 'base' ? 'Base' : null);
+
+  // Micro-barra sobre la hotbar: aparece brevemente al cambiar herramienta o eje y se desvanece para dejar la pantalla libre.
+  const [stripFlash, setStripFlash] = useState(false);
+  useEffect(() => {
+    if (activeTool === 'hand' && !carriedKind) {
+      setStripFlash(false);
+      return;
+    }
+    setStripFlash(true);
+    const id = window.setTimeout(() => setStripFlash(false), 2600);
+    return () => window.clearTimeout(id);
+  }, [activeTool, wrenchAxis, carriedKind]);
+  const showToolStrip = !showTouch && !seated && !isDelivery && (
+    Boolean(carriedKind) ||
+    sawPhase === 'trace' ||
+    sawPhase === 'cut' ||
+    (activeTool !== 'hand' && stripFlash)
+  );
   const canWireTarget = Boolean(nearbyTargetKind && nearbyTargetId !== pendingWireFrom &&
     canSelectWirePart(nearbyTargetKind, Boolean(pendingWireFrom)));
   const wireDestination = pendingWireFrom && nearbyTargetId && nearbyTargetKind
@@ -911,9 +990,20 @@ export function HudOverlay() {
   const primaryLabel = useWireAction ? wireActionLabel : interactLabel;
   const primaryReady = useWireAction ? canWireTarget && !wireDestination?.blocked : canInteract;
   const nearReticle = !seated && (cameraMode === 'firstPerson' || wrenchAiming);
-  const primaryKey = !useWireAction && assemblyInteraction === 'push' ? 'Mantené clic o E' : 'Clic izq. / E';
+  const holdAction = !useWireAction && (
+    assemblyInteraction === 'push' ||
+    (welderEquipped && Boolean(carriedKind && (workshopSlot || partMountReady))) ||
+    (grinderEquipped && !carriedKind && nearbyTargetMounted) ||
+    (sawEquipped && !carriedKind && sawPhase === 'idle')
+  );
+  const primaryKey = sawEquipped && sawPhase === 'trace'
+    ? 'Soltá clic'
+    : holdAction
+      ? (sawEquipped ? 'Mantené y arrastrá' : 'Mantené clic')
+      : 'Clic izq.';
   const cancelWire = () => {
     clearPendingWire();
+    gameStore.selectTool('hand');
     gameStore.setWireHint('Cable cancelado');
   };
 
@@ -929,11 +1019,6 @@ export function HudOverlay() {
       nearbyTargetKind === 'timerBox' || nearbyTargetKind === 'crate')));
   const contextualOptions = moreOpen && hasContextualOptions && !seated && !useWireAction &&
     !menuOpen && !showWelcome && !showFinish && !showContractFinish && !benchOpen;
-  const startWiring = () => {
-    gameStore.beginWiring();
-    setMoreOpen(false);
-    setToolsOpen(false);
-  };
   const openBench = () => {
     playerInput.triggerCartAction('bench');
     setMoreOpen(false);
@@ -960,7 +1045,7 @@ export function HudOverlay() {
   };
   // Ayuda gráfica: un solo botón "útil ahora" late con brillo dorado y una flechita.
   const suggestPrimary = !seated && !sceneCut.active && primaryReady &&
-    (interactLabel === 'Montar' || interactLabel === 'Soldar' || interactLabel === 'Subir');
+    (interactLabel === 'Montar' || interactLabel === 'Soldar aquí' || interactLabel === 'Montar aquí' || interactLabel === 'Subir');
   const suggestCut = !suggestPrimary && Boolean(cutCandidate) && !sceneCut.active;
   const blueprintEquipped = !menuOpen && !seated && inventorySlots[inventorySelection]?.kind === 'blueprint';
   const activeGuide = PRESET_BLUEPRINTS[activeGuideIndex % PRESET_BLUEPRINTS.length];
@@ -972,32 +1057,34 @@ export function HudOverlay() {
     <div className="hud-layer" data-scene-ready={sceneReady ? 'true' : 'false'} data-touch={showTouch}
       data-scene-cut={sceneCut.active ? 'true' : undefined}>
       <SceneCutBar bolts={<WoodBolts />} labels={ITEM_SHORT} touch={showTouch} />
-      {sawEquipped && !seated && !menuOpen && !showWelcome && (
-        <div className="saw-hint wood-sign" role="status" aria-live="polite">
-          <ToolIcon tool="saw" className="hud-tool-icon is-title" />
-          <div>
-            <strong>Sierra láser</strong>
-            <span>
-              {sawPhase === 'trace'
-                ? 'Arrastrá el láser hasta donde termina el corte y soltá.'
-                : sawPhase === 'cut'
-                  ? 'Cortando…'
-                  : showTouch
-                    ? '1. Apuntá a una pieza · 2. Mantené “Usar” y arrastrá para marcar la línea · 3. Soltá para cortar.'
-                    : '1. Apuntá a una pieza · 2. Mantené clic (o E) y arrastrá para marcar la línea · 3. Soltá: corta con chispas.'}
-            </span>
-          </div>
-        </div>
-      )}
       {cutCandidate && !sceneCut.active && (
         <button type="button" className="hud-button is-accent scene-cut-start hud-interactive" data-suggested={suggestCut || undefined}
-          onClick={() => startSceneCut(cutCandidate)}><ToolIcon tool="slice" />Cortar</button>
+          onClick={() => startSceneCut(cutCandidate)}><ToolIcon tool="slice" />Cortar chapa</button>
       )}
-      {(cameraMode === 'firstPerson' || wrenchAiming) && (
-        <div className="hud-reticle" data-target={Boolean(workshopSlot || aimedWorkshopSlot || nearbyTargetKind || wrenchTarget || laserPlacementReady)}
-          data-wrench={wrenchAiming}
-          data-placement={wrenchAiming && carriedKind ? (primaryReady ? 'ready' : 'blocked') : undefined}
-          data-wire={useWireAction && primaryReady ? 'ready' : undefined} aria-hidden="true" />
+      {(cameraMode === 'firstPerson' || wrenchAiming) && !seated && !menuOpen && !showWelcome && (
+        <div className="hud-reticle-wrap" aria-hidden="true">
+          <div
+            className="hud-reticle"
+            data-tool={activeTool}
+            data-target={Boolean(workshopSlot || aimedWorkshopSlot || nearbyTargetKind || wrenchTarget || laserPlacementReady)}
+            data-wrench={wrenchAiming}
+            data-placement={wrenchAiming && carriedKind ? (primaryReady ? 'ready' : 'blocked') : undefined}
+            data-wire={useWireAction && primaryReady ? 'ready' : undefined}
+          />
+          {weldProgress > 0 && (
+            <svg className="hud-reticle-ring" data-tool={activeTool} viewBox="0 0 44 44">
+              <circle className="hud-reticle-ring-bg" cx="22" cy="22" r="18" />
+              <circle
+                className="hud-reticle-ring-fg"
+                cx="22"
+                cy="22"
+                r="18"
+                strokeDasharray={113.1}
+                strokeDashoffset={113.1 * (1 - weldProgress)}
+              />
+            </svg>
+          )}
+        </div>
       )}
       {cameraBanner && <div className="hud-toast" role="status">{cameraBanner}</div>}
       {sceneReady && !menuOpen && !showWelcome && !showFinish && !showContractFinish && celebration && (
@@ -1016,6 +1103,8 @@ export function HudOverlay() {
             <span className="hud-led" data-ready={sceneReady} aria-hidden="true" />
             <span>
               {!sceneReady ? 'Cargando…'
+                : activeExpedition
+                  ? `Nivel ${activeExpedition.number} · ${activeExpedition.title} · ${expedition.elapsedSec.toFixed(1)}s${expedition.goldenNutThisRun ? ' · 🔩' : ''}`
                 : activeContract
                   ? activeContract.id === 'robot-arena'
                     ? `Robots ${arenaBridge.robotsKnockedOut}/${arenaBridge.totalRobots} · ${contractState.elapsedSec.toFixed(1)}s`
@@ -1034,6 +1123,37 @@ export function HudOverlay() {
                         : 'Taller Libre'}
             </span>
           </div>
+          {sceneReady && activeExpedition && (
+            <div className="hud-interactive" style={{ display: 'flex', gap: '5px' }}>
+              <button
+                type="button"
+                className="hud-ctx-btn"
+                onClick={() => expeditionStore.respawnAtCheckpoint()}
+              >
+                Punto control
+              </button>
+              <button
+                type="button"
+                className="hud-ctx-btn is-accent"
+                onClick={() => expeditionStore.exitToWorkshop()}
+              >
+                Taller
+              </button>
+            </div>
+          )}
+          {sceneReady && !activeExpedition && !activeContract && gameMode.mode === 'sandbox' && !seated && (
+            <button
+              type="button"
+              className="hud-ctx-btn is-accent hud-interactive"
+              onClick={() => {
+                playWoodClick();
+                setMenuTab('levels');
+                setMenuOpen(true);
+              }}
+            >
+              Niveles ({completedLevelsCount}/3)
+            </button>
+          )}
           {sceneReady && (contractState.brokenWeldsCount > 0 ||
             (contractState.canRepairLastBuild && activeContract?.id !== 'first-drive')) && (
             <button
@@ -1094,14 +1214,7 @@ export function HudOverlay() {
           </div>
         )}
 
-        {weldProgress > 0 && (
-          <div className="hud-weld-bar" role="progressbar" aria-label="Soldando" aria-valuenow={Math.round(weldProgress * 100)}>
-            <i style={{ width: `${Math.round(weldProgress * 100)}%` }} />
-            <span>{grinderEquipped || sawEquipped ? 'Cortando…' : 'Soldando…'}</span>
-          </div>
-        )}
-
-        {(activeEmote || activeContextText || contextFeedback || useWireAction) && (
+        {(activeEmote || activeContextText || contextFeedback || (useWireAction && (pendingWireFrom || primaryReady || wireDestination?.blocked))) && (
           <div className={`hud-context-stack${nearReticle ? ' hud-context-at-reticle' : ''}${!showTouch && !seated && nearbyTargetId && !carriedKind ? ' hud-context-anchored' : ''}`}>
             {activeEmote && EMOTE_BY_ID[activeEmote] && (
               <div className="hud-context-pill hud-emote-toast" role="status">
@@ -1114,20 +1227,18 @@ export function HudOverlay() {
               </div>
             )}
 
-            {(activeContextText || contextFeedback || useWireAction) && (
+            {(activeContextText || contextFeedback || (useWireAction && (pendingWireFrom || primaryReady || wireDestination?.blocked))) && (
               <div className="hud-context-pill" data-mount={Boolean(workshopSlot || partMountReady || laserPlacementReady)} role="status">
-                {(activeContextText || useWireAction) && <span className="hud-context-main">
+                {(activeContextText || (useWireAction && pendingWireFrom)) && <span className="hud-context-main">
                   {pendingWireFrom
-                    ? `Origen · ${sourceLabel ?? 'Pieza elegida'}`
-                    : useWireAction ? 'Cableado' : activeContextText}
+                    ? `Origen · ${sourceLabel ?? 'Pieza'}`
+                    : activeContextText}
                 </span>}
                 {sceneReady && !seated && primaryReady && <span className="hud-context-primary" data-suggested={suggestPrimary || undefined}>
                   {primaryLabel}{!showTouch && <kbd>{primaryKey}</kbd>}
                 </span>}
-                {(useWireAction || contextFeedback) && <span className={dropBlockedHint || wireDestination?.blocked || (carriedKind && !primaryReady) ? 'hud-context-err' : 'hud-context-sub'}>
-                  {useWireAction
-                    ? wireDestination?.blocked ?? (primaryReady ? null : pendingWireFrom ? 'Apuntá a una entrada compatible' : 'Apuntá a una batería, un interruptor o un asiento')
-                    : contextFeedback}
+                {(wireDestination?.blocked || contextFeedback) && <span className={dropBlockedHint || wireDestination?.blocked || (carriedKind && !primaryReady) ? 'hud-context-err' : 'hud-context-sub'}>
+                  {wireDestination?.blocked ?? contextFeedback}
                 </span>}
               </div>
             )}
@@ -1233,6 +1344,9 @@ export function HudOverlay() {
               <button type="button" role="tab" aria-selected={menuTab === 'play'} className="hud-menu-tab" onClick={() => { playWoodClick(); setMenuTab('play'); }}>
                 Taller y Modos
               </button>
+              <button type="button" role="tab" aria-selected={menuTab === 'levels'} className="hud-menu-tab" onClick={() => { playWoodClick(); setMenuTab('levels'); }}>
+                Niveles ({completedLevelsCount}/3)
+              </button>
               <button type="button" role="tab" aria-selected={menuTab === 'spawner'} className="hud-menu-tab" onClick={() => { playWoodClick(); setMenuTab('spawner'); }}>
                 Piezas
               </button>
@@ -1322,6 +1436,63 @@ export function HudOverlay() {
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {menuTab === 'levels' && (
+              <div className="hud-menu-body">
+                <div className="hud-menu-subtitle">
+                  Expediciones extensas · Resolvelas construyendo inventos o a pie con parkour
+                </div>
+                <div className="hud-contract-list">
+                  {EXPEDITION_LEVELS.map((lvl) => {
+                    const prog = expedition.progress[lvl.id];
+                    const isCurrent = expedition.activeLevelId === lvl.id;
+                    return (
+                      <div key={lvl.id} className={`hud-contract-card${prog.completed ? ' is-done' : ''}`}>
+                        <div className="hud-contract-meta">
+                          <strong>Nivel {lvl.number} · {lvl.title}</strong>
+                          <span className="hud-contract-badge">{lvl.badge}</span>
+                        </div>
+                        <p>{lvl.summary}</p>
+                        <div className="hud-contract-foot">
+                          <span>
+                            {prog.bestTimeSec !== null ? `Mejor: ${prog.bestTimeSec.toFixed(1)}s` : lvl.lengthLabel}
+                            {' · '}
+                            {prog.goldenNut ? '🔩 Tuerca Dorada' : '🔩 Sin hallar'}
+                          </span>
+                          <button
+                            type="button"
+                            className={`hud-button${isCurrent ? ' is-accent' : ''}`}
+                            onClick={() => {
+                              contractStore.clearContract();
+                              gameModeStore.setMode('sandbox');
+                              expeditionStore.startLevel(lvl.id as ExpeditionLevelId);
+                              setMenuOpen(false);
+                              setWelcomeOpen(false);
+                            }}
+                          >
+                            {isCurrent ? 'Reiniciar nivel' : prog.completed ? 'Volver a jugar' : 'Jugar nivel'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {activeExpedition && (
+                  <div className="hud-menu-presets">
+                    <button
+                      type="button"
+                      className="hud-button"
+                      onClick={() => {
+                        expeditionStore.exitToWorkshop();
+                        setMenuOpen(false);
+                      }}
+                    >
+                      Volver al Taller Central
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1962,6 +2133,59 @@ export function HudOverlay() {
         </div>
       )}
 
+      {activeExpedition && expedition.completedNow && !menuOpen && !showWelcome && (
+        <div className="hud-menu-backdrop hud-interactive" role="dialog" aria-modal="true" aria-label="Nivel completado">
+          <div className="hud-flow-card wood-sign">
+            <WoodBolts />
+            <div className="hud-flow-head">
+              <div>
+                <div className="hud-menu-kicker">EXPEDICIÓN COMPLETADA</div>
+                <h2>¡Nivel {activeExpedition.number} superado!</h2>
+              </div>
+            </div>
+            <p className="hud-flow-lead">{activeExpedition.title} — {activeExpedition.subtitle}</p>
+            <div className="hud-finish-stats">
+              <div className="hud-finish-stat">
+                <span>Tiempo</span>
+                <strong>{expedition.elapsedSec.toFixed(1)}s</strong>
+              </div>
+              <div className="hud-finish-stat">
+                <span>Tuerca Dorada</span>
+                <strong>{expedition.goldenNutThisRun ? '🔩 Encontrada' : 'Sin hallar'}</strong>
+              </div>
+            </div>
+            <div className="hud-flow-footer">
+              <button
+                type="button"
+                className="hud-button"
+                onClick={() => expeditionStore.exitToWorkshop()}
+              >
+                Volver al Taller
+              </button>
+              <button
+                type="button"
+                className="hud-button"
+                onClick={() => expeditionStore.startLevel(activeExpedition.id)}
+              >
+                Reintentar
+              </button>
+              {activeExpedition.number < 3 && (
+                <button
+                  type="button"
+                  className="hud-button is-accent"
+                  onClick={() => {
+                    const next = EXPEDITION_LEVELS[activeExpedition.number];
+                    if (next) expeditionStore.startLevel(next.id);
+                  }}
+                >
+                  Siguiente Nivel →
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {testBench && (
         <div className="hud-menu-backdrop hud-bench-overlay hud-interactive" role="dialog" aria-modal="true" aria-labelledby="hud-bench-title">
           <div className="hud-menu-card wood-sign hud-bench-card">
@@ -2074,78 +2298,170 @@ export function HudOverlay() {
         ) : (
           <div />
         )}
-        <div className="hud-inventory hud-interactive" data-driving={seated && showTouch} aria-label="Inventario de seis espacios">
+        <div className="hud-inventory hud-interactive" data-driving={seated && showTouch} aria-label="Barra de herramientas e inventario">
+          {/* Micro-barra minimalista: aparece al cambiar de herramienta o llevar pieza y se desvanece sola */}
+          {showToolStrip && (
+            <div key={`${activeTool}-${wrenchAxis}-${carriedKind ?? ''}`} className="hud-tool-strip" data-tool={activeTool} role="status" aria-live="polite">
+              {activeTool !== 'hand' && (
+                <span className="hud-tool-strip-name">{HOTBAR_TOOL_META[activeTool].name}</span>
+              )}
+              {carriedKind ? (
+                <>
+                  <span><kbd>Ruedita</kbd> Girar</span>
+                  <span><kbd>Clic der.</kbd> Eje {AXIS_LABELS[wrenchAxis]}</span>
+                </>
+              ) : activeTool === 'saw' ? (
+                <span>
+                  {sawPhase === 'trace'
+                    ? 'Soltá para cortar'
+                    : sawPhase === 'cut'
+                      ? 'Cortando…'
+                      : <><kbd>Mantené + Arrastrá</kbd> Cortar</>}
+                </span>
+              ) : activeTool === 'grinder' ? (
+                <span><kbd>Mantené Clic izq.</kbd> Cortar unión</span>
+              ) : activeTool === 'welder' ? (
+                <span><kbd>Mantené Clic izq.</kbd> Soldar</span>
+              ) : activeTool === 'wire' ? (
+                <span><kbd>Clic izq.</kbd> {pendingWireFrom ? 'Destino' : 'Origen'} · <kbd>Clic der.</kbd> Cancelar</span>
+              ) : (
+                <span><kbd>Ruedita</kbd> Girar · <kbd>Clic der.</kbd> {wrenchTarget === 'piece' ? `Eje ${AXIS_LABELS[wrenchAxis]}` : 'Guardar'}</span>
+              )}
+            </div>
+          )}
+          {!showTouch && seated && (
+            <div className="hud-tool-strip is-drive" role="status">
+              {seatedFlightMode ? (
+                <>
+                  <span><kbd>WASD</kbd> Volar</span>
+                  <span><kbd>Espacio</kbd> Subir</span>
+                  <span><kbd>Shift</kbd> Bajar</span>
+                  <span><kbd>E</kbd> Bajar del invento</span>
+                </>
+              ) : (
+                <>
+                  <span><kbd>WASD</kbd> Conducir</span>
+                  <span><kbd>Espacio</kbd> Turbo</span>
+                  <span><kbd>E</kbd> Salir del asiento</span>
+                </>
+              )}
+            </div>
+          )}
           {!seated && !isDelivery && (
-            <>
-              <div className="hud-workshop-quick" role="group" aria-label="Herramientas del taller">
-                <button type="button" className="hud-button hud-wrench" aria-pressed={wrenchEquipped}
-                  title="Equipar o guardar la Llave Mágica" onClick={() => gameStore.toggleWrench()}>
-                  <ToolIcon tool="wrench" />Llave{!showTouch && <kbd>X</kbd>}
-                </button>
-                {showTouch && (
-                  <button type="button" className="hud-button hud-wrench" aria-pressed={welderEquipped || grinderEquipped || sawEquipped}
-                    title="Cambiar de herramienta: soldadora, amoladora, sierra láser, guardar" onClick={() => gameStore.toggleWelder()}>
-                    <ToolIcon tool={grinderEquipped ? 'grinder' : sawEquipped ? 'saw' : 'welder'} />
-                    {grinderEquipped ? 'Amoladora' : sawEquipped ? 'Sierra láser' : welderEquipped ? 'Soldadora' : 'Soldar / Cortar'}
-                  </button>
-                )}
-                <button type="button" className="hud-button hud-cable-tool" aria-pressed={wiringActive}
-                  disabled={Boolean(carriedKind || placingStructure || assemblyInteraction === 'drop')}
-                  onClick={wiringActive ? cancelWire : startWiring}>
-                  Cablear
-                </button>
-                <button type="button" className={toolsOpen ? 'hud-button is-accent' : 'hud-button'} aria-expanded={toolsOpen}
-                  aria-controls={toolsOpen ? 'hud-workshop-editor' : undefined}
-                  onClick={() => { playWoodClick(); setToolsOpen((open) => !open); }}>
-                  Herramientas{!showTouch && <kbd>Tab</kbd>}
-                </button>
-                <button type="button" className="hud-button" onClick={openParts}>
+            <div className="hud-hotbar-row">
+              <div className="hud-slots hud-hotbar" role="toolbar" aria-label="Herramientas y bolsillos">
+                {HOTBAR_TOOLS.map((toolId) => {
+                  const meta = HOTBAR_TOOL_META[toolId];
+                  const active = activeTool === toolId;
+                  const thumb = toolThumbs[toolId];
+                  const wireDisabled = toolId === 'wire' && Boolean(carriedKind || placingStructure || assemblyInteraction === 'drop');
+                  return (
+                    <button
+                      key={toolId}
+                      type="button"
+                      className="hud-slot hud-tool-slot"
+                      data-tool={toolId}
+                      aria-pressed={active}
+                      disabled={wireDisabled}
+                      aria-label={`${meta.name} (tecla ${meta.key})`}
+                      title={meta.tip}
+                      onClick={() => {
+                        playWoodClick();
+                        if (toolId === 'wire' && wiringActive) cancelWire();
+                        else gameStore.selectTool(toolId);
+                      }}
+                    >
+                      {!showTouch && <kbd>{meta.key}</kbd>}
+                      {thumb ? (
+                        <img className="hud-slot-3d" src={thumb} alt="" draggable={false} />
+                      ) : (
+                        <ToolIcon tool={toolId} className="hud-slot-svg" />
+                      )}
+                      <span className="hud-slot-name">{meta.short}</span>
+                    </button>
+                  );
+                })}
+                <span className="hud-hotbar-sep" aria-hidden="true" />
+                {([5, 0, 1, 2] as const)
+                  .filter((slotIndex) => !showTouch || slotIndex === 5 || Boolean(inventorySlots[slotIndex]))
+                  .map((slotIndex) => {
+                  const item = inventorySlots[slotIndex];
+                  const keyNum = slotIndex === 5 ? 6 : slotIndex + 7;
+                  const active = activeTool === 'hand' && slotIndex === inventorySelection && Boolean(item);
+                  return (
+                    <button
+                      key={slotIndex}
+                      type="button"
+                      className="hud-slot"
+                      aria-pressed={active}
+                      aria-label={`Espacio ${keyNum}: ${item ? ITEM_LABELS[item.kind] : 'bolsillo vacío'}`}
+                      title={item ? `${ITEM_LABELS[item.kind]} (${keyNum})` : `Bolsillo vacío (${keyNum}) — Usá I para guardar una pieza`}
+                      onClick={() => playerInput.triggerInventoryAction(slotIndex)}
+                    >
+                      {!showTouch && <kbd>{keyNum}</kbd>}
+                      {item && (
+                        <>
+                          <PropSlotIcon kind={item.kind} />
+                          <span className="hud-slot-name">{ITEM_SHORT[item.kind]}</span>
+                        </>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="hud-hotbar-side">
+                <button type="button" className="hud-button hud-hotbar-pill" title="Abrir dispensador de piezas (N)" onClick={openParts}>
                   Piezas{!showTouch && <kbd>N</kbd>}
                 </button>
+                <button
+                  type="button"
+                  className={toolsOpen ? 'hud-button hud-hotbar-pill is-accent' : 'hud-button hud-hotbar-pill'}
+                  aria-expanded={toolsOpen}
+                  aria-controls={toolsOpen ? 'hud-workshop-editor' : undefined}
+                  title="Banco del taller: mesa de corte 2D, banco RPM y base (Tab)"
+                  onClick={() => { playWoodClick(); setToolsOpen((open) => !open); }}
+                >
+                  Taller{!showTouch && <kbd>Tab</kbd>}
+                </button>
               </div>
-            </>
+            </div>
           )}
-          <div className="hud-slots">
-            {inventorySlots.map((item, index) => (
-              <button
-                key={index}
-                type="button"
-                className="hud-slot"
-                aria-pressed={index === inventorySelection}
-                aria-label={`Espacio ${index + 1}: ${item ? ITEM_LABELS[item.kind] : 'vacío'}`}
-                title={item ? ITEM_LABELS[item.kind] : 'Vacío'}
-                onClick={() => playerInput.triggerInventoryAction(index)}
-              >
-                <kbd>{index + 1}</kbd>
-                {item && (
-                  <>
-                    <PropSlotIcon kind={item.kind} />
-                    <span className="hud-slot-name">{ITEM_SHORT[item.kind]}</span>
-                  </>
-                )}
-              </button>
-            ))}
-          </div>
+          {!seated && isDelivery && (
+            <div className="hud-slots">
+              {inventorySlots.map((item, index) => (
+                <button
+                  key={index}
+                  type="button"
+                  className="hud-slot"
+                  aria-pressed={index === inventorySelection}
+                  aria-label={`Espacio ${index + 1}: ${item ? ITEM_LABELS[item.kind] : 'vacío'}`}
+                  title={item ? ITEM_LABELS[item.kind] : 'Vacío'}
+                  onClick={() => playerInput.triggerInventoryAction(index)}
+                >
+                  <kbd>{index + 1}</kbd>
+                  {item && (
+                    <>
+                      <PropSlotIcon kind={item.kind} />
+                      <span className="hud-slot-name">{ITEM_SHORT[item.kind]}</span>
+                    </>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="hud-action-area">
           {!seated && !isDelivery && toolsOpen && !contextualOptions && (
-            <section id="hud-workshop-editor" className="hud-build-panel hud-interactive" aria-label="Editor del taller">
+            <section id="hud-workshop-editor" className="hud-build-panel wood-sign hud-interactive" aria-label="Banco del taller">
+              <WoodBolts />
               <div className="hud-editor-heading">
-                <strong>Herramientas</strong>
+                <strong>Banco del Taller</strong>
                 <button type="button" className="hud-button" onClick={() => setToolsOpen(false)}>Cerrar</button>
               </div>
-              <div className="hud-build-row" aria-label="Herramientas de montaje y prueba">
-                <button type="button" className="hud-button" disabled={!carriedKind}
-                  onClick={() => playerInput.triggerPartAction('weld')}><ToolIcon tool="welder" />Soldar</button>
-                <button type="button" className="hud-button" disabled={Boolean(carriedKind || !nearbyTargetMounted)}
-                  onClick={() => playerInput.triggerPartAction('unmount')}>Desmontar unión</button>
-                <button type="button" className="hud-button" disabled={!contractState.canRepairLastBuild}
-                  onClick={() => playerInput.triggerCartAction('repair')}>Reparar</button>
-                <button type="button" className="hud-button" disabled={Boolean(carriedKind || placingStructure)}
-                  onClick={openBench}>Banco RPM</button>
+              <div className="hud-build-row" aria-label="Estaciones del taller">
                 {gameMode.mode === 'sandbox' && (
                   <button type="button" className="hud-button is-accent" onClick={() => { setLaserOpen(true); setToolsOpen(false); }}>
-                    <ToolIcon tool="sawTable" />Mesa de corte
+                    <ToolIcon tool="sawTable" />Mesa de corte 2D
                   </button>
                 )}
                 {gameMode.mode === 'sandbox' && (
@@ -2154,57 +2470,31 @@ export function HudOverlay() {
                     <ToolIcon tool="slice" />Recortar chapa
                   </button>
                 )}
+                <button type="button" className="hud-button" disabled={Boolean(carriedKind || placingStructure)}
+                  onClick={openBench}>Banco RPM</button>
               </div>
-              <div className="hud-build-row">
-                <button type="button" className="hud-button hud-wrench" aria-pressed={sawEquipped}
-                  title="Sierra láser: cortá cualquier pieza trazando una línea con el láser" onClick={() => gameStore.toggleSaw()}>
-                  <ToolIcon tool="saw" />{sawEquipped ? 'Guardar sierra' : 'Sierra láser'}{!showTouch && <kbd>Shift+C</kbd>}
+              <div className="hud-build-row" aria-label="Acciones rápidas">
+                <button type="button" className="hud-button" disabled={!canUndoMount}
+                  onClick={() => playerInput.triggerCartAction('undo')}>
+                  Deshacer{!showTouch && <kbd>Ctrl+Z</kbd>}
                 </button>
-                <button type="button" className="hud-button hud-wrench" aria-pressed={wrenchEquipped}
-                  onClick={() => gameStore.toggleWrench()}>
-                  <ToolIcon tool="wrench" />{wrenchEquipped ? 'Guardar llave' : 'Equipar llave'}{!showTouch && <kbd>X</kbd>}
+                <button type="button" className="hud-button" disabled={!contractState.canRepairLastBuild}
+                  onClick={() => playerInput.triggerCartAction('repair')}>
+                  Reparar{!showTouch && <kbd>H</kbd>}
                 </button>
-                {wrenchEquipped && (
-                  <button type="button" className="hud-button hud-wrench" aria-pressed={wrenchAiming}
-                    onClick={() => gameStore.toggleWrenchAimLock()}>
-                    Mira láser{!showTouch && <kbd>M</kbd>}
-                  </button>
-                )}
-                <button type="button" className="hud-button" onClick={openParts}>
-                  Pedir piezas{!showTouch && <kbd>N</kbd>}
-                </button>
+                <button type="button" className="hud-button" disabled={Boolean(carriedKind || !nearbyTargetMounted)}
+                  onClick={() => playerInput.triggerPartAction('unmount')}>Soltar unión</button>
               </div>
-              <p className="hud-editor-hint">
-                {carriedKind
-                  ? 'Apuntá a otra pieza o a una base para soldar donde se tocan.'
-                  : !wrenchEquipped
-                    ? 'Equipá la Llave Mágica para apuntar y ajustar las piezas.'
-                    : !wrenchAiming
-                      ? 'Activá la mira para elegir una pieza o una base.'
-                      : 'Apuntá a la pieza que querés girar o conectar.'}
-              </p>
-              {wrenchEquipped && wrenchAiming && (
-                <p className="hud-editor-hint">
-                  En la mira: {activeContextText ?? 'Buscá una pieza'}{canRotatePiece && ` · Eje ${wrenchAxis.toUpperCase()}`}
-                </p>
-              )}
-              {carriedKind && !wrenchAiming && !workshopSlot && (
-                <div className="hud-build-row">
-                  <button type="button" className="hud-button is-accent" onClick={() => playerInput.triggerPartAction('weld')}>
-                    <ToolIcon tool="welder" />Soldar aquí{!showTouch && <kbd>F</kbd>}
-                  </button>
-                </div>
-              )}
               {canRotatePiece && (
                 <div className="hud-build-row">
-                  <span>Pieza</span>
-                  <button type="button" className="hud-button hud-axis" title="Cambiar eje (Z)" onClick={() => gameStore.cycleWrenchAxis()}>
-                    {wrenchAxis}{!showTouch && <kbd>Z</kbd>}
+                  <span>Giro</span>
+                  <button type="button" className="hud-button hud-axis" title="Cambiar eje (Clic der. / Z)" onClick={() => gameStore.cycleWrenchAxis()}>
+                    {AXIS_LABELS[wrenchAxis]}{!showTouch && <kbd>Z</kbd>}
                   </button>
                   <button type="button" className="hud-button" aria-label="Girar pieza a la izquierda"
-                    title="Girar pieza a la izquierda (Mayús + R)" onClick={() => playerInput.triggerCartAction('rotate-back')}>↶</button>
+                    title="Girar a la izquierda (Shift + R)" onClick={() => playerInput.triggerCartAction('rotate-back')}>↶</button>
                   <button type="button" className="hud-button" aria-label="Girar pieza a la derecha"
-                    title="Girar pieza a la derecha (ruedita al apuntar)" onClick={() => playerInput.triggerCartAction('rotate')}>↷</button>
+                    title="Girar a la derecha (Ruedita / R)" onClick={() => playerInput.triggerCartAction('rotate')}>↷</button>
                 </div>
               )}
               {cartMode && (
@@ -2217,17 +2507,13 @@ export function HudOverlay() {
                     <button type="button" className="hud-button" onClick={() => playerInput.triggerCartAction('push')}>
                       Empujar{!showTouch && <kbd>P</kbd>}
                     </button>
-                  ) : wrenchEquipped ? (
+                  ) : (
                     <>
                       <button type="button" className="hud-button" aria-label="Girar base a la izquierda"
-                        title="Girar base a la izquierda (Mayús + B)" onClick={() => playerInput.triggerCartAction('rotate-base-back')}>↶</button>
+                        title="Girar base a la izquierda (Shift + B)" onClick={() => playerInput.triggerCartAction('rotate-base-back')}>↶</button>
                       <button type="button" className="hud-button" aria-label="Girar base a la derecha"
                         title="Girar base a la derecha (B)" onClick={() => playerInput.triggerCartAction('rotate-base')}>↷</button>
                     </>
-                  ) : (
-                    <button type="button" className="hud-button" onClick={() => playerInput.triggerCartAction('rotate')}>
-                      Girar 45°{!showTouch && <kbd>R</kbd>}
-                    </button>
                   )}
                 </div>
               )}
@@ -2244,32 +2530,9 @@ export function HudOverlay() {
                     onClick={() => playerInput.triggerCartAction('move-right')}>▶</button>
                   <button type="button" className="hud-button" aria-label="Subir" title="Subir (RePág / Alt + Espacio)"
                     onClick={() => playerInput.triggerCartAction('move-up')}>↥</button>
-                  <button type="button" className="hud-button" aria-label="Bajar" title="Bajar (AvPág / Alt + Mayús)"
+                  <button type="button" className="hud-button" aria-label="Bajar" title="Bajar (AvPág / Alt + Shift)"
                     onClick={() => playerInput.triggerCartAction('move-down')}>↧</button>
                 </div>
-              )}
-              {canUndoMount && (
-                <div className="hud-build-row">
-                  <button type="button" className="hud-button" title="Deshacer último montaje (U o Ctrl+Z)"
-                    onClick={() => playerInput.triggerCartAction('undo')}>
-                    Deshacer{!showTouch && <kbd>U</kbd>}
-                  </button>
-                </div>
-              )}
-              {!showTouch && (
-                <details className="hud-editor-shortcuts">
-                  <summary>Atajos de edición</summary>
-                  <dl>
-                    <dt><kbd>Tab</kbd></dt><dd>Abrir o cerrar el editor</dd>
-                    <dt><kbd>X</kbd> <kbd>M</kbd></dt><dd>Equipar llave / activar mira</dd>
-                    <dt><kbd>F</kbd></dt><dd>Soldar o usar el aparato</dd>
-                    <dt>Ruedita <kbd>R</kbd></dt><dd>Con la mira: girar pieza / cambiar eje</dd>
-                    <dt><kbd>Q</kbd></dt><dd>Volver al slot anterior</dd>
-                    <dt><kbd>L</kbd> <kbd>K</kbd></dt><dd>Cablear / quitar cables</dd>
-                    <dt><kbd>U</kbd></dt><dd>Deshacer último montaje</dd>
-                    <dt><kbd>1–6</kbd></dt><dd>Elegir slot del inventario</dd>
-                  </dl>
-                </details>
               )}
             </section>
           )}
@@ -2353,21 +2616,26 @@ export function HudOverlay() {
               {!useWireAction && !toolsOpen && !carriedKind && !placingStructure && cartMode === 'fixed' && (
                 <button type="button" className="hud-ctx-btn" onClick={openBench}>Probar RPM</button>
               )}
-              {showTouch && (
-                <button type="button" className="hud-ctx-btn" aria-pressed={wrenchAiming}
-                  onClick={() => gameStore.toggleWrenchAimLock()}>Mira</button>
-              )}
               {showTouch && !useWireAction && (carriedKind || canRotatePiece || placingStructure) && (
-                <button type="button" className="hud-ctx-btn" aria-label="Girar" onClick={() => playerInput.triggerCartAction('rotate')}>Girar ↷</button>
+                <>
+                  <button type="button" className="hud-ctx-btn" aria-label="Cambiar eje"
+                    onClick={() => { playWoodClick(); gameStore.cycleWrenchAxis(); }}>
+                    Eje {AXIS_LABELS[wrenchAxis]}
+                  </button>
+                  <button type="button" className="hud-ctx-btn is-accent" aria-label="Girar"
+                    onClick={() => playerInput.triggerCartAction('rotate')}>
+                    Girar ↷
+                  </button>
+                </>
               )}
-              {useWireAction ? (
-                <button type="button" className="hud-ctx-btn" onClick={cancelWire}>Cancelar cable{!showTouch && <kbd>Esc</kbd>}</button>
-              ) : (
+              {useWireAction && pendingWireFrom && (
+                <button type="button" className="hud-ctx-btn" onClick={cancelWire}>Cancelar{!showTouch && <kbd>Esc</kbd>}</button>
+              )}
+              {!useWireAction && hasContextualOptions && (
                 <button type="button" className="hud-ctx-btn"
-                  disabled={!hasContextualOptions}
                   aria-expanded={contextualOptions} aria-controls={contextualOptions ? 'hud-context-options' : undefined}
                   onClick={() => setMoreOpen((open) => !open)}>
-                  {contextualOptions ? 'Cerrar opciones' : 'Más'}{!showTouch && <kbd>Alt+E</kbd>}
+                  {contextualOptions ? 'Cerrar' : 'Opciones'}{!showTouch && <kbd>Alt+E</kbd>}
                 </button>
               )}
             </div>
@@ -2523,15 +2791,13 @@ export function HudOverlay() {
         </div>
       </div>
 
-      {showHelp && !showTouch && (
-        <div className="hud-guide">
-          <span><kbd>WASD</kbd> {seated ? (seatedFlightMode ? 'Volar' : 'Conducir') : 'Mover'}</span>
-          <span><kbd>Espacio</kbd> {seated ? (seatedFlightMode ? 'Subir' : 'Turbo') : 'Saltar'}</span>
-          {seated && seatedFlightMode && <span><kbd>Shift</kbd> Descender</span>}
-          <span><kbd>E</kbd> {seated ? 'Salir del asiento' : 'Interactuar'}</span>
-          {!seated && <span><kbd>Tab</kbd> Editor y atajos</span>}
-          {mouseLookMode === 'pointerLock' && !pointerLocked && <span>Clic en escena: Ratón libre · Esc: cursor</span>}
-          {(wrenchEquipped || wrenchAimLocked) && <span><kbd>Clic der.</kbd> Mira · <kbd>Clic izq.</kbd> Usar · Ruedita: girar · <kbd>R</kbd> Eje</span>}
+      {showHelp && !showTouch && !menuOpen && !showWelcome && (
+        <div className="hud-micro-cue">
+          {mouseLookMode === 'pointerLock' && !pointerLocked ? (
+            <span>Clic en pantalla · Cámara libre</span>
+          ) : (
+            <span><kbd>F1</kbd> Controles</span>
+          )}
         </div>
       )}
     </div>

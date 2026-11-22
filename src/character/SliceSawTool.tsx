@@ -59,10 +59,10 @@ export function SliceSawTool({ tipRef }: { tipRef?: RefObject<Group | null> }) {
           <meshStandardMaterial color={BRASS} roughness={0.35} metalness={0.8} />
         </mesh>
       </group>
-      {/* Guía de corte celeste */}
-      <mesh position={[0.058, -0.088, 0.28]}>
-        <boxGeometry args={[0.004, 0.004, 0.32]} />
-        <meshBasicMaterial color="#52e0f0" transparent opacity={0.8} />
+      {/* Emisor láser compacto en la punta del protector */}
+      <mesh position={[0.048, -0.025, 0.19]}>
+        <sphereGeometry args={[0.011, 10, 10]} />
+        <meshBasicMaterial color="#72f3ff" />
       </mesh>
     </group>
   );

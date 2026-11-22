@@ -14,7 +14,10 @@ export function wrenchStep(out: Quaternion, axis: WrenchAxis, direction: number)
   return out.setFromAxisAngle(AXIS_VECTORS[axis], WRENCH_STEP * direction);
 }
 
-type CarryVolume = { halfExtents: { x: number; y: number; z: number } } | { halfHeight: number; radius: number };
+type CarryVolume =
+  | { halfExtents: { x: number; y: number; z: number } }
+  | { halfHeight: number; radius: number }
+  | { points: readonly [number, number, number][] };
 
 /** Bounding height of the collision shape after rotating it into its drop pose. */
 export function rotatedHalfHeight(shape: CarryVolume, rotation: Quaternion) {
@@ -27,6 +30,14 @@ const inverseRotation = new Quaternion();
 export function rotatedSupportDistance(shape: CarryVolume, rotation: Quaternion, normal: { x: number; y: number; z: number }) {
   inverseRotation.copy(rotation).invert();
   const { x, y, z } = localNormal.copy(normal).applyQuaternion(inverseRotation);
+  if ('points' in shape) {
+    let maxExtent = 0;
+    for (const [px, py, pz] of shape.points) {
+      const d = -(px * x + py * y + pz * z);
+      if (d > maxExtent) maxExtent = d;
+    }
+    return Math.max(0.02, maxExtent);
+  }
   const alongY = Math.min(1, Math.abs(y));
   if ('halfHeight' in shape) {
     return shape.halfHeight * alongY + shape.radius * Math.sqrt(Math.max(0, 1 - alongY * alongY));

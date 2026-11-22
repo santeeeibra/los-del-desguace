@@ -291,16 +291,33 @@
   border-radius: 5px;
 }
 
-.hud-build-panel {
-  width: min(350px, calc(100vw - 32px));
-  max-height: min(52dvh, 420px);
-  padding: 10px;
+.hud-build-panel,
+.hud-build-panel.wood-sign {
+  position: fixed;
+  right: max(14px, env(safe-area-inset-right));
+  bottom: max(140px, calc(env(safe-area-inset-bottom) + 140px));
+  z-index: 8;
+  width: min(340px, calc(100vw - 28px));
+  max-height: min(50dvh, 390px);
+  padding: 12px 14px;
   display: grid;
   gap: 8px;
   box-sizing: border-box;
   overflow-y: auto;
   overscroll-behavior: contain;
   touch-action: pan-y;
+  transform-origin: bottom right;
+  animation: hud-panel-pop 200ms var(--hud-motion) both;
+}
+@media (max-width: 760px) {
+  .hud-build-panel,
+  .hud-build-panel.wood-sign {
+    left: 50%;
+    right: auto;
+    bottom: max(172px, calc(env(safe-area-inset-bottom) + 172px));
+    transform-origin: bottom center;
+    animation: hud-panel-pop-center 200ms var(--hud-motion) both;
+  }
 }
 .hud-editor-heading { display: flex; gap: 12px; justify-content: space-between; align-items: center; }
 .hud-editor-heading > strong { font-family: var(--font-display); font-size: 16px; color: var(--hud-ink); }
@@ -537,41 +554,254 @@
   background: radial-gradient(circle at 40% 26%, #df6e50, #a43f26);
 }
 
-.hud-guide {
+/* ── Barra de herramientas 3D + bolsillos (Hotbar unificada) ───────── */
+.hud-hotbar-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 8px;
+  max-width: calc(100vw - 24px);
+}
+
+.hud-hotbar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 7px;
+  border: 3px solid var(--hud-outline);
+  border-radius: 18px;
+  background:
+    repeating-linear-gradient(2deg, rgba(255, 224, 166, .03) 0 8px, transparent 8px 18px),
+    linear-gradient(178deg, #744420 0%, #4b2a11 72%, #3a1f0b 100%);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 228, 175, .28),
+    inset 0 -3px 0 rgba(24, 10, 3, .55),
+    0 6px 0 var(--hud-outline),
+    0 12px 26px rgba(14, 6, 2, .45);
+}
+
+.hud-hotbar-sep {
+  width: 2.5px;
+  height: 40px;
+  margin: 0 2px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, rgba(255, 224, 150, .55), rgba(44, 22, 7, .85), rgba(255, 210, 130, .3));
+  box-shadow: 1px 0 0 rgba(255, 232, 185, .16);
+}
+
+.hud-slot-3d {
+  width: 82%;
+  height: 82%;
+  object-fit: contain;
+  pointer-events: none;
+  filter: drop-shadow(0 3px 3px rgba(20, 8, 2, .65));
+  transition: transform 140ms var(--hud-motion);
+}
+.hud-tool-slot:hover:not(:disabled) .hud-slot-3d {
+  transform: scale(1.1) rotate(-4deg);
+}
+.hud-tool-slot[aria-pressed="true"] .hud-slot-3d {
+  transform: scale(1.14) translateY(-1px) rotate(-5deg);
+}
+
+.hud-tool-slot[aria-pressed="true"][data-tool="wrench"] {
+  border-color: #7df5d7;
+  background: linear-gradient(165deg, #3c8f81, #1f544c);
+  box-shadow: inset 0 2px 0 rgba(190, 255, 240, .45), 0 0 14px rgba(105, 245, 210, .36), 0 5px 0 var(--hud-outline);
+}
+.hud-tool-slot[aria-pressed="true"][data-tool="welder"] {
+  border-color: #ffe26e;
+  background: linear-gradient(165deg, #d28828, #8a4712);
+  box-shadow: inset 0 2px 0 rgba(255, 242, 184, .5), 0 0 14px rgba(255, 214, 88, .4), 0 5px 0 var(--hud-outline);
+}
+.hud-tool-slot[aria-pressed="true"][data-tool="grinder"] {
+  border-color: #ff9c66;
+  background: linear-gradient(165deg, #c95830, #7c2912);
+  box-shadow: inset 0 2px 0 rgba(255, 214, 186, .42), 0 0 14px rgba(255, 134, 72, .4), 0 5px 0 var(--hud-outline);
+}
+.hud-tool-slot[aria-pressed="true"][data-tool="saw"] {
+  border-color: #72f2ff;
+  background: linear-gradient(165deg, #257d96, #14485c);
+  box-shadow: inset 0 2px 0 rgba(194, 250, 255, .45), 0 0 14px rgba(96, 238, 255, .42), 0 5px 0 var(--hud-outline);
+}
+.hud-tool-slot[aria-pressed="true"][data-tool="wire"] {
+  border-color: #6dfad7;
+  background: linear-gradient(165deg, #2d877a, #175249);
+  box-shadow: inset 0 2px 0 rgba(188, 255, 238, .45), 0 0 14px rgba(96, 248, 212, .38), 0 5px 0 var(--hud-outline);
+}
+.hud-tool-slot:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.hud-hotbar-side {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.hud-hotbar-pill {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+/* Micro-barra contextual viva sobre la hotbar (sin muros de texto) */
+.hud-tool-strip {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 12px;
+  padding: 5px 14px;
+  border: 2px solid rgba(255, 224, 158, .35);
+  border-radius: 999px;
+  background: rgba(34, 18, 8, .82);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 14px rgba(12, 5, 1, .38);
+  color: #fff3da;
+  font-size: 12px;
+  font-weight: 700;
+  pointer-events: none;
+}
+.hud-tool-strip-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: #ffe066;
+  letter-spacing: .01em;
+}
+.hud-tool-strip[data-tool="wrench"] .hud-tool-strip-name { color: #7df5d7; }
+.hud-tool-strip[data-tool="welder"] .hud-tool-strip-name { color: #ffe066; }
+.hud-tool-strip[data-tool="grinder"] .hud-tool-strip-name { color: #ff9c66; }
+.hud-tool-strip[data-tool="saw"] .hud-tool-strip-name { color: #72f2ff; }
+.hud-tool-strip[data-tool="wire"] .hud-tool-strip-name { color: #6dfad7; }
+.hud-tool-strip kbd {
+  margin-right: 3px;
+  background: rgba(255, 226, 152, .16);
+  border-color: rgba(255, 226, 152, .32);
+  color: #ffebb8;
+}
+
+/* Indicador discreto inferior izquierdo (reemplaza el cartel beta de texto) */
+.hud-micro-cue {
   position: absolute;
   left: max(14px, env(safe-area-inset-left));
   bottom: max(14px, env(safe-area-inset-bottom));
-  display: flex;
-  flex-wrap: wrap;
-  max-width: calc((100% - 440px) / 2);
-  gap: 5px 8px;
-  padding: 7px 11px;
-  font-size: 11px;
+  padding: 5px 11px;
+  border: 1.5px solid rgba(255, 226, 168, .28);
+  border-radius: 999px;
+  background: rgba(34, 18, 8, .66);
+  backdrop-filter: blur(6px);
+  color: rgba(255, 244, 218, .88);
+  font-size: 11.5px;
   font-weight: 700;
-  color: var(--hud-ink);
+  pointer-events: none;
+}
+@media (max-width: 960px) {
+  .hud-micro-cue { display: none; }
 }
 
-@media (max-width: 880px) {
-  .hud-guide { display: none; }
-}
-.hud-reticle {
+/* Mira dinámica + anillo circular de progreso (soldar / amolar / sierra) */
+.hud-reticle-wrap {
   position: absolute;
   inset: 50% auto auto 50%;
-  width: 8px;
-  aspect-ratio: 1;
-  border: 1.5px solid var(--hud-paper);
-  border-radius: 50%;
-  background: rgba(44, 22, 7, .65);
+  width: 44px;
+  height: 44px;
   transform: translate(-50%, -50%);
-  transition: transform 130ms var(--hud-motion);
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  z-index: 4;
 }
-.hud-reticle[data-target="true"] { transform: translate(-50%, -50%) scale(1.65); border-color: var(--hud-yellow); }
-.hud-reticle[data-wrench="true"] { border-color: var(--hud-teal); }
+.hud-reticle {
+  position: relative;
+  width: 9px;
+  aspect-ratio: 1;
+  border: 2px solid var(--hud-paper);
+  border-radius: 50%;
+  background: rgba(44, 22, 7, .55);
+  box-shadow: 0 0 0 1.5px rgba(24, 10, 3, .65);
+  transition: transform 130ms var(--hud-motion), border-color 130ms ease, border-radius 130ms ease;
+}
+.hud-reticle[data-target="true"] { transform: scale(1.55); border-color: var(--hud-yellow); }
+.hud-reticle[data-tool="wrench"] { width: 12px; border-color: #7df5d7; background: transparent; }
+.hud-reticle[data-tool="welder"] { width: 12px; border-color: #ffe066; background: rgba(255, 208, 64, .2); }
+.hud-reticle[data-tool="grinder"] { width: 12px; border-color: #ff8c52; border-radius: 3px; transform: rotate(45deg); }
+.hud-reticle[data-tool="grinder"][data-target="true"] { transform: rotate(45deg) scale(1.45); }
+.hud-reticle[data-tool="saw"] { width: 13px; border-color: #6df2ff; border-radius: 2px; transform: rotate(45deg); background: rgba(109, 242, 255, .16); }
+.hud-reticle[data-tool="saw"][data-target="true"] { transform: rotate(45deg) scale(1.45); }
+.hud-reticle[data-tool="wire"] { width: 12px; border-color: #6dfad7; border-style: dashed; }
 .hud-reticle[data-placement="ready"], .hud-reticle[data-wire="ready"] {
-  border-radius: 2px;
+  border-radius: 3px;
   border-color: #9cf6db;
+  background: rgba(156, 246, 219, .24);
 }
-.hud-reticle[data-placement="blocked"] { border-color: #ff8867; }
+.hud-reticle[data-placement="blocked"] { border-color: #ff7a54; background: rgba(255, 122, 84, .22); }
+
+.hud-reticle-ring {
+  position: absolute;
+  inset: 0;
+  width: 44px;
+  height: 44px;
+  transform: rotate(-90deg);
+  filter: drop-shadow(0 0 6px rgba(0, 0, 0, .55));
+}
+.hud-reticle-ring-bg {
+  fill: none;
+  stroke: rgba(34, 18, 8, .65);
+  stroke-width: 4.5;
+}
+.hud-reticle-ring-fg {
+  fill: none;
+  stroke: #ffe066;
+  stroke-width: 4;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 40ms linear;
+}
+.hud-reticle-ring[data-tool="grinder"] .hud-reticle-ring-fg { stroke: #ff8648; }
+.hud-reticle-ring[data-tool="saw"] .hud-reticle-ring-fg { stroke: #6cf2ff; }
+
+@keyframes hud-panel-pop {
+  from { opacity: 0; transform: translateY(12px) scale(.94); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes hud-panel-pop-center {
+  from { opacity: 0; transform: translate(-50%, 12px) scale(.94); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+@keyframes hud-strip-in {
+  from { opacity: 0; transform: translateY(8px) scale(.94); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes hud-slot-equip {
+  0% { transform: translateY(-2px) scale(.95); }
+  55% { transform: translateY(-6px) scale(1.1); }
+  100% { transform: translateY(-4px) scale(1.05); }
+}
+@keyframes hud-reticle-pulse {
+  0%, 100% { box-shadow: 0 0 0 1.5px rgba(24, 10, 3, .65), 0 0 8px rgba(156, 246, 219, .45); }
+  50% { box-shadow: 0 0 0 1.5px rgba(24, 10, 3, .65), 0 0 16px rgba(156, 246, 219, .85); }
+}
+
+.hud-tool-slot[aria-pressed="true"] {
+  animation: hud-slot-equip 220ms var(--hud-motion) both;
+}
+
+.hud-tool-strip {
+  animation: hud-strip-in 190ms var(--hud-motion) both;
+}
+
+.hud-reticle[data-placement="ready"],
+.hud-reticle[data-wire="ready"] {
+  animation: hud-reticle-pulse 1.1s ease-in-out infinite;
+}
+
+@media (max-width: 760px) {
+  .hud-hotbar-row { flex-direction: column; align-items: center; gap: 5px; }
+  .hud-hotbar-side { flex-direction: row; }
+  .hud-hotbar .hud-slot { width: clamp(42px, 11.2vw, 52px); }
+  .hud-hotbar-sep { height: 28px; }
+}
 
 .hud-toast, .hud-impact { position: absolute; left: 50%; transform: translateX(-50%); }
 .hud-toast { top: 13%; padding: 6px 12px; font-family: var(--font-display); font-size: 13px; font-weight: 700; }

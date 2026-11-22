@@ -140,8 +140,14 @@ export interface FragmentMeshColors { base: [number, number, number]; cut: [numb
 /**
  * Malla de un trozo: casco convexo con normales planas. Las caras que caen sobre un plano de corte
  * (cualquiera de los cortes acumulados) se pintan con el color de "corte" para que se vea el tajo.
+ * Si `onlyCutFaces` es true, devuelve solo las tapas del corte (para combinar con el modelo 3D real recortado).
  */
-export function buildFragmentGeometry(points: V3[], planes: CutPlane[], colors: FragmentMeshColors): BufferGeometry | null {
+export function buildFragmentGeometry(
+  points: V3[],
+  planes: CutPlane[],
+  colors: FragmentMeshColors,
+  onlyCutFaces = false,
+): BufferGeometry | null {
   const hull = tryHull(points.map(([x, y, z]) => new Vector3(x, y, z)));
   if (!hull) return null;
   const pos = hull.getAttribute('position');
@@ -150,11 +156,6 @@ export function buildFragmentGeometry(points: V3[], planes: CutPlane[], colors: 
   const rgb: number[] = [];
   const nrm: number[] = [];
   const v = new Vector3();
-  for (let i = 0; i < pos.count; i++) {
-    v.fromBufferAttribute(pos, i);
-    out.push(v.x, v.y, v.z);
-    nrm.push(normals.getX(i), normals.getY(i), normals.getZ(i));
-  }
   for (let i = 0; i + 2 < pos.count; i += 3) {
     let onCut = false;
     for (const plane of planes) {
@@ -165,10 +166,17 @@ export function buildFragmentGeometry(points: V3[], planes: CutPlane[], colors: 
       }
       if (all) { onCut = true; break; }
     }
+    if (onlyCutFaces && !onCut) continue;
     const color = onCut ? colors.cut : colors.base;
-    for (let k = 0; k < 3; k++) rgb.push(...color);
+    for (let k = 0; k < 3; k++) {
+      v.fromBufferAttribute(pos, i + k);
+      out.push(v.x, v.y, v.z);
+      nrm.push(normals.getX(i + k), normals.getY(i + k), normals.getZ(i + k));
+      rgb.push(...color);
+    }
   }
   hull.dispose();
+  if (out.length === 0) return null;
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new Float32BufferAttribute(out, 3));
   geometry.setAttribute('normal', new Float32BufferAttribute(nrm, 3));
@@ -179,4 +187,15 @@ export function buildFragmentGeometry(points: V3[], planes: CutPlane[], colors: 
 /** Pasa un plano (n·p = d en el espacio de origen) al espacio local de un trozo trasladado por `origin`. */
 export function planeRelativeTo(n: Vector3, d: number, origin: Vector3): CutPlane {
   return { n: [n.x, n.y, n.z], d: d - n.dot(origin) };
+}
+
+/**
+ * Convierte un plano de corte (n·p = d en mundo) en un plano de recorte Three.js en espacio local del trozo:
+ * los puntos conservados cumplen `clip.n · p + clip.d >= 0` (`sign = +1` para `above`, `-1` para `below`).
+ */
+export function clipPlaneForSide(n: Vector3, d: number, centroid: Vector3, sign: 1 | -1): CutPlane {
+  return {
+    n: [n.x * sign, n.y * sign, n.z * sign],
+    d: (n.dot(centroid) - d) * sign,
+  };
 }

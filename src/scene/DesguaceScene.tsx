@@ -13,10 +13,12 @@ import { GameCameraRig } from '../controls/GameCameraRig';
 import { type CameraTargetSource } from '../controls/ThirdPersonCamera';
 import { ArenaAndBridgeZone } from '../environment/ArenaAndBridgeZone';
 import { CutStation } from '../environment/CutStation';
+import { ExpeditionLevels } from '../environment/ExpeditionLevels';
 import { ScrapyardWorkshop } from '../environment/ScrapyardWorkshop';
 import { TestTrackAndYard } from '../environment/TestTrackAndYard';
 import { TowerMirador } from '../environment/TowerMirador';
 import { TrackCheckpoints } from '../environment/TrackCheckpoints';
+import { useExpeditionStore } from '../modes/expeditionLevels';
 import { BlueprintHolograms } from '../invention/BlueprintHolograms';
 import { WorkshopChassis, WorkshopDrumStand } from '../invention/WorkshopChassis';
 import { LogicCables } from '../logic/LogicCables';
@@ -131,6 +133,7 @@ function FollowSunLight({
 export function DesguaceScene() {
   const quality = useGameStore((s) => s.quality);
   const resetNonce = useGameStore((s) => s.resetNonce);
+  const expedition = useExpeditionStore();
   const preset = QUALITY_PRESETS[quality];
   const cartBodyRef = useRef<RapierRigidBody>(null);
 
@@ -144,9 +147,10 @@ export function DesguaceScene() {
     <Canvas
       shadows={preset.shadows ? 'percentage' : false}
       dpr={preset.dpr}
-      camera={{ fov: 62, near: 0.06, far: 110, position: [2.2, 3.2, 9.6] }}
+      camera={{ fov: 62, near: 0.06, far: 165, position: [2.2, 3.2, 9.6] }}
       style={{ touchAction: 'none' }}
       onCreated={({ gl }) => {
+        gl.localClippingEnabled = true;
         gl.domElement.tabIndex = 0;
         gl.domElement.setAttribute('aria-label', 'Escena de Los del Desguace');
         unlockAudio();
@@ -159,7 +163,7 @@ export function DesguaceScene() {
       }}
     >
       <color attach="background" args={[PALETTE.fogColor]} />
-      <fog attach="fog" args={[PALETTE.fogColor, 36, 84]} />
+      <fog attach="fog" args={[PALETTE.fogColor, expedition.activeLevelId ? 54 : 36, expedition.activeLevelId ? 150 : 84]} />
 
       <ProceduralSkyDome />
 
@@ -208,6 +212,7 @@ export function DesguaceScene() {
           <TowerMirador />
           <CutStation playerSourceRef={cameraSourceRef} />
           <ArenaAndBridgeZone resetSignal={resetNonce} playerSourceRef={cameraSourceRef} />
+          <ExpeditionLevels playerSourceRef={cameraSourceRef} />
           <TrackCheckpoints />
           <DeliveryController />
           <ScrapCart position={[9, 0, -7.45]} rotation={[0, 0, 0]} />
@@ -222,6 +227,7 @@ export function DesguaceScene() {
             resetSignal={resetNonce}
             cameraSourceRef={cameraSourceRef}
             cartBodyRef={cartBodyRef}
+            teleportTarget={expedition.teleportRequest?.pos ?? null}
           />
           <SceneCutter />
           <LiveCutVisual />

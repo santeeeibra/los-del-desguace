@@ -2,9 +2,9 @@ import { useEffect } from 'react';
 import { snapshotPrimaryInteractRequest, type InteractRequest } from '../invention/interactResolution';
 import type { ContraptionBlueprint } from '../logic/blueprintManager';
 import type { ContractId } from '../modes/contracts';
-import { gameStore } from '../state/gameStore';
+import { gameStore, HOTBAR_TOOLS } from '../state/gameStore';
 import { buildToolsLocked } from '../modes/gameModes';
-import { INVENTORY_SIZE } from '../state/inventory';
+import { playWoodClick } from '../audio/sfxEngine';
 
 export interface PlayerInputSnapshot {
   forward: boolean;
@@ -286,11 +286,33 @@ export function dispatchGameKeyDown(e: KeyDownLike) {
     return;
   }
   if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat) {
-    const slot = /^Digit([1-6])$/.exec(e.code);
-    const index = slot ? Number(slot[1]) - 1 : -1;
-    if (index >= 0 && index < INVENTORY_SIZE) {
-      playerInput.triggerInventoryAction(index);
-      return;
+    const hud = gameStore.getState();
+    if (!hud.seated) {
+      if (e.code === 'Digit0' || e.code === 'Backquote') {
+        gameStore.selectTool('hand');
+        playWoodClick();
+        return;
+      }
+      const digit = /^Digit([1-9])$/.exec(e.code);
+      if (digit) {
+        const n = Number(digit[1]);
+        if (n >= 1 && n <= 5) {
+          if (buildToolsLocked()) {
+            playerInput.triggerInventoryAction(n - 1);
+          } else {
+            gameStore.selectTool(HOTBAR_TOOLS[n - 1]);
+            playWoodClick();
+          }
+          return;
+        }
+        if (n === 6) {
+          playerInput.triggerInventoryAction(5);
+          return;
+        }
+        // Teclas 7, 8, 9 → bolsillos rápidos de piezas (slots 0, 1, 2)
+        playerInput.triggerInventoryAction(n - 7);
+        return;
+      }
     }
     if (e.code === 'KeyI') {
       playerInput.triggerInventoryAction('store');
@@ -327,9 +349,7 @@ export function dispatchGameKeyDown(e: KeyDownLike) {
       }
       break;
     case 'KeyR':
-      if (!e.repeat && !e.shiftKey && !e.ctrlKey && !e.metaKey && gameStore.getState().wrenchAiming) {
-        gameStore.cycleWrenchAxis();
-      } else if (!e.ctrlKey && !e.metaKey && (!e.repeat || !gameStore.getState().wrenchAiming)) {
+      if (!e.ctrlKey && !e.metaKey) {
         playerInput.triggerCartAction(e.shiftKey ? 'rotate-back' : 'rotate');
       }
       break;
@@ -341,7 +361,7 @@ export function dispatchGameKeyDown(e: KeyDownLike) {
     case 'KeyX':
       if (!e.repeat && !e.ctrlKey && !e.metaKey) {
         if (e.shiftKey) gameStore.toggleWelder();
-        else gameStore.toggleWrench();
+        else gameStore.selectTool('wrench');
       }
       break;
     case 'KeyM':
@@ -369,7 +389,10 @@ export function dispatchGameKeyDown(e: KeyDownLike) {
       if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) playerInput.triggerCartAction('push');
       break;
     case 'KeyL':
-      if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) playerInput.requestWire();
+      if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (gameStore.getState().wiringActive) playerInput.requestWire();
+        else gameStore.selectTool('wire');
+      }
       break;
     case 'KeyK':
       if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) playerInput.triggerPartAction('unwire');
