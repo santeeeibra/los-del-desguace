@@ -997,6 +997,12 @@ export function HudOverlay() {
     (grinderEquipped && !carriedKind && nearbyTargetMounted) ||
     (sawEquipped && !carriedKind && sawPhase === 'idle')
   );
+  // Con amoladora o sierra apuntando a un objetivo válido, el botón es solo de herramienta (mantener):
+  // no dispara el agarre. Sin objetivo válido vuelve a ser el agarre de siempre.
+  const toolOnlyHold = !useWireAction && !seated && !carriedKind && (
+    (grinderEquipped && nearbyTargetMounted) ||
+    (sawEquipped && (Boolean(nearbyTargetKind) || sawPhase !== 'idle'))
+  );
   const primaryKey = sawEquipped && sawPhase === 'trace'
     ? 'Soltá clic'
     : holdAction
@@ -2770,17 +2776,18 @@ export function HudOverlay() {
                       } catch {
                         // Synthetic pointers can still trigger the one-shot action.
                       }
-                      playerInput.triggerInteract();
+                      if (!toolOnlyHold) playerInput.triggerInteract();
                     }}
                     onPointerUp={() => { playerInput.interactHeld = false; }}
                     onPointerCancel={() => { playerInput.interactHeld = false; }}
                     onLostPointerCapture={() => { playerInput.interactHeld = false; }}
                     onClick={(event) => {
-                      if (event.detail !== 0) return;
+                      if (event.detail !== 0 || toolOnlyHold) return;
                       playerInput.triggerInteract();
                     }}>
                     <span>{primaryLabel}</span>
                     {assemblyInteraction === 'push' && !useWireAction && <small>Mantené y caminá</small>}
+                    {holdAction && assemblyInteraction !== 'push' && !useWireAction && <small>{sawEquipped ? 'Mantené y arrastrá' : 'Mantené'}</small>}
                   </button>
                   <button type="button" className="hud-pad hud-pad-jump"
                     onPointerDown={(event) => {
