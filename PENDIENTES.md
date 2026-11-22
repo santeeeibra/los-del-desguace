@@ -83,7 +83,7 @@ Las mismas reglas valen para cualquier invento; ya no hay casos especiales por t
 - [x] Chorro de gotitas del color elegido, siseo suave y "clic-clac" de la lata al cambiar color.
 - [x] Liviano: el lienzo 256×256 se crea solo en el primer trazo; texturas se suben a la GPU como máximo cada 50 ms; se liberan cuando la pieza desaparece; el color base se reaplica si la pieza se rearma (H).
 - **Validar jugando:** pintar piezas con modelo GLB (si el UV es raro, el trazo puede salir en otro lugar de la pieza); FPS en iPhone 11 pintando a mano alzada; que el borrador devuelva el aspecto original; que el color se conserve al reconstruir con H.
-- Pendiente: modelo 3D de lata en la mano (hoy se ve la llave). La pintura base (`paint`) ya se guarda y restaura en planos compartidos por URL (`?bp=...`).
+- [x] Modelo 3D de lata de aerosol en la mano (`SprayCanTool.tsx`): etiqueta y collarín reflejan el color elegido y la boquilla se hunde al pintar. *(implementado, falta ver jugando)* La pintura base (`paint`) ya se guarda y restaura en planos compartidos por URL (`?bp=...`).
 
 ## Carrocería modular (2026-11-22, sin probar jugando)
 - [x] 5 piezas nuevas en el Dispensador: **Chapa Plana, Chapa en Cuña, Ventana con Vidrio, Puerta de Chapa y Jaula Antivuelco** (livianas: 0.26–0.42 kg; la jaula es hueca, se puede ir adentro).

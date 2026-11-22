@@ -9,6 +9,7 @@ import { MagicWrench } from './MagicWrench';
 import { WelderTool } from './WelderTool';
 import { GrinderTool } from './GrinderTool';
 import { SliceSawTool } from './SliceSawTool';
+import { SprayCanTool } from './SprayCanTool';
 import { WireTool } from './WireTool';
 import { BASE_BODY_PROFILE as BODY, BODY_SOCKETS } from './body/bodyProfile';
 import { BeltMeshes, ForearmZone, LegZone, ShoulderZone, TorsoZone } from './body/BodyParts';
@@ -71,6 +72,8 @@ interface InventorCharacterProps {
   sawEquipped?: boolean;
   /** Pinza de cableado en la mano (modo Cables). */
   wireEquipped?: boolean;
+  /** Lata de aerosol 3D en la mano (modo Aerosol). */
+  sprayEquipped?: boolean;
   /** True mientras la herramienta está soldando, amolando o trazando corte (agrega vibración y retroceso). */
   toolWorking?: boolean;
   seated?: boolean;
@@ -97,6 +100,7 @@ export function InventorCharacter({
   grinderEquipped = false,
   sawEquipped = false,
   wireEquipped = false,
+  sprayEquipped = false,
   toolWorking = false,
   seated = false,
   alignToGround = false,
@@ -383,7 +387,7 @@ export function InventorCharacter({
           ? -0.55
           : -0.48;
 
-      const toolKey = wireEquipped ? 'wire' : sawEquipped ? 'saw' : grinderEquipped ? 'grinder' : welderEquipped ? 'welder' : wrenchEquipped ? 'wrench' : 'none';
+      const toolKey = sprayEquipped ? 'spray' : wireEquipped ? 'wire' : sawEquipped ? 'saw' : grinderEquipped ? 'grinder' : welderEquipped ? 'welder' : wrenchEquipped ? 'wrench' : 'none';
       if (toolKey !== lastToolKeyRef.current) {
         lastToolKeyRef.current = toolKey;
         if (toolKey !== 'none') {
@@ -403,17 +407,18 @@ export function InventorCharacter({
       const toolBob = gAmp * Math.abs(c) * 0.08;
       const toolEquipPitch = toolEquipSpring.current * 0.72;
       const toolWorkKick = toolWorking ? -0.06 + Math.sin(t * 58) * 0.032 : 0;
-      const freeArmXR = (wrenchEquipped || wireEquipped)
+      const hasToolInHand = wrenchEquipped || wireEquipped || sprayEquipped;
+      const freeArmXR = hasToolInHand
         ? (firstPersonHideHead ? -0.9 : -0.65) + idleArm + toolBob + toolEquipPitch + toolWorkKick
         : THREE.MathUtils.lerp(walkRotXR, airArmX, airBlend.current);
       const freeArmZL = THREE.MathUtils.lerp(firstPersonHideHead ? -0.18 : -0.14, airArmZ, airBlend.current);
       const freeArmZR = THREE.MathUtils.lerp(firstPersonHideHead ? 0.18 : 0.14, -airArmZ, airBlend.current)
-        + ((wrenchEquipped || wireEquipped) ? toolEquipSpring.current * 0.24 : 0);
+        + (hasToolInHand ? toolEquipSpring.current * 0.24 : 0);
 
       if (toolHoldGroupRef.current) {
         const vibX = toolWorking ? Math.sin(t * 72) * 0.008 : 0;
         const vibY = toolWorking ? Math.cos(t * 86) * 0.007 : 0;
-        const idleBreath = (wrenchEquipped || wireEquipped) ? Math.sin(t * 2.4) * 0.006 : 0;
+        const idleBreath = hasToolInHand ? Math.sin(t * 2.4) * 0.006 : 0;
         toolHoldGroupRef.current.position.set(
           S.handR[0] + vibX,
           S.handR[1] + vibY + idleBreath - Math.max(0, toolEquipSpring.current) * 0.05,
@@ -718,9 +723,10 @@ export function InventorCharacter({
               <ShoulderZone m={materials} outfit={outfit} side={1} />
             </group>
             <ForearmZone m={materials} outfit={outfit} side={1} />
-            {(wrenchEquipped || wireEquipped || activeEmote === 'wrenchSpin') && (
+            {(wrenchEquipped || wireEquipped || sprayEquipped || activeEmote === 'wrenchSpin') && (
               <group ref={toolHoldGroupRef} position={S.handR}>
-                {wireEquipped ? <WireTool tipRef={wrenchTipRef} />
+                {sprayEquipped ? <SprayCanTool tipRef={wrenchTipRef} pressing={toolWorking} />
+                  : wireEquipped ? <WireTool tipRef={wrenchTipRef} />
                   : welderEquipped ? <WelderTool tipRef={wrenchTipRef} />
                   : grinderEquipped ? <GrinderTool tipRef={wrenchTipRef} />
                   : sawEquipped ? <SliceSawTool tipRef={wrenchTipRef} />

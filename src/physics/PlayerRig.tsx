@@ -222,6 +222,7 @@ export function PlayerRig({
   const grinderEquipped = useGameStore((s) => s.grinderEquipped);
   const sawEquipped = useGameStore((s) => s.sawEquipped);
   const wireToolEquipped = useGameStore((s) => s.wireToolEquipped);
+  const sprayEquipped = useGameStore((s) => s.sprayEquipped);
   const toolWorking = useGameStore((s) => s.weldProgress > 0 || s.sawPhase === 'trace' || s.sawPhase === 'cut');
   const characterConfig = useGameStore((s) => s.characterConfig);
   const activeEmote = useGameStore((s) => s.activeEmote);
@@ -4329,6 +4330,7 @@ export function PlayerRig({
             grinderEquipped={grinderEquipped}
             sawEquipped={sawEquipped}
             wireEquipped={wireToolEquipped}
+            sprayEquipped={sprayEquipped}
             toolWorking={toolWorking}
             seated={seated}
             alignToGround
