@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   PRESET_BLUEPRINTS,
   createBlueprint,
+  decodeBlueprintCode,
   deleteBlueprint,
+  encodeBlueprintCode,
   listBlueprints,
   saveBlueprint,
   type StorageLike,
@@ -63,5 +65,28 @@ describe('blueprintManager', () => {
       expect(g.getNodes().length).toBeGreaterThan(0);
       expect(preset.parts.length).toBeGreaterThan(0);
     }
+  });
+
+  it('conserva pintura del aerosol y variante de carrocería al codificar/decodificar URL', () => {
+    const graph = new LogicGraph();
+    const bp = createBlueprint(
+      'Cuña Pintada',
+      [
+        {
+          partId: 'extra-bodywork-panel_wedge-1',
+          kind: 'bodywork',
+          slotId: 'free:cart:1',
+          localPos: [0, 0.5, 1.1],
+          localRot: [0, 0, 0, 1],
+          paint: '#a63d24',
+          bodyworkKind: 'panel_wedge',
+        },
+      ],
+      graph,
+    );
+    const decoded = decodeBlueprintCode(encodeBlueprintCode(bp));
+    expect(decoded).not.toBeNull();
+    expect(decoded!.parts[0].paint).toBe('#a63d24');
+    expect(decoded!.parts[0].bodyworkKind).toBe('panel_wedge');
   });
 });

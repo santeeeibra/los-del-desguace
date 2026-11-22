@@ -1,3 +1,4 @@
+import { isBodyworkKind, type BodyworkKind } from '../invention/bodywork';
 import { WORKSHOP_SLOT_BY_ID } from '../invention/workshopAssembly';
 import { CARRY_PROFILES, type GrabbableKind } from '../props/grabbableRegistry';
 import { LOGIC_NODE_KINDS, type LogicGraphSnapshot } from './logicGraph';
@@ -14,6 +15,10 @@ export interface BlueprintPartEntry {
   axle?: { x: number; y: number; z: number };
   /** Rueda de dirección (se soldó con unión de pivote vertical). */
   steer?: boolean;
+  /** Color base aplicado con el Aerosol (#RRGGBB). */
+  paint?: string;
+  /** Variante de carrocería modular si la pieza es `bodywork`. */
+  bodyworkKind?: BodyworkKind;
 }
 
 export interface ContraptionBlueprint {
@@ -620,6 +625,7 @@ export const VALID_BLUEPRINT_KINDS: ReadonlySet<GrabbableKind> = new Set<Grabbab
   'boxingGlove',
   'droneRotor',
   'flag',
+  'bodywork',
 ]);
 
 export function createBlueprint(
@@ -772,7 +778,9 @@ export function decodeBlueprintCode(raw: string): ContraptionBlueprint | null {
         (part.axle === undefined || (part.axle &&
           [part.axle.x, part.axle.y, part.axle.z].every(Number.isFinite) &&
           Math.abs(Math.hypot(part.axle.x, part.axle.y, part.axle.z) - 1) < 0.03)) &&
-        (part.steer === undefined || typeof part.steer === 'boolean')
+        (part.steer === undefined || typeof part.steer === 'boolean') &&
+        (part.paint === undefined || (typeof part.paint === 'string' && /^#[0-9a-fA-F]{6}$/.test(part.paint))) &&
+        (part.bodyworkKind === undefined || (typeof part.bodyworkKind === 'string' && isBodyworkKind(part.bodyworkKind)))
     );
     if (!validParts || new Set(parsed.p.map(({ partId }) => partId)).size !== parsed.p.length) return null;
     const nodeIds = new Set<string>();

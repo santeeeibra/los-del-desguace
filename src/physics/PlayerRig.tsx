@@ -50,7 +50,8 @@ import { createWorkshopPhysics, getWorkshopSlotPose, LEVEL_ROTATION, qualifiesFo
 import { bodyworkKindFromId, bodyworkStore } from '../invention/bodywork';
 import { platformStore, type ReleasedPart } from '../invention/platformStore';
 import { laserTableBridge, type PlatformChildInfo } from '../invention/laserTableBridge';
-import { cutFromEdge, forkGap, gridBounds, rasterize, validateOutline } from '../invention/platformShape';
+import { cutRefund, fabricateCost, laserEconomy } from '../invention/laserEconomy';
+import { cutFromEdge, forkGap, gridBounds, gridToRects, rasterize, validateOutline } from '../invention/platformShape';
 import { forkPivotFor, steerLimitsOnPlatform, unsupportedAfterCut } from '../invention/platformRules';
 import { resolveBodyworkSnap, resolvePrimaryInteract } from '../invention/interactResolution';
 import {
@@ -855,13 +856,19 @@ export function PlayerRig({
       fabricate(template, outline) {
         const error = validateOutline(outline);
         if (error) return { error };
+        const grid = rasterize(outline);
+        const cost = fabricateCost(gridToRects(grid));
+        const unlimited = gameModeStore.getState().mode === 'sandbox';
+        if (!laserEconomy.canAfford(cost, unlimited)) {
+          return { error: `Falta chapa: necesitás ${cost} u (tenés ${laserEconomy.get().scrap} u)` };
+        }
         const ctrl = ecctrlRef.current;
         const at = ctrl?.body?.translation() ?? { x: FREE_BUILD_ORIGIN[0], y: 0, z: FREE_BUILD_ORIGIN[2] };
         const fwd = scratchRayDir.current.set(0, 0, -1).applyQuaternion(camera.quaternion).setY(0);
         if (fwd.lengthSq() < 1e-4) fwd.set(0, 0, 1);
         fwd.normalize();
         // Buscar un lugar libre cerca (adelante, a los costados o en la zona de creación libre).
-        const b = gridBounds(rasterize(outline));
+        const b = gridBounds(grid);
         const probe = new rapier.Cuboid((b.maxX - b.minX) / 2 + 0.1, 0.25, (b.maxZ - b.minZ) / 2 + 0.1);
         const side = { x: fwd.z, z: -fwd.x };
         const candidates = [
@@ -878,6 +885,7 @@ export function PlayerRig({
         }
         const entry = gameStore.spawnExtraPart('platform', [spot[0], PLATFORM_WORK_HEIGHT, spot[1]]);
         if (!entry) return { error: 'El dispensador está lleno: retirá piezas extra' };
+        laserEconomy.consume(cost, unlimited);
         platformStore.create(entry.id, template, outline);
         // Sale de la mesa sostenida a altura de trabajo (como sobre caballetes) para poder soldarle
         // ruedas a los costados y adelante sin que choquen con el piso. Al agarrarla vuelve a ser suelta.
@@ -907,6 +915,8 @@ export function PlayerRig({
         if (info.released) return { error: 'Fijá la creación en el taller para recortar' };
         const result = cutFromEdge(record.grid, cutOutline);
         if (result.error) return { error: result.error };
+        const refund = cutRefund(result.removed.length, record.grid.cell);
+        if (refund > 0) laserEconomy.addScrap(refund);
         const loose = unsupportedAfterCut(record.grid, result.grid, info.children);
         const station = workshop.stationOf(id);
         const snapshot = new Map<string, { parentId: string; type: string; pose: NonNullable<ReturnType<typeof workshopPhysics.getLocalAttachment>>; steer: boolean }>();

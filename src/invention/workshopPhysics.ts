@@ -3,7 +3,7 @@ import { Euler, Quaternion, Vector3 } from 'three';
 import type { WorkshopAssembly, WorkshopMount, WorkshopSlot, WorkshopStation } from './workshopAssembly';
 import { isCustomStation } from './workshopAssembly';
 import { steerPivotLocal, WHEEL_RADIUS } from './platformShape';
-import { BODYWORK_SPECS, bodyworkKindFromId } from './bodywork';
+import { BODYWORK_SPECS, bodyworkKindFromId, computeAeroBonus, type BodyworkKind } from './bodywork';
 import { actuatorAxis, actuatorKindFromId, createRoboticJoint, ROBOTICS_SPECS, roboticKindFromId, stepRoboticActuator, type RoboticJointRecord } from './robotics';
 import {
   BreakMonitor,
@@ -359,6 +359,16 @@ export function createWorkshopPhysics(
     }
     airModes.set(station, state);
     return state.flying;
+  }
+
+  function stationAeroBonus(assembly: WorkshopAssembly | undefined, station: WorkshopStation): number {
+    if (!assembly) return 0;
+    const kinds: BodyworkKind[] = [];
+    for (const { id } of assembly.partsAt(station)) {
+      const kind = bodyworkKindFromId(id);
+      if (kind) kinds.push(kind);
+    }
+    return computeAeroBonus(kinds);
   }
 
   function flightControlled(station: WorkshopStation, assembly?: WorkshopAssembly) {
@@ -890,11 +900,14 @@ export function createWorkshopPhysics(
         const vel = root.linvel();
         const forwardSpeed = vel.x * fwd.x + vel.z * fwd.z;
         const signedTarget = throttle * direction;
-        if (Math.abs(forwardSpeed) < 13 || forwardSpeed * signedTarget < 0) {
+        const aeroBonus = stationAeroBonus(assembly, station);
+        const maxSpeed = 13 * (1 + aeroBonus);
+        const accelScale = 9.5 * (1 + aeroBonus * 0.5);
+        if (Math.abs(forwardSpeed) < maxSpeed || forwardSpeed * signedTarget < 0) {
           const impulse = {
-            x: fwd.x * signedTarget * totalMass * 9.5 * dt,
+            x: fwd.x * signedTarget * totalMass * accelScale * dt,
             y: 0,
-            z: fwd.z * signedTarget * totalMass * 9.5 * dt,
+            z: fwd.z * signedTarget * totalMass * accelScale * dt,
           };
           applyImpulseAtCenterOfMass(bodies, root, impulse);
         }

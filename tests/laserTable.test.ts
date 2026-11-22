@@ -1,6 +1,7 @@
 import rapier from '@dimforge/rapier3d-compat';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { Quaternion, Vector3 } from 'three';
+import { cutRefund, fabricateCost, INITIAL_SCRAP, laserEconomy } from '../src/invention/laserEconomy';
 import {
   cutFromEdge,
   gridToRects,
@@ -223,5 +224,30 @@ describe('Mesa de Corte Láser — triciclo desde cero', () => {
       grabbableRegistry.unregister('helice');
       world.free();
     }
+  });
+});
+
+describe('Economía de Mesa Láser y Sierra', () => {
+  it('cobra según área al fabricar, bloquea sin chapa suficiente y recicla al cortar', () => {
+    laserEconomy.reset(INITIAL_SCRAP);
+    const rectCost = fabricateCost(gridToRects(rasterize(PLATFORM_TEMPLATES.rect.points)));
+    const triCost = fabricateCost(gridToRects(rasterize(PLATFORM_TEMPLATES.triangle.points)));
+    expect(rectCost).toBeGreaterThan(triCost);
+    expect(laserEconomy.consume(rectCost, false)).toBe(true);
+    expect(laserEconomy.consume(rectCost, false)).toBe(true);
+    // Ya no alcanza para una tercera plataforma rectangular completa.
+    expect(laserEconomy.canAfford(rectCost, false)).toBe(false);
+    expect(laserEconomy.consume(rectCost, false)).toBe(false);
+    // En Taller Libre (unlimited) nunca bloquea ni gasta reserva.
+    const before = laserEconomy.get().scrap;
+    expect(laserEconomy.consume(rectCost, true)).toBe(true);
+    expect(laserEconomy.get().scrap).toBe(before);
+    // Recortar celdas devuelve chapa.
+    const grid = rasterize(PLATFORM_TEMPLATES.rect.points);
+    const notch = cutFromEdge(grid, notchAt(grid, 'front', 0.4, 0.4));
+    const gain = cutRefund(notch.removed.length, grid.cell);
+    expect(gain).toBeGreaterThan(0);
+    expect(laserEconomy.addScrap(gain)).toBe(before + gain);
+    laserEconomy.reset();
   });
 });

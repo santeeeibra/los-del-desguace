@@ -17,7 +17,7 @@ Prioridades: **Alta** (bloquea o rompe la experiencia), **Media** (necesario par
 - [x] Módulos sueltos en `custom:${string}` (por ejemplo `magnet` + `thruster` + `switchBox`) sin exigir chasis. *(escrito, sin probar jugando)*
 - [x] Estado de desgaste `condition: 'ok' | 'broken' | 'discharged'` con reparación: motores trabados en el Banco RPM (`Tab`), baterías descargadas recargadas cableándolas (`5`) a un generador. *(escrito, sin probar jugando)* Falta probar la recarga en el generador del nivel nocturno.
 - [x] Etiquetas físicas reutilizables en objetos del mapa (`breakForce`, `isMagnetic`, `isCuttable`, `conductsPower`). *(escrito, sin probar jugando)*
-- [ ] Economía de la Sierra Láser (`4`) + Mesa Láser (`src/ui/LaserTable.tsx`): conseguir y fabricar piezas con material limitado.
+- [x] Economía de la Sierra Láser (`4`) + Mesa Láser (`src/ui/LaserTable.tsx` + `src/invention/laserEconomy.ts`): reserva limitada de chatarra de chapa (`120 u` iniciales) fuera de `sandbox`; fabricar cobra según área y recortar devuelve chatarra. *(verificado con tests; falta probar jugando)*
 - [ ] Transformar `src/modes/contracts.ts` en desafíos sin pistas ni solución a pie.
 - [ ] Permitir ubicar uniones sobre piezas ya montadas. Reusar las uniones fijas, los ejes y la transmisión que prueban el carrito y el tambor.
 - [ ] Extender los controles de fijar, girar y empujar a otras creaciones. Sumar mover el conjunto y deshacer el último montaje al flujo de construcción.
@@ -83,7 +83,7 @@ Las mismas reglas valen para cualquier invento; ya no hay casos especiales por t
 - [x] Chorro de gotitas del color elegido, siseo suave y "clic-clac" de la lata al cambiar color.
 - [x] Liviano: el lienzo 256×256 se crea solo en el primer trazo; texturas se suben a la GPU como máximo cada 50 ms; se liberan cuando la pieza desaparece; el color base se reaplica si la pieza se rearma (H).
 - **Validar jugando:** pintar piezas con modelo GLB (si el UV es raro, el trazo puede salir en otro lugar de la pieza); FPS en iPhone 11 pintando a mano alzada; que el borrador devuelva el aspecto original; que el color se conserve al reconstruir con H.
-- Pendiente: modelo 3D de lata en la mano (hoy se ve la llave), guardar la pintura en los planos compartidos por URL.
+- Pendiente: modelo 3D de lata en la mano (hoy se ve la llave). La pintura base (`paint`) ya se guarda y restaura en planos compartidos por URL (`?bp=...`).
 
 ## Carrocería modular (2026-11-22, sin probar jugando)
 - [x] 5 piezas nuevas en el Dispensador: **Chapa Plana, Chapa en Cuña, Ventana con Vidrio, Puerta de Chapa y Jaula Antivuelco** (livianas: 0.26–0.42 kg; la jaula es hueca, se puede ir adentro).
@@ -92,7 +92,7 @@ Las mismas reglas valen para cualquier invento; ya no hay casos especiales por t
 - [x] **Vidrio:** la ventana se raja con un golpe medio y estalla con uno fuerte (el marco sigue soldado); H pone vidrio nuevo.
 - [x] Se puede pintar con el Aerosol (el vidrio no se pinta).
 - **Validar jugando:** que el encastre quede bien pegado al chasis (las medidas del chasis son aproximadas: 1.1 × 0.16 × 1.9); que la cuña quede con el filo hacia afuera; umbrales de rotura y de vidrio (vienen de la ficha, pueden ser muy altos o muy bajos); que piezas tan livianas no tiemblen soldadas a un chasis pesado.
-- Pendiente: el bonus aerodinámico (`computeAeroBonus`) todavía no se aplica a la velocidad; las puertas no abren con bisagra; las chapas no entran en planos compartidos por URL; la vista previa (fantasma) no muestra el encastre, solo el montaje real.
+- Pendiente: las puertas no abren con bisagra; la vista previa (fantasma) no muestra el encastre, solo el montaje real. El bonus aerodinámico (`computeAeroBonus`) ya se aplica en `driveAssembly` y las chapas (`bodyworkKind`) se guardan en planos compartidos por URL.
 
 ## Piezas robóticas (2026-11-22, sin probar jugando)
 - [x] 5 piezas en el Dispensador: **Bisagra Motorizada, Pistón Extensible, Base Giratoria 360°, Pinza Mecánica y Cabrestante con Soga**.

@@ -1,6 +1,9 @@
+import rapier from '@dimforge/rapier3d-compat';
 import { describe, expect, it } from 'vitest';
 import { bodyworkId, bodyworkKindFromId, bodyworkStore, BODYWORK_SPECS } from '../src/invention/bodywork';
 import { resolveBodyworkSnap } from '../src/invention/interactResolution';
+import { WorkshopAssembly } from '../src/invention/workshopAssembly';
+import { createWorkshopPhysics } from '../src/invention/workshopPhysics';
 
 describe('Carrocería modular', () => {
   it('la variante viaja en el id de la pieza', () => {
@@ -32,5 +35,32 @@ describe('Carrocería modular', () => {
     expect(bodyworkStore.glassOf(id)).toBe('shattered');
     bodyworkStore.repairGlass(id);
     expect(bodyworkStore.glassOf(id)).toBe('intact');
+  });
+
+  it('la carrocería en cuña aumenta la aceleración y velocidad tope por aerodinámica', async () => {
+    await rapier.init();
+    const runDrive = (withWedge: boolean) => {
+      const world = new rapier.World({ x: 0, y: 0, z: 0 });
+      try {
+        const assembly = new WorkshopAssembly();
+        const physics = createWorkshopPhysics({ world, rapier });
+        const root = world.createRigidBody(rapier.RigidBodyDesc.fixed());
+        world.createCollider(rapier.ColliderDesc.cuboid(0.65, 0.055, 1.12).setMass(14), root);
+        assembly.mountFreeOnCart('eng-1', 'engine');
+        if (withWedge) {
+          assembly.mountFreeOnCart(bodyworkId('panel_wedge', 1), 'bodywork');
+          assembly.mountFreeOnCart(bodyworkId('window_frame', 2), 'bodywork');
+        }
+        physics.toggleAssembly('cart', root, assembly, true);
+        for (let i = 0; i < 60; i++) {
+          physics.driveAssembly('cart', root, 1, 1 / 60, assembly);
+          world.step();
+        }
+        return root.linvel().z;
+      } finally {
+        world.free();
+      }
+    };
+    expect(runDrive(true)).toBeGreaterThan(runDrive(false));
   });
 });

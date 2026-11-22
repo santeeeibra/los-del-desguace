@@ -1,5 +1,7 @@
 import type { RapierCollider, RapierRigidBody, useRapier } from '@react-three/rapier';
 import { Quaternion, Vector3 } from 'three';
+import { bodyworkKindFromId } from './bodywork';
+import { fillPart, paintColorOf } from './paintStore';
 import { createBlueprint, type BlueprintPartEntry, type ContraptionBlueprint } from '../logic/blueprintManager';
 import type { LogicGraph } from '../logic/logicGraph';
 import { grabbableRegistry } from '../props/grabbableRegistry';
@@ -19,6 +21,15 @@ import { getWorkshopSlotPose, type createWorkshopPhysics } from './workshopPhysi
 type Physics = ReturnType<typeof createWorkshopPhysics>;
 type RapierContext = ReturnType<typeof useRapier>;
 const wheelColliderRotation = new Quaternion(0, 0, Math.SQRT1_2, Math.SQRT1_2);
+
+function partExtraMeta(id: string): Pick<BlueprintPartEntry, 'paint' | 'bodyworkKind'> {
+  const paint = paintColorOf(id);
+  const bodyworkKind = bodyworkKindFromId(id);
+  return {
+    ...(paint ? { paint } : {}),
+    ...(bodyworkKind ? { bodyworkKind } : {}),
+  };
+}
 
 export function captureCartBlueprint(
   name: string,
@@ -63,6 +74,7 @@ export function captureCartBlueprint(
           slotId: `root:${id}`,
           localPos: [0, Math.max(0.45, Math.min(2.0, rootY)), 0],
           localRot: [0, 0, 0, 1],
+          ...partExtraMeta(id),
         });
         continue;
       }
@@ -78,6 +90,7 @@ export function captureCartBlueprint(
         localRot: pose.rotation.toArray(),
         axle: axle ? { x: axle.x, y: axle.y, z: axle.z } : undefined,
         ...(physics.isSteerable(id) ? { steer: true } : {}),
+        ...partExtraMeta(id),
       });
     }
   } else {
@@ -91,6 +104,7 @@ export function captureCartBlueprint(
         parts.push({
           partId: id, kind: entry.kind, slotId: slot.id, localPos: slot.position,
           localRot: rotation ? [rotation.x, rotation.y, rotation.z, rotation.w] : [0, 0, 0, 1],
+          ...partExtraMeta(id),
         });
         continue;
       }
@@ -102,6 +116,7 @@ export function captureCartBlueprint(
         localPos: pose.position.toArray(), localRot: pose.rotation.toArray(),
         axle: axle ? { x: axle.x, y: axle.y, z: axle.z } : undefined,
         ...(physics.isSteerable(id) ? { steer: true } : {}),
+        ...partExtraMeta(id),
       });
     }
   }
@@ -418,6 +433,9 @@ export function restoreCartBlueprint(
   }
   for (const wire of blueprint.logic.wires) {
     graph.connect(wire.fromNodeId, wire.toNodeId, { fromPort: wire.fromPort, toPort: wire.toPort });
+  }
+  for (const part of blueprint.parts) {
+    if (part.paint) fillPart(part.partId, part.paint);
   }
   physics.parkRestoredAssembly(targetStation, rootBody);
   world.propagateModifiedBodyPositionsToColliders();

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { laserTableBridge, type PlatformChildInfo, type PlatformInfo } from '../invention/laserTableBridge';
+import { cutRefund, fabricateCost, laserEconomy } from '../invention/laserEconomy';
 import { platformStore } from '../invention/platformStore';
+import { useGameModeStore } from '../modes/gameModes';
 import {
   clampPoint,
   clonePoints,
@@ -104,10 +106,14 @@ function BoardSvg({ svgRef, children, label }: { svgRef: React.RefObject<SVGSVGE
 }
 
 function FabricateTab({ onMessage }: { onMessage: (text: string) => void }) {
+  const econ = useSyncExternalStore(laserEconomy.subscribe, laserEconomy.get, laserEconomy.get);
+  const unlimited = useGameModeStore((s) => s.mode === 'sandbox');
   const [template, setTemplate] = useState<PlatformTemplate>('triangle');
   const [points, setPoints] = useState<Pt[]>(() => clonePoints(PLATFORM_TEMPLATES.triangle.points));
   const error = validateOutline(points);
   const rects = useMemo(() => (error ? [] : gridToRects(rasterize(points))), [points, error]);
+  const cost = useMemo(() => fabricateCost(rects), [rects]);
+  const cantAfford = !unlimited && econ.scrap < cost;
   const { svgRef, handles } = useDragPoints(points, setPoints);
   return (
     <div className="laser-tab">
@@ -125,14 +131,17 @@ function FabricateTab({ onMessage }: { onMessage: (text: string) => void }) {
         {handles('laser-point')}
       </BoardSvg>
       <p className="laser-hint" role="status">
-        {error ?? 'Arrastrá los puntos para darle forma. El frente es hacia arriba.'}
+        {error
+          ?? (cantAfford
+            ? `Falta chapa: necesitás ${cost} u (tenés ${econ.scrap} u). Recortá piezas para recuperar.`
+            : `Arrastrá los puntos para darle forma. Costo: ${cost} u · Chapa: ${unlimited ? '∞ (Taller Libre)' : `${econ.scrap} u`}.`)}
       </p>
       <div className="laser-row">
-        <button type="button" className="hud-button is-primary" disabled={Boolean(error)} data-suggested={!error || undefined}
+        <button type="button" className="hud-button is-primary" disabled={Boolean(error) || cantAfford} data-suggested={(!error && !cantAfford) || undefined}
           onClick={() => {
             const result = laserTableBridge.get()?.fabricate(template, points);
             onMessage(result?.error ?? 'Plataforma fabricada: está frente a vos, lista para soldarle piezas.');
-          }}>Fabricar plataforma</button>
+          }}>Fabricar plataforma ({cost} u)</button>
       </div>
     </div>
   );
@@ -281,9 +290,12 @@ function CutTab({ platforms, labels, onMessage }: {
           data-suggested={(preview && !preview.result.error && !info?.released) || undefined}
           onClick={() => {
             if (!cut) return;
+            const refund = preview && !preview.result.error ? cutRefund(preview.result.removed.length, record.grid.cell) : 0;
             const result = laserTableBridge.get()?.cut(selected, cut);
             if (result?.error) onMessage(result.error);
-            else onMessage(result?.released?.length ? `Corte hecho · se soltaron ${result.released.length} pieza(s)` : 'Corte hecho');
+            else onMessage(result?.released?.length
+              ? `Corte hecho · se soltaron ${result.released.length} pieza(s)${refund > 0 ? ` · +${refund} u chapa` : ''}`
+              : `Corte hecho${refund > 0 ? ` · +${refund} u chapa` : ''}`);
           }}>
           {preview?.loose.length ? 'Cortar y soltar piezas' : 'Cortar'}
         </button>
