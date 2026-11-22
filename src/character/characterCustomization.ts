@@ -8,6 +8,15 @@ import {
   type HatStyle,
 } from './characterAppearance';
 import type { HeadShapePreset } from './faceRigController';
+import {
+  GREASE_OPTIONS,
+  HEADGEAR_OPTIONS,
+  MOUTH_PROP_OPTIONS,
+  NECK_BACK_OPTIONS,
+  THINKING_PUFF_GESTURE,
+  getGreaseMaterialParams,
+  type MechanicStyleConfig,
+} from './mechanicStyle';
 
 export const CHARACTER_CUSTOMIZATION_STORAGE_KEY = 'los-del-desguace.character.v1';
 
@@ -18,7 +27,8 @@ export type EmoteId =
   | 'facepalm'
   | 'think'
   | 'wrenchSpin'
-  | 'panic';
+  | 'panic'
+  | 'thinking_puff';
 
 export interface EmoteDefinition {
   id: EmoteId;
@@ -93,6 +103,15 @@ export const EMOTE_CATALOG: readonly EmoteDefinition[] = [
     durationSec: 2.2,
     expression: 'surprise',
     keyHint: '7',
+  },
+  {
+    id: 'thinking_puff',
+    icon: '🧐',
+    label: 'Mmm... (Taller)',
+    subtitle: 'Pitada pensativa mirando el invento',
+    durationSec: THINKING_PUFF_GESTURE.durationSec,
+    expression: 'effort',
+    keyHint: '8',
   },
 ] as const;
 
@@ -216,7 +235,7 @@ export const HAIR_PRESETS: ReadonlyArray<{
   { id: 'rubio', label: 'Rubio Taller', hair: '#c9973e', hairShadow: '#996f26' },
 ];
 
-export interface CharacterCustomizationConfig {
+export interface CharacterCustomizationConfig extends MechanicStyleConfig {
   headShape: HeadShapePreset;
   outfitId: 'overol' | 'remera_pantalon';
   hatStyle: HatStyle;
@@ -238,7 +257,42 @@ export const DEFAULT_CHARACTER_CUSTOMIZATION: CharacterCustomizationConfig = {
   colorPresetId: 'mecanico',
   skinPresetId: 'triguena',
   hairPresetId: 'castano',
+  // "Mecánicos Locos": por defecto sin accesorios nuevos (el avatar de siempre se ve igual).
+  headgear: 'none',
+  mouthProp: 'none',
+  greaseLevel: 'clean',
+  neckOrBack: 'none',
+  accentColor: '#d96b27',
 };
+
+function pickValid<T extends string>(options: readonly { id: T }[], value: unknown, fallback: T): T {
+  return options.some((o) => o.id === value) ? (value as T) : fallback;
+}
+
+/** Valida los campos de estilo mecánico (guardados en localStorage o llegados por red). */
+export function sanitizeMechanicFields(raw: Partial<MechanicStyleConfig> | undefined | null): MechanicStyleConfig {
+  const d = DEFAULT_CHARACTER_CUSTOMIZATION;
+  return {
+    headgear: pickValid(HEADGEAR_OPTIONS, raw?.headgear, d.headgear),
+    mouthProp: pickValid(MOUTH_PROP_OPTIONS, raw?.mouthProp, d.mouthProp),
+    greaseLevel: pickValid(GREASE_OPTIONS, raw?.greaseLevel, d.greaseLevel),
+    neckOrBack: pickValid(NECK_BACK_OPTIONS, raw?.neckOrBack, d.neckOrBack),
+    accentColor:
+      typeof raw?.accentColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(raw.accentColor)
+        ? raw.accentColor
+        : d.accentColor,
+  };
+}
+
+function darkenHex(hex: string, factor: number): string {
+  if (factor >= 1 || !/^#[0-9a-fA-F]{6}$/.test(hex)) return hex;
+  const n = parseInt(hex.slice(1), 16);
+  const ch = (shift: number) =>
+    Math.max(0, Math.min(255, Math.round(((n >> shift) & 255) * factor)))
+      .toString(16)
+      .padStart(2, '0');
+  return `#${ch(16)}${ch(8)}${ch(0)}`;
+}
 
 export function loadCharacterCustomization(): CharacterCustomizationConfig {
   if (typeof window === 'undefined') return DEFAULT_CHARACTER_CUSTOMIZATION;
@@ -249,6 +303,7 @@ export function loadCharacterCustomization(): CharacterCustomizationConfig {
     return {
       ...DEFAULT_CHARACTER_CUSTOMIZATION,
       ...parsed,
+      ...sanitizeMechanicFields(parsed),
     };
   } catch {
     return DEFAULT_CHARACTER_CUSTOMIZATION;
@@ -274,19 +329,36 @@ export function buildCharacterAppearance(
   const hairPreset =
     HAIR_PRESETS.find((h) => h.id === config.hairPresetId) ?? HAIR_PRESETS[0];
 
+  // Estilo "Mecánicos Locos" (los datos de red viejos pueden no traer estos campos).
+  const mechanic = sanitizeMechanicFields(config);
+  const grease = getGreaseMaterialParams(mechanic.greaseLevel);
+  const darken = (hex: string) => darkenHex(hex, grease.darkenFactor);
+  // Un accesorio de cabeza nuevo reemplaza al casco/antiparras clásicos (las antiparras
+  // nuevas se llevan sobre el casco de taller; el resto lo reemplaza).
+  const gogglesHeadgear =
+    mechanic.headgear === 'welding_goggles_up' || mechanic.headgear === 'welding_goggles_down';
+  const hasHeadgear = mechanic.headgear !== 'none';
+  const hatStyle = hasHeadgear && !gogglesHeadgear ? 'none' : config.hatStyle;
+  const gogglesStyle = hasHeadgear ? 'none' : config.gogglesStyle;
+  // Mochila y cartuchera del Vestidor mecánico reutilizan las piezas ya existentes.
+  const backpackStyle = mechanic.neckOrBack === 'scrap_backpack' ? 'scrap_pack' : config.backpackStyle;
+  const beltToolStyle = mechanic.neckOrBack === 'tool_holster' ? 'pouch' : config.beltToolStyle;
+
   return {
     ...DEFAULT_CHISPA_APPEARANCE,
-    id: `custom-${config.colorPresetId}-${config.headShape}`,
+    id: `custom-${config.colorPresetId}-${config.headShape}-${mechanic.greaseLevel}`,
     usePaletteForOutfit: true,
-    hatStyle: config.hatStyle,
-    gogglesStyle: config.gogglesStyle,
-    backpackStyle: config.backpackStyle,
-    beltToolStyle: config.beltToolStyle,
+    hatStyle,
+    gogglesStyle,
+    backpackStyle,
+    beltToolStyle,
+    mechanic,
     palette: {
       ...DEFAULT_CHISPA_APPEARANCE.palette,
-      overall: colorPreset.overall,
-      overallStrap: colorPreset.overallStrap,
-      shirt: colorPreset.shirt,
+      overall: darken(colorPreset.overall),
+      overallStrap: darken(colorPreset.overallStrap),
+      shirt: darken(colorPreset.shirt),
+      glove: darken(DEFAULT_CHISPA_APPEARANCE.palette.glove),
       cuffAndRibbon: colorPreset.cuffAndRibbon,
       hardhat: colorPreset.hardhat,
       hardhatCrest: colorPreset.hardhatCrest,

@@ -11,8 +11,8 @@ import {
 import { gameStore } from '../src/state/gameStore';
 
 describe('Creador de personajes y catálogo de gestos (Encargue #2)', () => {
-  it('define los 7 gestos del taller con iconos, etiquetas y expresiones faciales', () => {
-    expect(EMOTE_CATALOG).toHaveLength(7);
+  it('define los 8 gestos del taller con iconos, etiquetas y expresiones faciales', () => {
+    expect(EMOTE_CATALOG).toHaveLength(8);
     expect(EMOTE_BY_ID.wave.label).toBe('¡Hola!');
     expect(EMOTE_BY_ID.thumbsUp.label).toBe('¡Quedó Joya!');
     expect(EMOTE_BY_ID.celebrate.label).toBe('¡Funciona!');

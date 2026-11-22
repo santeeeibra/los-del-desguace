@@ -106,3 +106,15 @@ Las mismas reglas valen para cualquier invento; ya no hay casos especiales por t
 - [x] **Bisagra girada:** la pieza soldada encima conserva su rotación (eslabón intermedio) y gira sobre el eje de la bisagra tal como quedó soldada: sirve para puertas de costado y para palas/rampas que suben y bajan.
 - Validar jugando: que F sentado no choque con otras acciones; que la pieza sobre la bisagra no tiemble por el eslabón intermedio.
 
+
+
+## Mecánicos Locos (Vestidor del Yunke) — 2026-11-22
+- [x] Vestidor: sección "Mecánicos Locos" con 4 looks listos, cabeza, boca, grasa/hollín, cuello/espalda y color de acento (se guarda solo y se ve en multijugador).
+- [x] Avatar 3D: antiparras y careta de soldar animadas, casco de chapa, pelo chamuscado, cigarrillo/escarbadientes/tornillo, manchas de grasa y pañuelo (`MechanicAccessories.tsx`).
+- [x] Humo del cigarrillo con 5 partículas recicladas; la brasa se aviva al exhalar.
+- [x] Careta/antiparras bajan solas al soldar, amolar o cortar y suben 0.4 s después (`withProtectiveGearActive`).
+- [x] Gesto 8 "Mmm... (Taller)" (`thinking_puff`) en el menú de Gestos (G, tecla 8) con sonido.
+- [ ] Probar jugando: posición de boca, antiparras y casco en las 4 formas de cabeza (medidas estimadas, sin verlas).
+- [ ] El retrato 2D del Vestidor todavía no muestra los accesorios nuevos (solo el avatar 3D).
+- [ ] Mejorar el aspecto de la grasa en la ropa (hoy solo oscurece la ropa y agrega manchas en la cara).
+- Por defecto, el avatar no lleva accesorios nuevos (se ve igual que antes).

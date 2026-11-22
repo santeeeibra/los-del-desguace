@@ -470,6 +470,12 @@ export function playEmoteSfx(emote: EmoteId): void {
         scheduleTone(ctx, out, 'sawtooth', 620, 780, now + 0.15, 0.095, 0.13);
         break;
       }
+      case 'thinking_puff': {
+        // Inhala (brasa) y exhala: dos notas graves suaves descendentes
+        scheduleTone(ctx, out, 'sine', 330, 380, now, 0.16, 0.1);
+        scheduleTone(ctx, out, 'triangle', 280, 190, now + 1.5, 0.28, 0.09);
+        break;
+      }
     }
   });
 }

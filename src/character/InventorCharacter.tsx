@@ -22,6 +22,8 @@ import {
   type CharacterExpression,
 } from './characterAppearance';
 import { EMOTE_BY_ID, type EmoteId } from './characterCustomization';
+import { MechanicAccessories } from './MechanicAccessories';
+import { sampleThinkingPuffPose, withProtectiveGearActive } from './mechanicStyle';
 import {
   FaceRigController,
   resolveAnchorPosition,
@@ -135,6 +137,12 @@ export function InventorCharacter({
   const toolEquipSpring = useRef(0);
   const toolEquipVel = useRef(0);
 
+  // "Mecánicos Locos": careta/antiparras automáticas y humo del gesto pensativo
+  const protectiveActiveRef = useRef(false);
+  const protectiveTimer = useRef(0);
+  const smokeBurstRef = useRef(false);
+  const emoteStartRef = useRef<{ id: EmoteId | null; at: number }>({ id: null, at: 0 });
+
   // Continuous blend & procedural physics-visual states (never alters physics body)
   const stridePhase = useRef(0);
   const gaitBlend = useRef(0);
@@ -179,6 +187,16 @@ export function InventorCharacter({
     const dt = Math.min(rawDelta, 0.05);
     const anim = animDataRef.current;
     const t = state.clock.elapsedTime;
+
+    // 0. Equipo de protección: baja la careta/antiparras mientras se suelda, amola o corta
+    //    (y las mantiene bajas 0.4 s después, para que no parpadeen entre chispas).
+    protectiveTimer.current = toolWorking ? 0.4 : Math.max(0, protectiveTimer.current - dt);
+    if (appearance.mechanic) {
+      protectiveActiveRef.current =
+        withProtectiveGearActive(appearance.mechanic, protectiveTimer.current > 0) !== appearance.mechanic.headgear;
+    }
+    if (emoteStartRef.current.id !== activeEmote) emoteStartRef.current = { id: activeEmote, at: t };
+    smokeBurstRef.current = false;
 
     // 1. Consume discrete takeoff / landing / bump / drop-blocked cues
     if (anim.takeoffImpulse > 0.01) {
@@ -549,6 +567,20 @@ export function InventorCharacter({
             head.rotation.z = 0.18;
           }
           break;
+        case 'thinking_puff': {
+          // Pitada pensativa: mano a la boca, brazo izquierdo cruzado, cabeza ladeada mirando el invento
+          const pose = sampleThinkingPuffPose(t - emoteStartRef.current.at);
+          rightArm.rotation.x = THREE.MathUtils.lerp(rightArm.rotation.x, -1.95, pose.rightHandToMouth);
+          rightArm.rotation.z = THREE.MathUtils.lerp(rightArm.rotation.z, -0.5, pose.rightHandToMouth);
+          leftArm.rotation.x = THREE.MathUtils.lerp(leftArm.rotation.x, -0.9, pose.leftArmCrossed);
+          leftArm.rotation.z = THREE.MathUtils.lerp(leftArm.rotation.z, 0.62, pose.leftArmCrossed);
+          if (head) {
+            head.rotation.z = pose.headTiltZ;
+            head.rotation.x = pose.headPitchX;
+          }
+          smokeBurstRef.current = pose.exhaleSmoke;
+          break;
+        }
         case 'wrenchSpin':
           rightArm.rotation.x = -1.7;
           rightArm.rotation.z = 0.24 + Math.sin(t * 15) * 0.28;
@@ -707,6 +739,17 @@ export function InventorCharacter({
               </group>
             </Suspense>
 
+            {/* MECÁNICOS LOCOS: antiparras, careta, casco de chapa, pelo chamuscado, boca, grasa, pañuelo */}
+            {appearance.mechanic && (
+              <MechanicAccessories
+                style={appearance.mechanic}
+                materials={materials}
+                headTransform={headTransform}
+                protectiveActiveRef={protectiveActiveRef}
+                smokeBurstRef={smokeBurstRef}
+              />
+            )}
+
             {/* HEAD DECORATIVE ANCHOR (Hard-hat with front visor brim, replaceable by helmet/cap/astronaut) */}
             <group ref={headAnchorRef} position={[0, 0.095, -0.015]} rotation={[-0.14, 0, 0]}>
               {appearance.hatStyle === 'hardhat' && (
@@ -724,7 +767,7 @@ export function InventorCharacter({
                   </mesh>
                 </group>
               )}
-              {appearance.hatStyle === 'none' && appearance.usePaletteForOutfit && (
+              {appearance.hatStyle === 'none' && appearance.usePaletteForOutfit && appearance.mechanic?.headgear !== 'scrap_helmet' && (
                 <group ref={hairRef} position={[0, 0.17, -0.025]}>
                   <mesh castShadow material={materials.hairShadow} scale={[0.205, 0.073, 0.19]} position={[0, -0.012, -0.02]}>
                     <sphereGeometry args={[1, 16, 10]} />

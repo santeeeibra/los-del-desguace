@@ -1,3 +1,5 @@
+import type { MechanicStyleConfig } from './mechanicStyle';
+
 export type HatStyle = 'hardhat' | 'none';
 export type GogglesStyle = 'forehead' | 'none';
 export type BackpackStyle = 'none' | 'scrap_pack';
@@ -39,6 +41,8 @@ export interface CharacterAppearanceConfig {
   beltToolStyle: BeltToolStyle;
   palette: CharacterPalette;
   usePaletteForOutfit?: boolean;
+  /** Estilo "Mecánicos Locos" (accesorios de cabeza/boca, grasa, pañuelo). */
+  mechanic?: MechanicStyleConfig;
 }
 
 /**

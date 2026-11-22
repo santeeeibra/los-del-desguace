@@ -12,6 +12,13 @@ import {
   type EmoteId,
 } from '../character/characterCustomization';
 import { HEAD_SHAPE_OPTIONS } from '../character/faceRigController';
+import {
+  GREASE_OPTIONS,
+  HEADGEAR_OPTIONS,
+  MECHANIC_PRESETS,
+  MOUTH_PROP_OPTIONS,
+  NECK_BACK_OPTIONS,
+} from '../character/mechanicStyle';
 import type { QualityLevel } from '../config/visualConfig';
 import { playerInput } from '../controls/playerInput';
 import { WORKSHOP_SLOT_BY_ID } from '../invention/workshopAssembly';
@@ -1840,7 +1847,125 @@ export function HudOverlay() {
                 </div>
 
                 <div className="hud-creator-section">
-                  <div className="hud-menu-subtitle">Probar Gestos (7 Emotes con Sonido)</div>
+                  <div className="hud-menu-subtitle">Mecánicos Locos · Looks Listos</div>
+                  <div className="hud-menu-presets">
+                    {MECHANIC_PRESETS.map((preset) => (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        className="hud-button hud-swatch-btn"
+                        aria-pressed={
+                          characterConfig.headgear === preset.style.headgear &&
+                          characterConfig.mouthProp === preset.style.mouthProp &&
+                          characterConfig.greaseLevel === preset.style.greaseLevel &&
+                          characterConfig.neckOrBack === preset.style.neckOrBack &&
+                          characterConfig.accentColor === preset.style.accentColor
+                        }
+                        onClick={() => gameStore.setCharacterConfig({ ...preset.style })}
+                      >
+                        <span className="hud-swatch-dot" style={{ background: preset.style.accentColor }} aria-hidden="true" />
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="hud-creator-section">
+                  <div className="hud-menu-subtitle">En la Cabeza (la careta y las antiparras bajan solas al soldar)</div>
+                  <div className="hud-menu-presets">
+                    {HEADGEAR_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        className="hud-button"
+                        title={opt.description}
+                        aria-pressed={characterConfig.headgear === opt.id}
+                        onClick={() => gameStore.setCharacterConfig({ headgear: opt.id })}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="hud-creator-split">
+                  <div className="hud-creator-section">
+                    <div className="hud-menu-subtitle">En la Boca</div>
+                    <div className="hud-menu-presets">
+                      {MOUTH_PROP_OPTIONS.map((opt) => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          className="hud-button"
+                          title={opt.description}
+                          aria-pressed={characterConfig.mouthProp === opt.id}
+                          onClick={() => gameStore.setCharacterConfig({ mouthProp: opt.id })}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="hud-creator-section">
+                    <div className="hud-menu-subtitle">Grasa y Hollín</div>
+                    <div className="hud-menu-presets">
+                      {GREASE_OPTIONS.map((opt) => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          className="hud-button"
+                          title={opt.description}
+                          aria-pressed={characterConfig.greaseLevel === opt.id}
+                          onClick={() => gameStore.setCharacterConfig({ greaseLevel: opt.id })}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="hud-creator-split">
+                  <div className="hud-creator-section">
+                    <div className="hud-menu-subtitle">Cuello y Espalda</div>
+                    <div className="hud-menu-presets">
+                      {NECK_BACK_OPTIONS.map((opt) => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          className="hud-button"
+                          title={opt.description}
+                          aria-pressed={characterConfig.neckOrBack === opt.id}
+                          onClick={() => gameStore.setCharacterConfig({ neckOrBack: opt.id })}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="hud-creator-section">
+                    <div className="hud-menu-subtitle">Color de Acento (pañuelo y detalles)</div>
+                    <div className="hud-menu-presets">
+                      {['#d96b27', '#f0b429', '#2d9cdb', '#6abf4b', '#e05a2b', '#b8372d', '#9d5f91', '#eee2cb'].map((color) => (
+                        <button
+                          key={color}
+                          type="button"
+                          className="hud-button hud-swatch-btn"
+                          aria-label={`Color de acento ${color}`}
+                          aria-pressed={characterConfig.accentColor === color}
+                          onClick={() => gameStore.setCharacterConfig({ accentColor: color })}
+                        >
+                          <span className="hud-swatch-dot" style={{ background: color }} aria-hidden="true" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="hud-creator-section">
+                  <div className="hud-menu-subtitle">Probar Gestos (8 Emotes con Sonido)</div>
                   <div className="hud-emote-grid is-inline">
                     {EMOTE_CATALOG.map((emote) => (
                       <button
