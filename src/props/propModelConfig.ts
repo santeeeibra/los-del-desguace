@@ -20,6 +20,14 @@ export const PROP_MODEL_URLS: Partial<Record<GrabbableKind, string>> = {
   switchBox: `${BASE}models/props/variants/switch_box-v001.glb`,
   logicAnd: `${BASE}models/props/variants/logic_and-v001.glb`,
   magnet: `${BASE}models/props/variants/magnet-v001.glb`,
+  spring: `${BASE}models/props/variants/spring-v001.glb`,
+  balloon: `${BASE}models/props/variants/balloon-v001.glb`,
+  fan: `${BASE}models/props/variants/fan-v001.glb`,
+  horn: `${BASE}models/props/variants/horn-v001.glb`,
+  gyro: `${BASE}models/props/variants/gyro-v001.glb`,
+  boxingGlove: `${BASE}models/props/variants/boxing_glove-v001.glb`,
+  droneRotor: `${BASE}models/props/variants/drone_rotor-v001.glb`,
+  flag: `${BASE}models/props/variants/flag-v001.glb`,
 };
 
 export const WORKSHOP_BARREL_MODELS = {
@@ -30,6 +38,8 @@ export const WORKSHOP_BARREL_MODELS = {
 export const WELDER_MODEL_URL = `${BASE}models/tools/welder.glb`;
 export const GRINDER_MODEL_URL = `${BASE}models/tools/grinder.glb`;
 export const CHOPSAW_MODEL_URL = `${BASE}models/tools/chopsaw.glb`;
+export const WIRE_TOOL_MODEL_URL = `${BASE}models/tools/wire_tool.glb`;
+export const SPRAY_CAN_MODEL_URL = `${BASE}models/tools/spray_can.glb`;
 export const WRENCH_MODEL_URL = `${BASE}models/props/variants/wrench-v001.glb`;
 
 /** `?props=legacy` muestra las primitivas anteriores para comparar. */

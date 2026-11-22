@@ -954,9 +954,9 @@ function GrabbableItem({
             </mesh>
           </group>
         } />}
-        {kind === 'boxingGlove' && <BoxingGloveVisual id={id} glove={materials.redPaint} steel={materials.bracket} />}
-        {kind === 'droneRotor' && (
-          <>
+        {kind === 'boxingGlove' && <PropVisual kind={kind} fallback={<BoxingGloveVisual id={id} glove={materials.redPaint} steel={materials.bracket} />} />}
+        {kind === 'droneRotor' && <PropVisual kind={kind} fallback={
+          <group>
             <mesh castShadow material={materials.canisterTeal} position={[0, -0.07, 0]}>
               <cylinderGeometry args={[0.105, 0.12, 0.08, 12]} />
             </mesh>
@@ -964,10 +964,10 @@ function GrabbableItem({
               <torusGeometry args={[0.255, 0.017, 6, 20]} />
             </mesh>
             <FanBlades id={id} bladeMat={materials.bracket} hubMat={materials.brass} idleSpeed={0} />
-          </>
-        )}
-        {kind === 'flag' && (
-          <>
+          </group>
+        } />}
+        {kind === 'flag' && <PropVisual kind={kind} fallback={
+          <group>
             <mesh castShadow material={materials.brass} position={[-0.15, 0, 0]}>
               <cylinderGeometry args={[0.017, 0.022, 0.72, 8]} />
             </mesh>
@@ -977,8 +977,8 @@ function GrabbableItem({
             <mesh castShadow material={materials.rimYellow} position={[0.107, 0.24, 0]}>
               <boxGeometry args={[0.043, 0.2, 0.025]} />
             </mesh>
-          </>
-        )}
+          </group>
+        } />}
         {kind === 'fan' && <PropVisual kind={kind} fallback={
           <group>
             {/* Teal circular duct */}
