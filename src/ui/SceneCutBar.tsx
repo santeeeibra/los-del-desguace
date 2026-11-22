@@ -3,8 +3,47 @@ import { sceneCutStore, useCutPreview } from '../invention/sceneCut';
 import { platformStore } from '../invention/platformStore';
 import { STEER_DESIGN_MAX } from '../invention/platformShape';
 import type { GrabbableKind } from '../props/grabbableRegistry';
+import { ToolIcon } from './ToolIcons';
 
 const DEG = 180 / Math.PI;
+
+/** Traduce los errores técnicos del recorte a instrucciones de qué hacer. */
+function friendlyCutError(error: string): string {
+  switch (error) {
+    case 'El corte partiría la plataforma en dos':
+      return 'Así la chapa quedaría partida en dos pedazos. La línea debe sacar solo un trozo del borde: empezá y terminá afuera, del mismo lado, sin cruzar la chapa de punta a punta.';
+    case 'El corte tiene que entrar desde el borde':
+      return 'La línea tiene que cruzar el borde: empezá afuera de la chapa, entrá, y terminá afuera otra vez.';
+    case 'El corte tiene que empezar y terminar afuera del borde':
+      return 'El primer y el último punto tienen que estar AFUERA de la chapa (sobre el piso, fuera del borde).';
+    case 'El corte tiene bordes cruzados':
+      return 'Las líneas se cruzan entre sí. Tocá "Borrar último" y marcá de nuevo sin cruzarlas.';
+    case 'El corte no toca material':
+      return 'La línea no toca la chapa. Marcá puntos que pasen por encima de la parte que querés sacar.';
+    case 'Quedaría muy poco material':
+      return 'Quedaría muy poca chapa. Elegí un trozo más chico para cortar.';
+    default:
+      return error;
+  }
+}
+
+/** Dibujito de ejemplo: la línea entra desde afuera, rodea una esquina y sale afuera. */
+function CutExample() {
+  return (
+    <svg className="scene-cut-example" viewBox="0 0 120 84" role="img"
+      aria-label="Ejemplo: tres puntos, el primero y el último afuera de la chapa, rodean una esquina que se corta">
+      <rect x="30" y="16" width="60" height="52" rx="3" fill="#d9a35a" stroke="#2c1607" strokeWidth="2.4" />
+      <rect x="68" y="16" width="22" height="22" fill="#df6e50" opacity="0.8" />
+      <path d="M68 6V38H100" fill="none" stroke="#b14027" strokeWidth="2.6" strokeDasharray="5 4" strokeLinejoin="round" />
+      {([[68, 6, '1'], [68, 38, '2'], [100, 38, '3']] as const).map(([x, y, n]) => (
+        <g key={n}>
+          <circle cx={x} cy={y} r="7" fill="#ffe074" stroke="#2c1607" strokeWidth="2" />
+          <text x={x} y={y + 3.6} textAnchor="middle" fontSize="10" fontWeight="800" fill="#2c1607">{n}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
 
 /** Barra de Cortar en escena: deshacer, borrar punto, holograma de giro, cortar y salir. */
 export function SceneCutBar({ bolts, labels, touch }: {
@@ -35,23 +74,37 @@ export function SceneCutBar({ bolts, labels, touch }: {
   };
   const looseNames = preview?.loose.map(name) ?? [];
   const cutting = cut.phase === 'cutting';
+  const pointCount = cut.points.length;
+  const ready = !cutting && Boolean(preview) && !preview?.error && pointCount >= 3;
   const status = cutting
     ? 'Cortando…'
     : cut.confirmLoose && cut.message
       ? cut.message
-      : preview?.error
-        ? preview.error
+      : preview?.error && pointCount >= 3
+        ? friendlyCutError(preview.error)
         : looseNames.length
-          ? `Ojo: se soltará ${looseNames.join(', ')}.`
-          : cut.points.length >= 3
-            ? 'Listo para cortar. Arrastrá los puntos para corregir.'
-            : cut.message ?? '';
+          ? `Ojo: se soltará ${looseNames.join(', ')}. Tocá Cortar y después Confirmar.`
+          : ready
+            ? '③ Listo: lo rojo es lo que se corta. Si te gusta, tocá ✂ Cortar. Podés arrastrar un punto para corregir.'
+            : pointCount === 0
+              ? cut.message ?? `① ${touch ? 'Tocá' : 'Hacé clic'} AFUERA de la chapa, al lado del borde, para empezar la línea.`
+              : pointCount < 3
+                ? `② Seguí marcando puntos alrededor del trozo que querés sacar (mínimo 3). El último tiene que quedar afuera de la chapa.`
+                : friendlyCutError(preview?.error ?? '');
 
   return (
     <div className="scene-cut-ui hud-interactive" role="region" aria-label="Cortar en escena">
       <div className="scene-cut-top wood-sign">
-        <strong>Cortar en escena</strong>
-        <span>{touch ? 'Tocá' : 'Hacé clic'} afuera del borde, marcá el recorte y terminá afuera. Arrastrá un punto para moverlo.</span>
+        <strong>Cortar en escena · cómo se usa</strong>
+        <div className="scene-cut-help">
+          <CutExample />
+          <ol>
+            <li><b>1.</b> {touch ? 'Tocá' : 'Clic'} <b>afuera</b> de la chapa, junto al borde.</li>
+            <li><b>2.</b> Marcá puntos alrededor del trozo que querés sacar.</li>
+            <li><b>3.</b> El último punto también va <b>afuera</b>. Se pinta de rojo lo que se corta.</li>
+            <li><b>4.</b> Tocá <b>✂ Cortar</b>. Arrastrá un punto para moverlo.</li>
+          </ol>
+        </div>
       </div>
       <div className="scene-cut-bar wood-sign">
         {bolts}
@@ -80,9 +133,10 @@ export function SceneCutBar({ bolts, labels, touch }: {
             onClick={() => sceneCutStore.undo()}>Deshacer</button>
           <button type="button" className={`hud-button scene-cut-go ${looseNames.length ? 'is-danger' : 'is-primary'}`}
             disabled={cutting || !preview || Boolean(preview.error) || cut.points.length < 3}
+            title={ready ? 'Cortar la chapa' : 'Marcá al menos 3 puntos (el primero y el último afuera de la chapa)'}
             data-suggested={(!cutting && preview && !preview.error && cut.points.length >= 3) || undefined}
             onClick={() => sceneCutStore.requestCut(preview, looseNames)}>
-            {cut.confirmLoose ? 'Confirmar corte' : 'Cortar'}
+            <ToolIcon tool="slice" />{cut.confirmLoose ? 'Confirmar corte' : 'Cortar'}
           </button>
           <button type="button" className="hud-button" disabled={cutting} onClick={() => sceneCutStore.stop()}>Salir</button>
         </div>

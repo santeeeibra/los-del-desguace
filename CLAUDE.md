@@ -220,4 +220,8 @@ Referencia directa para modificar mecánicas sin tener que releer todo el proyec
    - **Masas:** `PHYSICS_PROPS` en `GrabbableProps.tsx` debe coincidir siempre con `tests/presetStability.test.ts` (ej. `crate = 14`, `woodBarrel = 6`).
    - **Planos:** `captureCartBlueprint` / `restoreCartBlueprint` soportan chasis `'cart'` y creaciones libres (`rootPartId`), restauran juntas/cables y llaman `world.propagateModifiedBodyPositionsToColliders()`.
    - **Cámara (`GameCameraRig`):** soporta Pointer Lock en PC (`Esc` libera) y pausa el auto-follow `1.4 s` tras mover el ratón manualmente.
+6. **Sierra láser y rebanado de piezas (`Shift+C`):**
+   - `gameStore.toggleSaw()` equipa la sierra (deja el láser apuntando). Máquina de estados en `PlayerRig.tsx` (bloque "Sierra láser", antes de `consumePartAction`): `idle` → `trace` (mantener clic/`E` y arrastrar el láser) → `cut` (al soltar, el láser recorre la línea con chispas) → rebanado. Mientras la sierra apunta se suprime el agarre (`sawBusy`).
+   - El plano pasa por la línea trazada y es perpendicular a la superficie. `laserTableBridge.slice(id, normal, offset, preview?)` parte la pieza: `src/invention/sliceGeometry.ts` (casco convexo, volumen, tests en `tests/sliceGeometry.test.ts`), crea dos `fragment` (`src/invention/fragmentStore.ts`, `src/props/FragmentPiece.tsx`) y suelta todo lo soldado. La pieza original se oculta (`fragmentStore.consume`) y vuelve al quitar todos los trozos.
+   - Visual en vivo: `src/invention/liveCut.ts` (estado) + `LiveCutVisual.tsx` (guía celeste, línea al rojo, luz). Las chapas (`platform`) se recortan aparte: Herramientas ▸ Recortar chapa (`sceneCut`).
 

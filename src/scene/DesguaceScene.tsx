@@ -1,6 +1,6 @@
 import { DeliveryController } from '../modes/delivery/DeliveryController';
 import { SceneCutter } from '../invention/SceneCutter';
-import { SlicePlaneHologram } from '../invention/SlicePlaneHologram';
+import { LiveCutVisual } from '../invention/LiveCutVisual';
 import { Suspense, useEffect, useMemo, useRef, type RefObject } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Environment, Lightformer } from '@react-three/drei';
@@ -224,7 +224,7 @@ export function DesguaceScene() {
             cartBodyRef={cartBodyRef}
           />
           <SceneCutter />
-          <SlicePlaneHologram />
+          <LiveCutVisual />
           <GameCameraRig targetSourceRef={cameraSourceRef} resetSignal={resetNonce} />
           <SceneReadyNotifier />
         </Physics>

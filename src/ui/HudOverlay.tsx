@@ -21,8 +21,7 @@ import { useArenaAndBridgeState } from '../modes/arenaAndBridge';
 import { contractStore, useContractStore, WORKSHOP_CONTRACTS } from '../modes/contracts';
 import { LaserTable } from './LaserTable';
 import { SceneCutBar } from './SceneCutBar';
-import { SliceBar } from './SliceBar';
-import { sliceStore, useSlice } from '../invention/sliceStore';
+import { ToolIcon } from './ToolIcons';
 import { sceneCutStore, useSceneCut } from '../invention/sceneCut';
 import { laserTableBridge } from '../invention/laserTableBridge';
 import { DeliveryHud, DELIVERY_DESCRIPTION, useDeliveryStatusText } from './DeliveryHud';
@@ -81,7 +80,7 @@ const KEY_GUIDE_ROWS: ReadonlyArray<readonly [string, string]> = [
   ['X · M', 'Llave y mira láser'],
   ['Shift+X', 'Soldadora / amoladora'],
   ['L · K', 'Cablear / quitar cables'],
-  ['Shift+C', 'Cortar / rebanar una pieza'],
+  ['Shift+C', 'Sierra láser: cortar una pieza'],
   ['Tab', 'Editor de piezas'],
   ['G', 'Gestos'],
   ['Alt+E', 'Más acciones'],
@@ -563,6 +562,8 @@ export function HudOverlay() {
   const nearCutStation = useGameStore((s) => s.nearCutStation);
   const canOpenCutStationRef = useRef(false);
   const grinderEquipped = useGameStore((s) => s.grinderEquipped);
+  const sawEquipped = useGameStore((s) => s.sawEquipped);
+  const sawPhase = useGameStore((s) => s.sawPhase);
   const welderEquipped = useGameStore((s) => s.welderEquipped);
   const nearbyTargetMounted = useGameStore((s) => s.nearbyTargetMounted);
   const nearbyTargetRideable = useGameStore((s) => s.nearbyTargetRideable);
@@ -778,7 +779,7 @@ export function HudOverlay() {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (sceneCutStore.isActive() || sliceStore.isActive()) return;
+      if (sceneCutStore.isActive()) return;
       if (benchOpen) {
         if (e.code === 'Escape' && !e.repeat) gameStore.setTestBench(false);
         return;
@@ -812,12 +813,9 @@ export function HudOverlay() {
         setMoreOpen((open) => !open);
       } else if (e.code === 'KeyC' && e.shiftKey && !e.repeat && !isInputFocused && !e.ctrlKey && !e.altKey && !e.metaKey &&
         !seated && !menuOpen && !emotesOpen && !showWelcome && !showFinish && !showContractFinish && !benchOpen) {
-        // Atajo de Cortar en escena (modo Taller Libre).
-        if (gameMode.mode === 'sandbox') {
-          e.preventDefault();
-          if (document.pointerLockElement) document.exitPointerLock?.();
-          startCut();
-        }
+        // Sierra láser: cortar cualquier pieza en vivo.
+        e.preventDefault();
+        gameStore.toggleSaw();
       } else if (e.code === 'KeyG' && !e.repeat && !isInputFocused && !menuOpen && !showWelcome && !showFinish && !showContractFinish) {
         playWoodClick();
         setEmotesOpen((prev) => !prev);
@@ -860,7 +858,7 @@ export function HudOverlay() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [menuOpen, menuTab, moreOpen, seated, showWelcome, showFinish, showContractFinish, emotesOpen, benchOpen, openParts, gameMode.mode]);
+  }, [menuOpen, menuTab, moreOpen, seated, showWelcome, showFinish, showContractFinish, emotesOpen, benchOpen, openParts]);
 
   const showTouch = touchMode === 'on' || (touchMode === 'auto' && isTouchDevice);
   const assemblyLabels = {
@@ -868,6 +866,7 @@ export function HudOverlay() {
     drop: 'Apoyar', position: 'Mover', place: 'Fijar aquí',
   } as const;
   const interactLabel = seated ? 'Salir del asiento'
+    : sawEquipped && !carriedKind ? 'Marcar corte'
     : assemblyInteraction ? assemblyLabels[assemblyInteraction]
     : workshopSlot ? 'Montar'
     : partMountReady ? 'Soldar'
@@ -952,32 +951,8 @@ export function HudOverlay() {
   useEffect(() => {
     if (sceneCut.active && (gameMode.mode !== 'sandbox' || seated)) sceneCutStore.stop();
   }, [sceneCut.active, gameMode.mode, seated]);
-  const slice = useSlice();
-  useEffect(() => {
-    if (slice.active && (gameMode.mode !== 'sandbox' || seated)) sliceStore.stop();
-  }, [slice.active, gameMode.mode, seated]);
-  /** Un solo atajo para cortar: rebana la pieza a la que apuntás, o recorta la plataforma cercana. */
-  const startCut = () => {
-    const bridge = laserTableBridge.get();
-    const sliceId = bridge?.sliceTarget() ?? null;
-    if (bridge && sliceId) {
-      const prepared = bridge.prepareSlice(sliceId);
-      if (prepared.error || !prepared.kind || !prepared.right || !prepared.forward) {
-        gameStore.setWireHint(prepared.error ?? 'Esta pieza no se puede rebanar');
-        return;
-      }
-      sliceStore.start({
-        id: sliceId, label: ITEM_LABELS[prepared.kind], radius: prepared.radius ?? 0.5,
-        right: prepared.right, forward: prepared.forward,
-      });
-      setToolsOpen(false);
-      setMoreOpen(false);
-      return;
-    }
-    startSceneCut(bridge?.aimedNear() ?? bridge?.aimed() ?? null);
-  };
   const startSceneCut = (id: string | null) => {
-    if (!id) { gameStore.setWireHint('Apuntá a una pieza para rebanarla, o acercate a una plataforma'); return; }
+    if (!id) { gameStore.setWireHint('Acercate a una plataforma para recortarla'); return; }
     const error = sceneCutStore.start(id);
     if (error) gameStore.setWireHint(error);
     setToolsOpen(false);
@@ -997,10 +972,26 @@ export function HudOverlay() {
     <div className="hud-layer" data-scene-ready={sceneReady ? 'true' : 'false'} data-touch={showTouch}
       data-scene-cut={sceneCut.active ? 'true' : undefined}>
       <SceneCutBar bolts={<WoodBolts />} labels={ITEM_SHORT} touch={showTouch} />
-      <SliceBar bolts={<WoodBolts />} touch={showTouch} />
+      {sawEquipped && !seated && !menuOpen && !showWelcome && (
+        <div className="saw-hint wood-sign" role="status" aria-live="polite">
+          <ToolIcon tool="saw" className="hud-tool-icon is-title" />
+          <div>
+            <strong>Sierra láser</strong>
+            <span>
+              {sawPhase === 'trace'
+                ? 'Arrastrá el láser hasta donde termina el corte y soltá.'
+                : sawPhase === 'cut'
+                  ? 'Cortando…'
+                  : showTouch
+                    ? '1. Apuntá a una pieza · 2. Mantené “Usar” y arrastrá para marcar la línea · 3. Soltá para cortar.'
+                    : '1. Apuntá a una pieza · 2. Mantené clic (o E) y arrastrá para marcar la línea · 3. Soltá: corta con chispas.'}
+            </span>
+          </div>
+        </div>
+      )}
       {cutCandidate && !sceneCut.active && (
         <button type="button" className="hud-button is-accent scene-cut-start hud-interactive" data-suggested={suggestCut || undefined}
-          onClick={() => startSceneCut(cutCandidate)}>✂ Cortar</button>
+          onClick={() => startSceneCut(cutCandidate)}><ToolIcon tool="slice" />Cortar</button>
       )}
       {(cameraMode === 'firstPerson' || wrenchAiming) && (
         <div className="hud-reticle" data-target={Boolean(workshopSlot || aimedWorkshopSlot || nearbyTargetKind || wrenchTarget || laserPlacementReady)}
@@ -1106,7 +1097,7 @@ export function HudOverlay() {
         {weldProgress > 0 && (
           <div className="hud-weld-bar" role="progressbar" aria-label="Soldando" aria-valuenow={Math.round(weldProgress * 100)}>
             <i style={{ width: `${Math.round(weldProgress * 100)}%` }} />
-            <span>{grinderEquipped ? 'Cortando…' : 'Soldando…'}</span>
+            <span>{grinderEquipped || sawEquipped ? 'Cortando…' : 'Soldando…'}</span>
           </div>
         )}
 
@@ -2089,12 +2080,13 @@ export function HudOverlay() {
               <div className="hud-workshop-quick" role="group" aria-label="Herramientas del taller">
                 <button type="button" className="hud-button hud-wrench" aria-pressed={wrenchEquipped}
                   title="Equipar o guardar la Llave Mágica" onClick={() => gameStore.toggleWrench()}>
-                  Llave{!showTouch && <kbd>X</kbd>}
+                  <ToolIcon tool="wrench" />Llave{!showTouch && <kbd>X</kbd>}
                 </button>
                 {showTouch && (
-                  <button type="button" className="hud-button hud-wrench" aria-pressed={welderEquipped || grinderEquipped}
-                    title="Cambiar de herramienta: soldadora, amoladora, guardar" onClick={() => gameStore.toggleWelder()}>
-                    {grinderEquipped ? 'Amoladora' : welderEquipped ? 'Soldadora' : 'Soldar / Cortar'}
+                  <button type="button" className="hud-button hud-wrench" aria-pressed={welderEquipped || grinderEquipped || sawEquipped}
+                    title="Cambiar de herramienta: soldadora, amoladora, sierra láser, guardar" onClick={() => gameStore.toggleWelder()}>
+                    <ToolIcon tool={grinderEquipped ? 'grinder' : sawEquipped ? 'saw' : 'welder'} />
+                    {grinderEquipped ? 'Amoladora' : sawEquipped ? 'Sierra láser' : welderEquipped ? 'Soldadora' : 'Soldar / Cortar'}
                   </button>
                 )}
                 <button type="button" className="hud-button hud-cable-tool" aria-pressed={wiringActive}
@@ -2144,7 +2136,7 @@ export function HudOverlay() {
               </div>
               <div className="hud-build-row" aria-label="Herramientas de montaje y prueba">
                 <button type="button" className="hud-button" disabled={!carriedKind}
-                  onClick={() => playerInput.triggerPartAction('weld')}>Soldar</button>
+                  onClick={() => playerInput.triggerPartAction('weld')}><ToolIcon tool="welder" />Soldar</button>
                 <button type="button" className="hud-button" disabled={Boolean(carriedKind || !nearbyTargetMounted)}
                   onClick={() => playerInput.triggerPartAction('unmount')}>Desmontar unión</button>
                 <button type="button" className="hud-button" disabled={!contractState.canRepairLastBuild}
@@ -2153,20 +2145,24 @@ export function HudOverlay() {
                   onClick={openBench}>Banco RPM</button>
                 {gameMode.mode === 'sandbox' && (
                   <button type="button" className="hud-button is-accent" onClick={() => { setLaserOpen(true); setToolsOpen(false); }}>
-                    Mesa de corte
+                    <ToolIcon tool="sawTable" />Mesa de corte
                   </button>
                 )}
                 {gameMode.mode === 'sandbox' && (
                   <button type="button" className="hud-button is-accent"
-                    onClick={startCut}>
-                    Cortar en escena{!showTouch && <kbd>Shift+C</kbd>}
+                    onClick={() => startSceneCut(laserTableBridge.get()?.aimedNear() ?? laserTableBridge.get()?.aimed() ?? null)}>
+                    <ToolIcon tool="slice" />Recortar chapa
                   </button>
                 )}
               </div>
               <div className="hud-build-row">
+                <button type="button" className="hud-button hud-wrench" aria-pressed={sawEquipped}
+                  title="Sierra láser: cortá cualquier pieza trazando una línea con el láser" onClick={() => gameStore.toggleSaw()}>
+                  <ToolIcon tool="saw" />{sawEquipped ? 'Guardar sierra' : 'Sierra láser'}{!showTouch && <kbd>Shift+C</kbd>}
+                </button>
                 <button type="button" className="hud-button hud-wrench" aria-pressed={wrenchEquipped}
                   onClick={() => gameStore.toggleWrench()}>
-                  {wrenchEquipped ? 'Guardar llave' : 'Equipar llave'}{!showTouch && <kbd>X</kbd>}
+                  <ToolIcon tool="wrench" />{wrenchEquipped ? 'Guardar llave' : 'Equipar llave'}{!showTouch && <kbd>X</kbd>}
                 </button>
                 {wrenchEquipped && (
                   <button type="button" className="hud-button hud-wrench" aria-pressed={wrenchAiming}
@@ -2195,7 +2191,7 @@ export function HudOverlay() {
               {carriedKind && !wrenchAiming && !workshopSlot && (
                 <div className="hud-build-row">
                   <button type="button" className="hud-button is-accent" onClick={() => playerInput.triggerPartAction('weld')}>
-                    Soldar aquí{!showTouch && <kbd>F</kbd>}
+                    <ToolIcon tool="welder" />Soldar aquí{!showTouch && <kbd>F</kbd>}
                   </button>
                 </div>
               )}

@@ -94,6 +94,7 @@ import {
 } from '../props/grabbableRegistry';
 import { gameStore, useGameStore, MAX_EXTRA_PROPS } from '../state/gameStore';
 import { fragmentColors, fragmentStore } from '../invention/fragmentStore';
+import { liveCut } from '../invention/liveCut';
 import { ballPoints, cuboidPoints, cylinderPoints, planeRelativeTo, slicePoints, type V3 } from '../invention/sliceGeometry';
 
 interface PlayerRigProps {
@@ -159,6 +160,21 @@ export function PlayerRig({
   const wrenchMarker = useRef(new THREE.Vector3());
   const wrenchMarkerDirection = useRef(new THREE.Vector3());
   const wrenchPlacedPosition = useRef(new THREE.Vector3());
+  const scratchSawDir = useRef(new THREE.Vector3());
+  const sawRef = useRef({
+    phase: 'idle' as 'idle' | 'trace' | 'cut',
+    id: null as string | null,
+    a: new THREE.Vector3(),
+    b: new THREE.Vector3(),
+    normal: new THREE.Vector3(),
+    plane: new THREE.Vector3(),
+    offset: 0,
+    t: 0,
+    duration: 1,
+    spark: 0,
+    sound: 0,
+    wasHeld: false,
+  });
   const wrenchPlacedRotation = useRef(new THREE.Quaternion());
   const partAxis = useRef(new THREE.Vector3());
   const weldSnapParentRef = useRef<RapierRigidBody | null>(null);
@@ -171,6 +187,7 @@ export function PlayerRig({
   const wrenchEquipped = useGameStore((s) => s.wrenchEquipped);
   const welderEquipped = useGameStore((s) => s.welderEquipped);
   const grinderEquipped = useGameStore((s) => s.grinderEquipped);
+  const sawEquipped = useGameStore((s) => s.sawEquipped);
   const characterConfig = useGameStore((s) => s.characterConfig);
   const activeEmote = useGameStore((s) => s.activeEmote);
   const customAppearance = useMemo(
@@ -962,37 +979,7 @@ export function PlayerRig({
         const viewYaw = t && me ? Math.atan2(me.x - t.x, me.z - t.z) : 0;
         return { viewYaw };
       },
-      sliceTarget() {
-        const id = grabbableRegistry.highlightedId;
-        const kind = id ? grabbableRegistry.getById(id)?.kind : undefined;
-        if (!id || !kind || kind === 'platform') return null;
-        return id;
-      },
-      prepareSlice(id) {
-        const entry = grabbableRegistry.getById(id);
-        const body = entry?.getBody();
-        if (!entry || !body?.isValid()) return { error: 'Apuntá a una pieza para rebanarla' };
-        const stored = gameStore.getState().inventorySlots.some((item) => item?.id === id);
-        if (carriedIdRef.current === id || stored) return { error: 'Soltá la pieza en el piso para rebanarla' };
-        const station = workshop.stationOf(id) ?? (workshop.idsOnStation(`custom:${id}`).length ? (`custom:${id}` as const) : null);
-        if (station && station !== 'drum' && workshopPhysics.isReleased(station)) {
-          return { error: 'Fijá la creación en el taller para rebanar una de sus piezas' };
-        }
-        const shape = sliceLocalPoints(id);
-        if ('error' in shape) return { error: shape.error };
-        const fwd = scratchRayDir.current.set(0, 0, -1).applyQuaternion(camera.quaternion).setY(0);
-        if (fwd.lengthSq() < 1e-4) fwd.set(0, 0, 1);
-        fwd.normalize();
-        if (document.pointerLockElement) document.exitPointerLock?.();
-        const radius = shape.points.reduce((max, p) => Math.max(max, p.length()), 0.1);
-        return {
-          kind: entry.kind,
-          radius,
-          right: { x: -fwd.z, y: 0, z: fwd.x },
-          forward: { x: fwd.x, y: 0, z: fwd.z },
-        };
-      },
-      slice(id, normalIn, offset) {
+      slice(id, normalIn, offset, preview = false) {
         const entry = grabbableRegistry.getById(id);
         const body = entry?.getBody();
         if (!entry || !body?.isValid()) return { error: 'Elegí una pieza' };
@@ -1017,6 +1004,7 @@ export function PlayerRig({
         if (gameStore.getState().spawnedProps.length + (originalIsExtra ? 1 : 2) > MAX_EXTRA_PROPS) {
           return { error: 'El dispensador está lleno: retirá piezas extra' };
         }
+        if (preview) return {};
 
         // Todo lo soldado a la pieza se suelta (ella misma y lo que colgaba de ella).
         const dependents = station ? workshop.idsOnStation(station).filter((childId) => workshop.mountOf(childId)?.parentId === id) : [];
@@ -1115,6 +1103,21 @@ export function PlayerRig({
         return [...grabbableRegistry.getAll()].filter((e) => !kind || e.kind === kind).map((e) => e.id);
       },
       steer(id: string) { return workshopPhysics.steerInfo(id); },
+      /** Posición y dirección de la cámara (para apuntar el láser en pruebas). */
+      camera() {
+        const p = camera.getWorldPosition(new THREE.Vector3());
+        const d = camera.getWorldDirection(new THREE.Vector3());
+        return { p: [p.x, p.y, p.z], d: [d.x, d.y, d.z] };
+      },
+      /** Deja una pieza quieta en un punto (para barrer el láser sobre ella en pruebas). */
+      pin(id: string, x: number, y: number, z: number) {
+        const b = grabbableRegistry.getById(id)?.getBody();
+        if (!b?.isValid()) return false;
+        b.setBodyType(rapier.RigidBodyType.Fixed, true);
+        b.setTranslation({ x, y, z }, true);
+        b.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
+        return true;
+      },
       rotateMounted(id: string, axis: { x: number; y: number; z: number }, angle: number) {
         return workshopPhysics.rotateMountedPart(id, axis, angle);
       },
@@ -3110,6 +3113,106 @@ export function PlayerRig({
       gameStore.setWeldProgress(0);
     }
 
+    // Sierra láser: mantener clic / E sobre una pieza y arrastrar el láser traza la línea de corte;
+    // al soltar, el láser recorre la línea con chispas y material al rojo, y la pieza se separa.
+    {
+      const saw = sawRef.current;
+      const bridge = laserTableBridge.get();
+      const sawState = gameStore.getState();
+      const sawOn = sawState.sawEquipped && aiming && !carriedIdRef.current && !buildToolsLocked();
+      const sawHeld = playerInput.interactHeld || playerInput.weldHeld;
+      const dotPos = wrenchDotRef.current?.position;
+      const aimedKind = aimedId ? grabbableRegistry.getById(aimedId)?.kind : undefined;
+      const setPhase = (phase: 'idle' | 'trace' | 'cut') => {
+        saw.phase = phase;
+        liveCut.phase = phase;
+        gameStore.setSawPhase(phase);
+      };
+      const abort = () => {
+        setPhase('idle');
+        liveCut.reset();
+        gameStore.setWeldProgress(0);
+      };
+      if (saw.phase !== 'cut' && !sawOn && saw.phase !== 'idle') abort();
+      if (saw.phase === 'idle' && sawOn) {
+        if (sawHeld && !saw.wasHeld) {
+          if (aimedId && aimedKind && aimedKind !== 'platform' && dotPos && laserHit) {
+            saw.id = aimedId;
+            saw.normal.set(laserHit.normal.x, laserHit.normal.y, laserHit.normal.z).normalize();
+            saw.a.copy(dotPos);
+            saw.b.copy(dotPos);
+            liveCut.targetId = aimedId;
+            liveCut.a.copy(dotPos);
+            liveCut.b.copy(dotPos);
+            setPhase('trace');
+          } else if (aimedKind === 'platform') {
+            gameStore.setWireHint('Las chapas se recortan en Herramientas ▸ Cortar en escena');
+          } else {
+            gameStore.setWireHint('Apuntá el láser a una pieza, mantené clic y arrastrá para marcar el corte');
+          }
+        }
+      } else if (saw.phase === 'trace') {
+        if (sawHeld) {
+          if (laserHit && aimedId === saw.id && dotPos) saw.b.copy(dotPos);
+          liveCut.b.copy(saw.b);
+        } else {
+          const length = saw.a.distanceTo(saw.b);
+          const entry = saw.id ? grabbableRegistry.getById(saw.id) : null;
+          const body = entry?.getBody();
+          if (length < 0.12 || !saw.id || !body?.isValid()) {
+            gameStore.setWireHint('Mantené el clic y arrastrá el láser sobre la pieza para marcar por dónde cortar');
+            abort();
+          } else {
+            const along = scratchSawDir.current.subVectors(saw.b, saw.a).normalize();
+            const plane = saw.plane.crossVectors(along, saw.normal);
+            if (plane.lengthSq() < 0.04) plane.crossVectors(along, UP);
+            plane.normalize();
+            const origin = body.translation();
+            saw.offset = plane.x * (saw.a.x - origin.x) + plane.y * (saw.a.y - origin.y) + plane.z * (saw.a.z - origin.z);
+            const check = bridge?.slice(saw.id, { x: plane.x, y: plane.y, z: plane.z }, saw.offset, true);
+            if (!check || check.error) {
+              gameStore.setWireHint(check?.error ?? 'El taller no está listo');
+              abort();
+            } else {
+              saw.t = 0;
+              saw.duration = THREE.MathUtils.clamp(length / 1.1, 0.6, 1.5);
+              saw.spark = 0;
+              liveCut.progress = 0;
+              liveCut.front.copy(saw.a);
+              setPhase('cut');
+              playWeldClank();
+            }
+          }
+        }
+      } else if (saw.phase === 'cut') {
+        saw.t += dt / saw.duration;
+        const progress = Math.min(1, saw.t);
+        liveCut.progress = progress;
+        liveCut.front.lerpVectors(saw.a, saw.b, progress);
+        gameStore.setWeldProgress(progress);
+        saw.spark -= dt;
+        if (saw.spark <= 0) {
+          saw.spark = 0.045;
+          dustPoolRef.current?.spawnBurst(liveCut.front.x, liveCut.front.y + 0.02, liveCut.front.z, 'spark');
+          if (++saw.sound % 3 === 0) playSpark();
+        }
+        if (saw.t >= 1) {
+          const id = saw.id;
+          const result = id ? bridge?.slice(id, { x: saw.plane.x, y: saw.plane.y, z: saw.plane.z }, saw.offset) : null;
+          for (let i = 0; i <= 5; i++) {
+            const k = i / 5;
+            dustPoolRef.current?.spawnBurst(
+              saw.a.x + (saw.b.x - saw.a.x) * k, saw.a.y + (saw.b.y - saw.a.y) * k + 0.03,
+              saw.a.z + (saw.b.z - saw.a.z) * k, 'spark');
+          }
+          if (result?.error) gameStore.setWireHint(result.error);
+          else gameStore.celebrate('¡Pieza cortada!', 'Los trozos y lo soldado quedaron sueltos');
+          abort();
+        }
+      }
+      saw.wasHeld = sawHeld;
+    }
+
     const partAction = playerInput.consumePartAction();
     let unmountTarget: string | null = null;
     if (partAction === 'unmount' && !carriedIdRef.current) {
@@ -3189,7 +3292,8 @@ export function PlayerRig({
     );
 
     // 6. Handle Grab / Drop interaction trigger
-    const primaryInteract = interact && !primaryWire && !grindTargetId;
+    const sawBusy = gameStore.getState().sawEquipped && aiming && !carriedIdRef.current;
+    const primaryInteract = interact && !primaryWire && !grindTargetId && !sawBusy;
     const resolvedInteract = primaryInteract && interactReq && inventoryAction === null
       ? resolvePrimaryInteract(interactReq, {
           isCarrying: Boolean(carriedIdRef.current),
@@ -3783,6 +3887,7 @@ export function PlayerRig({
             wrenchEquipped={wrenchEquipped}
             welderEquipped={welderEquipped}
             grinderEquipped={grinderEquipped}
+            sawEquipped={sawEquipped}
             seated={seated}
             alignToGround
             wrenchTipRef={wrenchTipRef}

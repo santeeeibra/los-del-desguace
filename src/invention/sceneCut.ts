@@ -58,7 +58,7 @@ export const sceneCutStore = {
     if (prepared.error) return prepared.error;
     const viewYaw = prepared.viewYaw ?? 0;
     set({ active: true, platformId, points: [], sweepWheel: null, phase: 'edit', confirmLoose: false,
-      message: 'Tocá afuera del borde para empezar, marcá el recorte y terminá afuera del borde.', viewYaw });
+      message: null, viewYaw });
     return null;
   },
   stop() { set({ active: false, platformId: null, points: [], phase: 'edit', confirmLoose: false, message: null }); },

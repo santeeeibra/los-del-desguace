@@ -8,6 +8,7 @@ import { CabezaBaseModel } from './CabezaBaseModel';
 import { MagicWrench } from './MagicWrench';
 import { WelderTool } from './WelderTool';
 import { GrinderTool } from './GrinderTool';
+import { SliceSawTool } from './SliceSawTool';
 import { BASE_BODY_PROFILE as BODY, BODY_SOCKETS } from './body/bodyProfile';
 import { BeltMeshes, ForearmZone, LegZone, ShoulderZone, TorsoZone } from './body/BodyParts';
 import { useCharacterMaterials } from './characterMaterials';
@@ -63,6 +64,8 @@ interface InventorCharacterProps {
   wrenchEquipped?: boolean;
   welderEquipped?: boolean;
   grinderEquipped?: boolean;
+  /** Sierra de corte en la mano (mientras se rebana una pieza). */
+  sawEquipped?: boolean;
   seated?: boolean;
   alignToGround?: boolean;
   wrenchTipRef?: React.RefObject<THREE.Group | null>;
@@ -85,6 +88,7 @@ export function InventorCharacter({
   wrenchEquipped = false,
   welderEquipped = false,
   grinderEquipped = false,
+  sawEquipped = false,
   seated = false,
   alignToGround = false,
   wrenchTipRef,
@@ -639,6 +643,7 @@ export function InventorCharacter({
               <group position={S.handR}>
                 {welderEquipped ? <WelderTool tipRef={wrenchTipRef} />
                   : grinderEquipped ? <GrinderTool tipRef={wrenchTipRef} />
+                  : sawEquipped ? <SliceSawTool tipRef={wrenchTipRef} />
                   : <MagicWrench tipRef={wrenchTipRef} />}
               </group>
             )}

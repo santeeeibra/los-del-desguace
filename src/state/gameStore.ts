@@ -136,6 +136,10 @@ export interface GameHudState {
   nearCutStation: boolean;
   /** Amoladora equipada (corta soldaduras). Implica el rayo láser de la llave. */
   grinderEquipped: boolean;
+  /** Sierra láser en la mano: traza una línea sobre cualquier pieza y la corta. */
+  sawEquipped: boolean;
+  /** Fase de la sierra: esperando, trazando la línea o cortando. */
+  sawPhase: 'idle' | 'trace' | 'cut';
   /** Avance (0–1) de la soldadura que se está haciendo con la soldadora. */
   weldProgress: number;
   wrenchAiming: boolean;
@@ -210,6 +214,8 @@ let state: GameHudState = {
   welderEquipped: false,
   nearCutStation: false,
   grinderEquipped: false,
+  sawEquipped: false,
+  sawPhase: 'idle',
   weldProgress: 0,
   wrenchAiming: false,
   wrenchAimLocked: false,
@@ -474,27 +480,48 @@ export const gameStore = {
       wireHintClearTimer = null;
     }
     state = {
-      ...state, wrenchEquipped: !state.wrenchEquipped, welderEquipped: false, grinderEquipped: false, wrenchAiming: false, wrenchAimLocked: false, wrenchTarget: null,
+      ...state, wrenchEquipped: !state.wrenchEquipped, welderEquipped: false, grinderEquipped: false, sawEquipped: false, sawPhase: 'idle', wrenchAiming: false, wrenchAimLocked: false, wrenchTarget: null,
       aimedWorkshopSlot: null, laserHint: null, laserPlacementReady: false, partMountReady: false, wireHint: null, pendingWireFrom: null, wiringActive: false,
     };
     emit();
   },
-  /** Shift+X: llave → soldadora → amoladora → guardar. Las dos usan el mismo rayo de apuntado que la llave. */
+  /** Shift+X: llave → soldadora → amoladora → sierra láser → guardar. Las dos usan el mismo rayo de apuntado que la llave. */
   toggleWelder() {
     if (buildToolsLocked() && !state.wrenchEquipped) return;
     if (wireHintClearTimer !== null) {
       window.clearTimeout(wireHintClearTimer);
       wireHintClearTimer = null;
     }
-    const next = state.welderEquipped ? 'grinder' : state.grinderEquipped ? 'none' : 'welder';
+    const next = state.welderEquipped ? 'grinder' : state.grinderEquipped ? 'saw' : state.sawEquipped ? 'none' : 'welder';
     // En táctil no hay clic derecho: al equipar queda la mira fija para poder apuntar.
     const touch = state.touchMode === 'on' || (state.touchMode === 'auto' && state.isTouchDevice);
     const lockAim = touch && next !== 'none';
     state = {
       ...state, wrenchEquipped: next !== 'none', welderEquipped: next === 'welder', grinderEquipped: next === 'grinder',
-      wrenchAiming: lockAim, wrenchAimLocked: lockAim, wrenchTarget: null, weldProgress: 0,
+      sawEquipped: next === 'saw', sawPhase: 'idle',
+      wrenchAiming: next === 'saw' || lockAim, wrenchAimLocked: next === 'saw' || lockAim, wrenchTarget: null, weldProgress: 0,
       aimedWorkshopSlot: null, laserHint: null, laserPlacementReady: false, partMountReady: false, wireHint: null, pendingWireFrom: null, wiringActive: false,
     };
+    emit();
+  },
+  /** Shift+C: equipa o guarda la sierra láser (queda apuntando, lista para trazar). */
+  toggleSaw() {
+    if (buildToolsLocked() && !state.wrenchEquipped) return;
+    if (wireHintClearTimer !== null) {
+      window.clearTimeout(wireHintClearTimer);
+      wireHintClearTimer = null;
+    }
+    const on = !state.sawEquipped;
+    state = {
+      ...state, wrenchEquipped: on, welderEquipped: false, grinderEquipped: false, sawEquipped: on, sawPhase: 'idle',
+      wrenchAiming: on, wrenchAimLocked: on, wrenchTarget: null, weldProgress: 0,
+      aimedWorkshopSlot: null, laserHint: null, laserPlacementReady: false, partMountReady: false, wireHint: null, pendingWireFrom: null, wiringActive: false,
+    };
+    emit();
+  },
+  setSawPhase(phase: 'idle' | 'trace' | 'cut') {
+    if (state.sawPhase === phase) return;
+    state = { ...state, sawPhase: phase };
     emit();
   },
   setNearCutStation(near: boolean) {
