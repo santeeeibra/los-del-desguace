@@ -23,6 +23,7 @@ import { CHARACTER_DIMENSIONS } from '../config/visualConfig';
 import { playerInput, useKeyboardInput, type PlayerInputSnapshot } from '../controls/playerInput';
 import type { CameraTargetSource } from '../controls/ThirdPersonCamera';
 import { captureCartBlueprint, restoreCartBlueprint } from '../invention/cartBlueprints';
+import { MAX_YARD_TRIES, yardAssembly } from '../invention/yardAssembly';
 import {
   DRUM_STAND_ORIGIN,
   FREE_BUILD_ORIGIN,
@@ -2094,6 +2095,36 @@ export function PlayerRig({
         } else {
           gameStore.setWireHint(error);
         }
+      }
+    }
+
+    // Armado de inventos del propio nivel (autos viejos del patio): se espera a que existan los cuerpos.
+    if (enabled) {
+      const yardQueue = yardAssembly.pending();
+      for (let qi = yardQueue.length - 1; qi >= 0; qi--) {
+        const req = yardQueue[qi];
+        if (req.type === 'clear') {
+          for (const rootId of req.rootIds) {
+            for (const removedId of workshop.remove(rootId)) workshopPhysics.detach(removedId);
+          }
+          workshopPhysics.updateMotors(workshop);
+          yardQueue.splice(qi, 1);
+          continue;
+        }
+        const cartBody = cartBodyRef.current;
+        const ready = cartBody?.isValid() && req.blueprint.parts.every((part) => {
+          const b = grabbableRegistry.getById(part.partId)?.getBody();
+          return Boolean(b?.isValid());
+        });
+        if (!ready) {
+          if (++req.tries > MAX_YARD_TRIES) yardQueue.splice(qi, 1);
+          continue;
+        }
+        const err = restoreCartBlueprint(req.blueprint, cartBody!, workshop, workshopPhysics, contraptionGraph,
+          { world, rapier }, new Set<string>(), req.at);
+        if (err && ++req.tries <= MAX_YARD_TRIES) continue;
+        if (err) console.warn(`[yard] no se pudo armar ${req.blueprint.name}: ${err}`);
+        yardQueue.splice(qi, 1);
       }
     }
 

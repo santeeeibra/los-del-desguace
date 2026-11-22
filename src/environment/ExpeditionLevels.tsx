@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
+import { useAfterPhysicsStep, useRapier } from '@react-three/rapier';
 import { CuboidCollider, CylinderCollider, RigidBody, type RapierRigidBody } from '@react-three/rapier';
 import * as THREE from 'three';
 import type { CameraTargetSource } from '../controls/ThirdPersonCamera';
@@ -12,6 +13,11 @@ import {
 } from '../modes/expeditionLevels';
 import { gameStore } from '../state/gameStore';
 import { weightMultiple } from '../physics/jointLoad';
+import { releaseSceneJoint } from '../physics/sceneJoints';
+import { fragmentStore, useFragmentNonce } from '../invention/fragmentStore';
+import { donorCarBlueprint, yardAssembly } from '../invention/yardAssembly';
+import { grabbableRegistry } from '../props/grabbableRegistry';
+import { isMagnetPowered } from '../logic/contraptionRegistry';
 import { registerChargeStation } from '../props/chargeStations';
 import { resetPartConditions, setPartCondition } from '../props/partCondition';
 import { registerMagneticAnchor, registerWorldTags } from '../props/worldTags';
@@ -635,17 +641,19 @@ const L4_RAMP1 = { z0: 56, z1: 100, rise: 18 };
 const L4_RAMP2 = { z0: 108, z1: 128, y0: 18, y1: 30 };
 const L4_LIGHTHOUSE: [number, number, number] = [-16, 0, 34];
 const L4_DOME_ID = 'level4-lighthouse-dome';
+/** Autos viejos del patio (2 autos = 14 piezas; el tope de piezas extra es 24 y la Sierra necesita lugar). Posición del chasis. Se arman soldados al iniciar el nivel. */
+const L4_DONOR_CARS: { pos: [number, number, number]; rotY: number; name: string }[] = [
+  { pos: [16, 0.75, 36], rotY: 0.2, name: 'Auto viejo 1' },
+  { pos: [24, 0.75, 46], rotY: -0.5, name: 'Auto viejo 2' },
+];
+/** Tensión (N) del imán sobre el domo que lo arranca de su torre. */
+const L4_MAGNET_BREAK_TENSION = 1800;
+const L4_MAGNET_SPRING = 2200;
+const L4_MAGNET_GRAB_RANGE = 1.8;
 
 /** Piezas del patio (locales). `condition` deja la pieza descargada o rota para reparar. */
 const L4_YARD_PARTS: { kind: GrabbableKind; pos: [number, number, number]; condition?: 'broken' | 'discharged' }[] = [
-  { kind: 'chassis', pos: [16, 1.4, 36] },
-  { kind: 'wheel', pos: [13, 1, 32] },
-  { kind: 'wheel', pos: [19, 1, 32] },
-  { kind: 'wheel', pos: [13, 1, 40] },
-  { kind: 'wheel', pos: [19, 1, 40] },
   { kind: 'seat', pos: [21, 1, 44] },
-  { kind: 'part', pos: [22, 1, 34], condition: 'broken' },
-  { kind: 'battery', pos: [22, 1, 38], condition: 'discharged' },
   { kind: 'crate', pos: [-6, 1, 9] },
   { kind: 'crate', pos: [-8, 1, 9] },
   { kind: 'thruster', pos: [-4, 1, 12] },
@@ -663,7 +671,82 @@ function Lighthouse({ resetKey }: { resetKey: number }) {
   const beamRef = useRef<THREE.Group>(null);
   const target = useMemo(() => new THREE.Object3D(), []);
   const [fallen, setFallen] = useState(false);
+  const domeColliderRef = useRef<import('@react-three/rapier').RapierCollider>(null);
+  const domeVisualRef = useRef<THREE.Group>(null);
+  useFragmentNonce();
+  const consumed = fragmentStore.isConsumed(L4_DOME_ID);
   const DOME_MASS = 80;
+  const { rapier } = useRapier();
+  void rapier;
+  const tether = useRef<{ magnetId: string; rest: number } | null>(null);
+
+  // El domo es una pieza interactuable: la Sierra (4), la Amoladora (3) y el imán lo ven como cualquier pieza.
+  useEffect(() => {
+    if (consumed) return;
+    const tmp = new THREE.Vector3();
+    grabbableRegistry.register({
+      id: L4_DOME_ID,
+      kind: 'canister',
+      initialPos: [L4_LIGHTHOUSE[0], 10.9, L4_LIGHTHOUSE[2]],
+      getBody: () => domeRef.current,
+      getCollider: () => domeColliderRef.current,
+      getVisualGroup: () => domeVisualRef.current,
+      getWorldPos: (out: THREE.Vector3) => {
+        const b = domeRef.current;
+        if (!b || !b.isValid()) return false;
+        const t = b.translation();
+        tmp.set(t.x, t.y, t.z);
+        out.copy(tmp);
+        return true;
+      },
+    });
+    return () => grabbableRegistry.unregister(L4_DOME_ID);
+  }, [resetKey, consumed]);
+
+  // Imán encendido cerca del domo: se engancha con un resorte fuerte. Si un vehículo (o un propulsor)
+  // tira lo suficiente, la tensión supera el umbral y se suelta la unión del faro.
+  useAfterPhysicsStep(() => {
+    const dome = domeRef.current;
+    if (!dome?.isValid() || fallen) return;
+    const cur = tether.current;
+    if (!cur) {
+      const dp = dome.translation();
+      for (const entry of grabbableRegistry.getAll()) {
+        if (entry.kind !== 'magnet' || !isMagnetPowered(entry.id)) continue;
+        const mb = entry.getBody();
+        if (!mb?.isValid()) continue;
+        const mp = mb.translation();
+        const dist = Math.hypot(mp.x - dp.x, mp.y - dp.y, mp.z - dp.z);
+        if (dist < L4_MAGNET_GRAB_RANGE) {
+          tether.current = { magnetId: entry.id, rest: dist };
+          break;
+        }
+      }
+      return;
+    }
+    const mb = grabbableRegistry.getById(cur.magnetId)?.getBody();
+    if (!mb?.isValid() || !isMagnetPowered(cur.magnetId, 250)) {
+      tether.current = null;
+      return;
+    }
+    const dp = dome.translation();
+    const mp = mb.translation();
+    const dx = mp.x - dp.x;
+    const dy = mp.y - dp.y;
+    const dz = mp.z - dp.z;
+    const dist = Math.hypot(dx, dy, dz) || 1e-4;
+    const stretch = dist - cur.rest;
+    if (stretch <= 0) return;
+    const tension = L4_MAGNET_SPRING * stretch;
+    if (tension > L4_MAGNET_BREAK_TENSION) {
+      tether.current = null;
+      releaseSceneJoint(L4_DOME_ID);
+      return;
+    }
+    const impulse = (tension / 60) / dist;
+    dome.applyImpulse({ x: dx * impulse, y: dy * impulse, z: dz * impulse }, true);
+    mb.applyImpulse({ x: -dx * impulse, y: -dy * impulse, z: -dz * impulse }, true);
+  });
 
   useEffect(() => {
     setFallen(false);
@@ -671,7 +754,7 @@ function Lighthouse({ resetKey }: { resetKey: number }) {
       isMagnetic: true,
       isCuttable: true,
       conductsPower: false,
-      breakForce: weightMultiple(DOME_MASS, 14),
+      breakForce: weightMultiple(DOME_MASS, 6),
     });
   }, [resetKey]);
 
@@ -693,8 +776,10 @@ function Lighthouse({ resetKey }: { resetKey: number }) {
           <cylinderGeometry args={[1.62, 1.66, 1.1, 12]} />
         </mesh>
       </RigidBody>
+      {!consumed && (
       <RigidBody ref={domeRef} type="dynamic" position={[0, 10.9, 0]} colliders={false} key={`dome-${resetKey}`}>
-        <CylinderCollider args={[0.8, 1.4]} mass={DOME_MASS} />
+        <CylinderCollider ref={domeColliderRef} args={[0.8, 1.4]} mass={DOME_MASS} />
+        <group ref={domeVisualRef}>
         <mesh material={MATS.steel} castShadow>
           <cylinderGeometry args={[1.4, 1.4, 1.6, 12]} />
         </mesh>
@@ -715,12 +800,14 @@ function Lighthouse({ resetKey }: { resetKey: number }) {
           />
           <primitive object={target} position={[40, -3, 0]} />
         </group>
+        </group>
       </RigidBody>
+      )}
       {!fallen && (
         <BreakableFixedJoint
           getBodyA={() => towerRef.current}
           getBodyB={() => domeRef.current}
-          limits={{ breakForce: weightMultiple(DOME_MASS, 14), breakTorque: 900 }}
+          limits={{ breakForce: weightMultiple(DOME_MASS, 6), breakTorque: 900 }}
           grindableIds={[L4_DOME_ID]}
           watchConsumedIds={[L4_DOME_ID]}
           onBreak={() => gameStore.setWireHint('¡Se cayó el faro!')}
@@ -770,15 +857,6 @@ function ChargeStationProp({ id, pos }: { id: string; pos: [number, number, numb
   );
 }
 
-function DonorCarShell({ pos, rotY = 0 }: { pos: [number, number, number]; rotY?: number }) {
-  return (
-    <group position={pos} rotation={[0, rotY, 0]}>
-      <Block pos={[0, 0.7, 0]} size={[2.2, 0.9, 4.4]} mat={MATS.rust} />
-      <Block pos={[0, 1.5, -0.3]} size={[1.9, 0.8, 2.2]} mat={MATS.woodDark} />
-    </group>
-  );
-}
-
 function Level4Batteries({
   def,
   playerSourceRef,
@@ -799,6 +877,33 @@ function Level4Batteries({
   useEffect(() => {
     resetPartConditions();
     const ids: string[] = [];
+    const roots: string[] = [];
+    // Autos viejos: chasis + 4 ruedas + motor roto + batería descargada, soldados entre sí.
+    const spawnAt = (kind: GrabbableKind, pos: [number, number, number]) => {
+      const e = gameStore.spawnExtraPart(kind, [def.origin[0] + pos[0], def.origin[1] + pos[1], def.origin[2] + pos[2]]);
+      if (e) ids.push(e.id);
+      return e;
+    };
+    for (const car of L4_DONOR_CARS) {
+      const [cx, cy, cz] = car.pos;
+      const chassis = spawnAt('chassis', [cx, cy, cz]);
+      const wheels = [0, 1, 2, 3].map((i) => spawnAt('wheel', [cx + (i % 2 ? 1.5 : -1.5), cy + 1.2, cz + (i < 2 ? 1.2 : -1.2)]));
+      const engine = spawnAt('part', [cx - 2.2, cy + 1.2, cz]);
+      const battery = spawnAt('battery', [cx + 2.2, cy + 1.2, cz]);
+      if (!chassis || wheels.some((w) => !w) || !engine || !battery) continue;
+      setPartCondition(engine.id, 'broken');
+      setPartCondition(battery.id, 'discharged');
+      roots.push(chassis.id);
+      yardAssembly.assemble(
+        donorCarBlueprint(car.name, {
+          chassis: chassis.id,
+          wheels: wheels.map((w) => w!.id) as [string, string, string, string],
+          engine: engine.id,
+          battery: battery.id,
+        }),
+        [def.origin[0] + cx, def.origin[1] + cy, def.origin[2] + cz],
+      );
+    }
     for (const p of L4_YARD_PARTS) {
       const entry = gameStore.spawnExtraPart(p.kind, [def.origin[0] + p.pos[0], def.origin[1] + p.pos[1], def.origin[2] + p.pos[2]]);
       if (!entry) continue;
@@ -806,6 +911,7 @@ function Level4Batteries({
       if (p.condition) setPartCondition(entry.id, p.condition);
     }
     return () => {
+      yardAssembly.clear(roots);
       for (const id of ids) gameStore.removeExtraPart(id);
     };
   }, [runNonce, def.origin]);
@@ -830,9 +936,6 @@ function Level4Batteries({
 
       <ChargeStationProp id="level4-generator" pos={[11, 0, 8]} />
       <Lighthouse resetKey={runNonce} />
-      <DonorCarShell pos={[16, 0, 36]} rotY={0.2} />
-      <DonorCarShell pos={[24, 0, 46]} rotY={-0.5} />
-      <DonorCarShell pos={[10, 0, 48]} rotY={1.1} />
 
       {/* Rampa 1 (ruta 4x4) con postes metálicos a los costados para trepar con imán */}
       <Block pos={[0, L4_RAMP1.rise / 2 - 0.5, (L4_RAMP1.z0 + L4_RAMP1.z1) / 2]} size={[12, 1, rampLen1]} rot={[-ang1, 0, 0]} mat={MATS.deckDark} />

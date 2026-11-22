@@ -28,7 +28,11 @@ Prioridades: **Alta** (bloquea o rompe la experiencia), **Media** (necesario par
 
 ## Pendientes de Niveles y Arte (Prioridad Media)
 
-- [x] Nivel nocturno *"Operación: Pilas del Control"* (ver [docs/VISION_MVP.md](./docs/VISION_MVP.md)). *(escrito, sin probar jugando)* Pendiente en este nivel: los autos viejos son cascarones decorativos con sus piezas sueltas al lado (no están soldadas todavía); el domo del faro todavía no se apunta con el imán ni con la Sierra (hay que registrarlo como pieza agarrable); falta una escalada magnética real en los postes y medallas por tiempo.
+- [x] Nivel nocturno *"Operación: Pilas del Control"* (ver [docs/VISION_MVP.md](./docs/VISION_MVP.md)). *(escrito, sin probar jugando)*
+  - [x] Domo del faro registrado como pieza interactuable: la Sierra (`4`) y la Amoladora (`3`) lo cortan; el imán encendido se engancha con un resorte y un tirón fuerte (vehículo o propulsor) suelta la unión. *(sin probar; el umbral de tirón `1800 N` puede pedir ajuste)*
+  - [x] 2 autos viejos soldados con el sistema del taller (chasis + 4 ruedas + motor roto + batería descargada) para desarmar con la Amoladora. *(sin probar; si el armado falla queda un aviso en la consola del navegador)*
+  - [x] Escalada magnética: el imán encendido es atraído al eje de los postes `isMagnetic` y se sostiene contra la gravedad en proporción a su masa. *(sin probar; falta ajustar la fuerza escalando de verdad)*
+  - [ ] Pendiente: medallas por tiempo, un tercer auto (tope de 24 piezas extra), y que el generador recargue de verdad la batería rescatada (probar).
 - [ ] Arte 3D del Nivel 1 (puente). Tiene código, falta arte.
 - [ ] Definición y pulido de los Niveles 2 (autos a romper) y 3 (helicóptero con imán). Son propuesta: validar con el creador antes de modelar.
 - [ ] [Pedido para Antigravity: arte 3D de los niveles](./docs/PEDIDO_ANTIGRAVITY_NIVELES.md).

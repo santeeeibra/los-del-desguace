@@ -363,6 +363,13 @@ const MAX_LOOSE_THRUST_SPEED = 16;
 const MAX_BALLOON_ALTITUDE = 24;
 const MAX_WIRE_STRETCH_SQ = 10 * 10;
 
+/** Última vez (ms) que cada imán estuvo encendido con energía: la usan los acoples del mapa (faro). */
+const magnetPowerStamp = new Map<string, number>();
+export function isMagnetPowered(id: string, maxAgeMs = 120): boolean {
+  const at = magnetPowerStamp.get(id);
+  return at !== undefined && performance.now() - at <= maxAgeMs;
+}
+
 function applyThrust(body: RapierRigidBody, impulse: number, mounted = true) {
   const pos = body.translation();
   if (pos.y > MAX_THRUST_ALTITUDE) return;
@@ -570,6 +577,7 @@ export function stepContraptionLogic(
       scratchDir.set(1, 0, 0).applyQuaternion(scratchQuat).multiplyScalar(spec.spinTorque * sig * dt);
       body.applyTorqueImpulse({ x: scratchDir.x, y: scratchDir.y, z: scratchDir.z }, true);
     } else if (spec.nodeKind === 'magnet' && sig > 0.5) {
+      magnetPowerStamp.set(entry.id, performance.now());
       const mPos = body.translation();
       for (const other of grabbableRegistry.getAll()) {
         if (other.id === entry.id) continue;
@@ -597,8 +605,8 @@ export function stepContraptionLogic(
         const distSq = dx * dx + dy * dy + dz * dz;
         if (distSq < 0.04 || distSq > anchor.range * anchor.range) continue;
         const inv = 1 / Math.sqrt(distSq);
-        const pull = 30 * dt * Math.min(1, (anchor.range * anchor.range - distSq) / (anchor.range * anchor.range) + 0.35);
-        body.applyImpulse({ x: dx * inv * pull, y: dy * inv * pull + 6 * dt, z: dz * inv * pull }, true);
+        const pull = Math.max(30, body.mass() * 35) * dt * Math.min(1, (anchor.range * anchor.range - distSq) / (anchor.range * anchor.range) + 0.35);
+        body.applyImpulse({ x: dx * inv * pull, y: dy * inv * pull + Math.max(6, body.mass() * 13) * dt, z: dz * inv * pull }, true);
       }
     }
   }
