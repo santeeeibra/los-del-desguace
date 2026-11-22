@@ -595,8 +595,12 @@ export function createWorkshopPhysics(
         }
         return;
       }
+      // Seguridad: volcado o casi volcado → no empujar más el giro (evita trompos y vuelcos).
+      if (upVector.set(0, 1, 0).applyQuaternion(driveRotation.copy(root.rotation())).y < 0.6) return;
       const effectiveSteer = forwardSpeed < -0.5 && !airborne ? -steer : steer;
-      const targetYaw = -effectiveSteer * (airborne ? 2.4 : 2.85);
+      // El giro máximo baja con la velocidad (aceleración lateral acotada): a 13 m/s ya no hace trompos.
+      const speedYawCap = STEER_MAX_LATERAL / Math.max(3, Math.abs(forwardSpeed));
+      const targetYaw = -effectiveSteer * Math.min(airborne ? 2.4 : 2.85, speedYawCap);
       const nextY = av.y + (targetYaw - av.y) * Math.min(1, dt * (airborne ? 10 : 14));
       root.setAngvel({ x: av.x * 0.88, y: nextY, z: av.z * 0.88 }, true);
       root.applyTorqueImpulse({ x: 0, y: -effectiveSteer * totalMass * 2.2 * dt, z: 0 }, true);
@@ -818,13 +822,46 @@ export function createWorkshopPhysics(
           fwd.z * pitchTilt + fwd.x * rollTilt,
         ).normalize();
       }
+      const tiltUp = localUp.y;
       const torqueAxis = localUp.cross(desiredUp);
-      const kP = hasGyro ? 14 : 6.5;
+      // Boca abajo (cross ≈ 0): rodar alrededor del frente para no quedar trabado dado vuelta.
+      if (tiltUp < 0.15 && torqueAxis.lengthSq() < 0.05 && pos.y < 1.5) {
+        torqueAxis.set(fwd.x, 0, fwd.z);
+      }
+      // Cuanto más inclinado, más fuerte el enderezado (rescata vuelcos sin tocar la conducción normal).
+      const rescue = 1 + Math.max(0, 0.8 - tiltUp) * 3;
+      const kP = (hasGyro ? 14 : 6.5) * rescue;
       const kD = hasGyro ? 4.2 : 2.4;
-      const maxAccel = 40;
+      const maxAccel = 40 * rescue;
       const ax = Math.max(-maxAccel, Math.min(maxAccel, torqueAxis.x * kP - av.x * kD));
       const az = Math.max(-maxAccel, Math.min(maxAccel, torqueAxis.z * kP - av.z * kD));
       root.setAngvel({ x: av.x + ax * dt, y: av.y, z: av.z + az * dt }, true);
+
+      // Freno automático: al soltar el acelerador sobre el piso el coche se frena solo (no queda rodando sin fin).
+      if (Math.abs(input.throttle) < 0.05 && pos.y < 1.2 && !input.ascend) {
+        const hv = Math.hypot(lv.x, lv.z);
+        if (hv > 0.2) {
+          const k = totalMass * Math.min(1, 1.6 * dt);
+          applyImpulseAtCenterOfMass(bodies, root, { x: -lv.x * k, y: 0, z: -lv.z * k });
+        }
+      }
+
+      // Red de seguridad global: sin valores inválidos, y velocidades acotadas ante choques raros.
+      for (const b of bodies) {
+        if (!b.isValid()) continue;
+        const t = b.translation();
+        const v = b.linvel();
+        const w = b.angvel();
+        if (![t.x, t.y, t.z, v.x, v.y, v.z, w.x, w.y, w.z].every(Number.isFinite)) {
+          b.setLinvel(CENTER, true);
+          b.setAngvel(CENTER, true);
+          continue;
+        }
+        const vm = Math.hypot(v.x, v.y, v.z);
+        if (vm > 30) b.setLinvel({ x: v.x * 30 / vm, y: v.y * 30 / vm, z: v.z * 30 / vm }, true);
+        const wm = Math.hypot(w.x, w.y, w.z);
+        if (wm > 14 && !(b.mass() < 5 && b !== root)) b.setAngvel({ x: w.x * 14 / wm, y: w.y * 14 / wm, z: w.z * 14 / wm }, true);
+      }
 
       // Ascenso y empuje aéreo (vehículos con ruedas)
       if (input.ascend && hasFlight) {
