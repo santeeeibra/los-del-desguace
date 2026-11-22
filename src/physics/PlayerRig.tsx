@@ -3206,9 +3206,10 @@ export function PlayerRig({
       else weldCommit();
     };
     if (weldArmedRef.current || weldChargeRef.current > 0) {
-      const held = playerInput.interactHeld || playerInput.weldHeld;
+      const held = playerInput.interactHeld || playerInput.weldHeld || playerInput.touchToolLatch;
       const targetReady = Boolean(mountSlot || directSlot || directWeld || (partMountReady && freeTargetId && hitBody));
       if (!weldArmedRef.current || !usingWelder || !held || !carriedIdRef.current || !aiming || !targetReady) {
+        if (usingWelder) playerInput.touchToolLatch = false;
         weldArmedRef.current = false;
         weldChargeRef.current = 0;
         gameStore.setWeldProgress(0);
@@ -3222,6 +3223,7 @@ export function PlayerRig({
           playSpark();
         }
         if (weldChargeRef.current >= 1) {
+          if (usingWelder) playerInput.touchToolLatch = false;
           weldArmedRef.current = false;
           weldChargeRef.current = 0;
           gameStore.setWeldProgress(0);
@@ -3243,7 +3245,8 @@ export function PlayerRig({
         if (sceneKind && isCuttableTarget(actionTargetId, sceneKind)) grindTargetId = actionTargetId;
       }
     }
-    if (grindTargetId && (playerInput.interactHeld || playerInput.weldHeld)) {
+    if (usingGrinder && !grindTargetId) playerInput.touchToolLatch = false;
+    if (grindTargetId && (playerInput.interactHeld || playerInput.weldHeld || playerInput.touchToolLatch)) {
       if (grindTargetRef.current !== grindTargetId) {
         grindTargetRef.current = grindTargetId;
         grindChargeRef.current = 0;
@@ -3257,6 +3260,7 @@ export function PlayerRig({
         playSpark();
       }
       if (grindChargeRef.current >= 1) {
+        playerInput.touchToolLatch = false;
         grindChargeRef.current = 0;
         grindTargetRef.current = null;
         gameStore.setWeldProgress(0);
@@ -3295,7 +3299,7 @@ export function PlayerRig({
       const bridge = laserTableBridge.get();
       const sawState = gameStore.getState();
       const sawOn = sawState.sawEquipped && aiming && !carriedIdRef.current && !buildToolsLocked();
-      const sawHeld = playerInput.interactHeld || playerInput.weldHeld;
+      let sawHeld = false;
       const dotPos = wrenchDotRef.current?.position;
       const aimedKind = aimedId ? grabbableRegistry.getById(aimedId)?.kind : undefined;
       const setPhase = (phase: 'idle' | 'trace' | 'cut') => {
@@ -3307,7 +3311,28 @@ export function PlayerRig({
         setPhase('idle');
         liveCut.reset();
         gameStore.setWeldProgress(0);
+        if (sawState.sawEquipped) playerInput.touchToolLatch = false;
       };
+      // Táctil: Cancelar o alejarse mucho de la pieza descartan el corte armado (sin cortar).
+      if (playerInput.touchSawCancel) {
+        playerInput.touchSawCancel = false;
+        playerInput.touchToolLatch = false;
+        if (saw.phase === 'trace') {
+          abort();
+          gameStore.setWireHint('Corte cancelado');
+        }
+      } else if (saw.phase === 'trace' && playerInput.touchToolLatch) {
+        const sawBody = saw.id ? grabbableRegistry.getById(saw.id)?.getBody() : null;
+        const sp = scratchPlayerPos.current;
+        if (sawBody?.isValid()) {
+          const bp = sawBody.translation();
+          if (Math.hypot(bp.x - sp.x, bp.y - sp.y, bp.z - sp.z) > 9) {
+            abort();
+            gameStore.setWireHint('Te alejaste de la pieza: corte cancelado');
+          }
+        }
+      }
+      sawHeld = playerInput.interactHeld || playerInput.weldHeld || playerInput.touchToolLatch;
       if (saw.phase !== 'cut' && !sawOn && saw.phase !== 'idle') abort();
       if (saw.phase === 'idle' && sawOn) {
         if (sawHeld && !saw.wasHeld) {
@@ -3385,6 +3410,8 @@ export function PlayerRig({
           abort();
         }
       }
+      // Táctil: si el toque no llegó a armar el corte (sin pieza apuntada), no queda apretado solo.
+      if (sawState.sawEquipped && saw.phase === 'idle') playerInput.touchToolLatch = false;
       saw.wasHeld = sawHeld;
     }
 

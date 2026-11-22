@@ -69,6 +69,13 @@ class PlayerInputBus {
   menuOpen = false;
   lastPointerLockExitAt = 0;
   interactHeld = false;
+  /**
+   * Solo táctil: mantener apretado automático de la Sierra, la Amoladora y la Soldadora. Un toque lo
+   * enciende y otro lo apaga, así el pulgar queda libre para girar la cámara. En PC nunca se usa.
+   */
+  touchToolLatch = false;
+  /** Solo táctil: pedido de cancelar el corte de la Sierra que está armado. */
+  touchSawCancel = false;
   /** F mantenida (soldar con la soldadora). */
   weldHeld = false;
 
@@ -229,6 +236,8 @@ class PlayerInputBus {
 
   resetTouchAndActions() {
     this.interactHeld = false;
+    this.touchToolLatch = false;
+    this.touchSawCancel = false;
     this.weldHeld = false;
     this.touch.joystickX = 0;
     this.touch.joystickY = 0;

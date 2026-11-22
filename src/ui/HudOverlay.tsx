@@ -937,7 +937,7 @@ export function HudOverlay() {
   } as const;
   const interactLabel = seated ? 'Salir del asiento'
     : sawEquipped && !carriedKind
-      ? (sawPhase === 'trace' ? 'Soltá para cortar' : sawPhase === 'cut' ? 'Cortando…' : 'Trazar corte')
+      ? (sawPhase === 'trace' ? (showTouch ? 'Cortar ahora' : 'Soltá para cortar') : sawPhase === 'cut' ? 'Cortando…' : (showTouch ? 'Marcar inicio' : 'Trazar corte'))
     : grinderEquipped && !carriedKind && nearbyTargetMounted ? 'Cortar unión'
     : assemblyInteraction ? assemblyLabels[assemblyInteraction]
     : workshopSlot ? 'Montar'
@@ -954,7 +954,7 @@ export function HudOverlay() {
     : slotInView ? WORKSHOP_SLOT_BY_ID.get(slotInView)?.label
     : carriedKind ? ITEM_LABELS[carriedKind] : nearbyTargetKind ? ITEM_LABELS[nearbyTargetKind] : null;
   const canInteract = seated || Boolean(assemblyInteraction || workshopSlot || partMountReady ||
-    (sawEquipped && !carriedKind && Boolean(nearbyTargetKind)) ||
+    (sawEquipped && !carriedKind && (Boolean(nearbyTargetKind) || sawPhase === 'trace')) ||
     (grinderEquipped && !carriedKind && nearbyTargetMounted) ||
     (carriedKind ? laserPlacementReady || (!wrenchAiming && !laserHint) : nearbyTargetKind));
 
@@ -1013,6 +1013,10 @@ export function HudOverlay() {
     (grinderEquipped && nearbyTargetMounted) ||
     (sawEquipped && (Boolean(nearbyTargetKind) || sawPhase !== 'idle'))
   );
+  // Táctil: la Sierra, la Amoladora y la Soldadora funcionan por toque (uno enciende, otro apaga), así el
+  // pulgar derecho queda libre para girar la cámara. En PC sigue siendo mantener clic.
+  const touchToggle = showTouch && !useWireAction && !seated &&
+    ((toolOnlyHold && (sawEquipped || grinderEquipped)) || (welderEquipped && holdAction));
   const primaryKey = sawEquipped && sawPhase === 'trace'
     ? 'Soltá clic'
     : holdAction
@@ -2806,6 +2810,14 @@ export function HudOverlay() {
                     disabled={!primaryReady}
                     onPointerDown={(event) => {
                       event.stopPropagation();
+                      if (touchToggle) {
+                        if (playerInput.touchToolLatch) playerInput.touchToolLatch = false;
+                        else {
+                          playerInput.touchToolLatch = true;
+                          if (!toolOnlyHold) playerInput.triggerInteract();
+                        }
+                        return;
+                      }
                       playerInput.interactHeld = true;
                       try {
                         event.currentTarget.setPointerCapture(event.pointerId);
@@ -2818,13 +2830,27 @@ export function HudOverlay() {
                     onPointerCancel={() => { playerInput.interactHeld = false; }}
                     onLostPointerCapture={() => { playerInput.interactHeld = false; }}
                     onClick={(event) => {
-                      if (event.detail !== 0 || toolOnlyHold) return;
+                      if (event.detail !== 0 || toolOnlyHold || touchToggle) return;
                       playerInput.triggerInteract();
                     }}>
                     <span>{primaryLabel}</span>
                     {assemblyInteraction === 'push' && !useWireAction && <small>Mantené y caminá</small>}
-                    {holdAction && assemblyInteraction !== 'push' && !useWireAction && <small>{sawEquipped ? 'Mantené y arrastrá' : 'Mantené'}</small>}
+                    {holdAction && assemblyInteraction !== 'push' && !useWireAction && (
+                      <small>{touchToggle
+                        ? (sawEquipped ? 'Tocá y después girá la mira' : grinderEquipped ? 'Tocá para cortar' : 'Tocá para soldar')
+                        : sawEquipped ? 'Mantené y arrastrá' : 'Mantené'}</small>
+                    )}
+                    {touchToggle && sawEquipped && sawPhase === 'trace' && <small>Apuntá el final y tocá</small>}
                   </button>
+                  {touchToggle && sawEquipped && sawPhase === 'trace' && (
+                    <button type="button" className="hud-pad hud-pad-cancel"
+                      onPointerDown={(event) => {
+                        event.stopPropagation();
+                        playerInput.touchSawCancel = true;
+                      }}>
+                      Cancelar
+                    </button>
+                  )}
                   <button type="button" className="hud-pad hud-pad-jump"
                     onPointerDown={(event) => {
                       event.preventDefault();

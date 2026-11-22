@@ -25,6 +25,8 @@ Prioridades: **Alta** (bloquea o rompe la experiencia), **Media** (necesario par
 - [ ] Definir la fabricación de piezas. Empezar por una receta con insumos del patio que produzca una pieza física compatible con el banco.
 - [ ] Probar el carrito armado en pista. Definir cómo la masa, las ruedas y la posición del motor afectan el manejo, la tracción y las colisiones.
 - [ ] Guardar el armado cuando esté definido el ciclo de construir, probar y desarmar.
+- [x] Ergonomía móvil de herramientas de mantener: en pantalla táctil, la Sierra Láser (`4`), la Amoladora (`3`) y la Soldadora (`2`) funcionan por toque (uno enciende, otro apaga). En la Sierra: primer toque "Marcar inicio", después se gira la cámara con el pulgar libre y se toca "Cortar ahora"; hay botón "Cancelar" y el corte se cancela solo si te alejás más de 9 m de la pieza. PC no cambia (mantener clic). *(escrito, sin probar en el celular)*
+- [ ] Idea futura: recorte 3D en "U" y montaje en horquilla (por ejemplo, para armar triciclos).
 
 ## Pendientes de Niveles y Arte (Prioridad Media)
 

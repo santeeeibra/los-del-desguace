@@ -553,6 +553,12 @@
 .hud-pad-jump {
   background: radial-gradient(circle at 40% 26%, #df6e50, #a43f26);
 }
+.hud-pad-cancel {
+  background: radial-gradient(circle at 40% 26%, #8a8f94, #4a4f54);
+  min-height: 44px;
+  min-width: 64px;
+  aspect-ratio: auto;
+}
 
 /* ── Barra de herramientas 3D + bolsillos (Hotbar unificada) ───────── */
 .hud-hotbar-row {
