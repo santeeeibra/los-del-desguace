@@ -15,7 +15,10 @@ import {
   playWireSnap,
   setEngineHum,
   setRollingAudio,
+  setSprayHiss,
 } from '../audio/sfxEngine';
+import { fillPart, sprayAt, sprayFx, sprayUi, tickPaint } from '../invention/paintStore';
+import { SprayMist } from '../invention/SprayMist';
 import { buildCharacterAppearance } from '../character/characterCustomization';
 import { DustPuffPool, type DustPuffHandle } from '../character/DustPuffPool';
 import { InventorCharacter, type CharacterAnimData } from '../character/InventorCharacter';
@@ -174,6 +177,10 @@ export function PlayerRig({
   const wrenchBeamMatRef = useRef<THREE.MeshBasicMaterial>(null);
   const wrenchDotMatRef = useRef<THREE.MeshBasicMaterial>(null);
   const wrenchStart = useRef(new THREE.Vector3());
+  const sprayHeldRef = useRef(false);
+  const sprayFxTimerRef = useRef(0);
+  const sprayRaycaster = useRef(new THREE.Raycaster());
+  const sprayDir = useRef(new THREE.Vector3());
   const wrenchAim = useRef(new THREE.Vector3());
   const wrenchDirection = useRef(new THREE.Vector3());
   const wrenchCameraPos = useRef(new THREE.Vector3());
@@ -3345,6 +3352,55 @@ export function PlayerRig({
       gameStore.setWeldProgress(0);
     }
 
+    // Aerosol: Pintar todo (un clic/toque tiñe la pieza entera) o Mano alzada (mantener o gatillo
+    // táctil encendido: trazos de aerógrafo donde pega el láser sobre la pieza).
+    {
+      const sprayState = gameStore.getState();
+      const sprayOn = sprayState.sprayEquipped && aiming && !carriedIdRef.current;
+      const tap = playerInput.sprayTap;
+      playerInput.sprayTap = false;
+      const held = sprayOn && (playerInput.interactHeld || playerInput.weldHeld || playerInput.touchToolLatch);
+      const sprayMode = sprayUi.get();
+      const color = sprayUi.color();
+      const dotPos = wrenchDotRef.current?.position;
+      let spraying = false;
+      if (sprayOn && dotPos) {
+        if (sprayMode.mode === 'fill') {
+          if ((tap || (held && !sprayHeldRef.current)) && aimedId && laserHit) {
+            if (fillPart(aimedId, color)) sprayFxTimerRef.current = 0.22;
+          }
+        } else if (held || tap) {
+          spraying = true;
+          const group = aimedId ? grabbableRegistry.getById(aimedId)?.getVisualGroup() : null;
+          if (aimedId && group && laserHit) {
+            const from = wrenchStart.current;
+            const dir = sprayDir.current.subVectors(dotPos, from);
+            const dist = dir.length();
+            if (dist > 1e-3) {
+              dir.divideScalar(dist);
+              const ray = sprayRaycaster.current;
+              ray.set(from, dir);
+              ray.far = dist + 0.25;
+              const hit = ray.intersectObject(group, true).find((h) => (h.object as THREE.Mesh).isMesh);
+              if (hit) sprayAt(aimedId, hit, color, sprayMode.nozzle, Math.max(dt, tap ? 0.08 : 0));
+            }
+          }
+        }
+      }
+      if (!sprayState.sprayEquipped) playerInput.sprayTap = false;
+      sprayHeldRef.current = held;
+      sprayFxTimerRef.current = Math.max(0, sprayFxTimerRef.current - dt);
+      const fxOn = spraying || sprayFxTimerRef.current > 0;
+      if (fxOn && dotPos) {
+        sprayFx.from.copy(wrenchStart.current);
+        sprayFx.to.copy(dotPos);
+        sprayFx.color.set(color ?? '#f5ead2');
+      }
+      if (fxOn !== sprayFx.active) setSprayHiss(fxOn);
+      sprayFx.active = fxOn;
+      tickPaint(dt);
+    }
+
     // Sierra láser: mantener clic / E sobre una pieza y arrastrar el láser traza la línea de corte;
     // al soltar, el láser recorre la línea con chispas y material al rojo, y la pieza se separa.
     {
@@ -4209,6 +4265,7 @@ export function PlayerRig({
         </mesh>
       </group>
       <DustPuffPool ref={dustPoolRef} maxCount={maxDustPuffs} />
+      <SprayMist />
     </>
   );
 }

@@ -206,7 +206,8 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
     // Soldadora, amoladora y sierra solo trabajan con Ctrl + clic sostenido; el clic solo es agarre con el láser.
     const needsHold = (ctrl: boolean) => {
       const s = gameStore.getState();
-      return s.assemblyInteraction === 'push' || (ctrl && (s.welderEquipped || s.grinderEquipped || s.sawEquipped));
+      // El aerosol pinta con el clic solo (sin Ctrl): no agarra piezas.
+      return s.assemblyInteraction === 'push' || (s.sprayEquipped && !s.carriedKind) || (ctrl && (s.welderEquipped || s.grinderEquipped || s.sawEquipped));
     };
     const usePrimaryAction = (request?: InteractRequest, ctrl = false) => {
       if (needsHold(ctrl)) {
@@ -215,6 +216,7 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
         // Amoladora y sierra solo usan el clic sostenido: no deben agarrar ni mover la pieza.
         const s = gameStore.getState();
         if (s.assemblyInteraction !== 'push' && (s.grinderEquipped || s.sawEquipped)) return;
+        if (s.assemblyInteraction !== 'push' && s.sprayEquipped && !s.carriedKind) return;
         // La soldadora solo necesita el clic para armar la soldadura de una pieza que llevás en la mano.
         if (s.assemblyInteraction !== 'push' && s.welderEquipped && !s.carriedKind) return;
       }
@@ -332,7 +334,10 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
       if (leftTap && leftTap.id === e.pointerId) {
         const moved = Math.hypot(e.clientX - leftTap.x, e.clientY - leftTap.y);
         if (e.type === 'pointerup' && moved < 6 && performance.now() - leftTap.time < 260 && !playerInput.menuOpen) {
-          usePrimaryAction(leftTap.request);
+          const st = gameStore.getState();
+          // Toque corto con el aerosol: un disparo de pintura (no deja el gatillo apretado).
+          if (st.sprayEquipped && !st.carriedKind) playerInput.sprayTap = true;
+          else usePrimaryAction(leftTap.request);
         }
         leftTap = null;
       }

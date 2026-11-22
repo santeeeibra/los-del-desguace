@@ -744,7 +744,7 @@ export function setRollingAudio(active: boolean, speedNorm = 0, slipNorm = 0): v
   skidFilter.frequency.setTargetAtTime(targetSkidFreq, now, 0.05);
 }
 
-export type ToolSoundId = 'hand' | 'wrench' | 'welder' | 'grinder' | 'saw' | 'wire';
+export type ToolSoundId = 'hand' | 'wrench' | 'welder' | 'grinder' | 'saw' | 'wire' | 'spray';
 
 function scheduleNoiseBurst(
   ctx: AudioContext,
@@ -805,8 +805,55 @@ export function playToolEquip(tool: ToolSoundId): void {
       case 'hand':
         scheduleTone(ctx, out, 'triangle', 310, 170, now, 0.065, 0.1);
         break;
+      case 'spray':
+        playCanRattle();
+        break;
     }
   });
+}
+
+/** "Clic-clac" de la bolita dentro de la lata al agitar / cambiar de color. */
+export function playCanRattle(): void {
+  runWithAudio((ctx, out) => {
+    const now = ctx.currentTime;
+    scheduleTone(ctx, out, 'triangle', 2400, 1700, now, 0.03, 0.09);
+    scheduleTone(ctx, out, 'triangle', 2100, 1500, now + 0.075, 0.03, 0.08);
+    scheduleNoiseBurst(ctx, out, 'highpass', 4200, 1.2, now + 0.01, 0.04, 0.05);
+  });
+}
+
+let sprayHiss: { src: AudioBufferSourceNode; gain: GainNode; filter: BiquadFilterNode } | null = null;
+
+/** Siseo suave y continuo del aerosol mientras se aprieta el gatillo. */
+export function setSprayHiss(active: boolean): void {
+  const ready = getReadyContext();
+  if (!ready || ready.ctx.state !== 'running') return;
+  const { ctx, out } = ready;
+  const now = ctx.currentTime;
+  if (active && !sprayHiss) {
+    const src = ctx.createBufferSource();
+    src.buffer = getNoiseBuffer(ctx);
+    src.loop = true;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'highpass';
+    filter.frequency.value = 3800;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.linearRampToValueAtTime(0.07, now + 0.06);
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(out);
+    src.start(now);
+    sprayHiss = { src, gain, filter };
+  } else if (!active && sprayHiss) {
+    const h = sprayHiss;
+    sprayHiss = null;
+    h.gain.gain.cancelScheduledValues(now);
+    h.gain.gain.setValueAtTime(h.gain.gain.value, now);
+    h.gain.gain.linearRampToValueAtTime(0.001, now + 0.08);
+    h.src.stop(now + 0.1);
+    h.src.onended = () => disconnectNodes(h.src, h.filter, h.gain);
+  }
 }
 
 export const sfxEngine = {

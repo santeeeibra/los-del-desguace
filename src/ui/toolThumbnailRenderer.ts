@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { GRINDER_MODEL_URL, WELDER_MODEL_URL, WRENCH_MODEL_URL } from '../props/propModelConfig';
 
-export type HotbarToolId = 'wrench' | 'welder' | 'grinder' | 'saw' | 'wire';
+export type HotbarToolId = 'wrench' | 'welder' | 'grinder' | 'saw' | 'wire' | 'spray';
 
 const THUMB_SIZE = 128;
 const cache: Partial<Record<HotbarToolId, string>> = {};

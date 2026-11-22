@@ -1,4 +1,4 @@
-export type ToolIconKind = 'wrench' | 'welder' | 'grinder' | 'slice' | 'sawTable' | 'saw' | 'wire';
+export type ToolIconKind = 'wrench' | 'welder' | 'grinder' | 'slice' | 'sawTable' | 'saw' | 'wire' | 'spray';
 
 /**
  * Miniaturas SVG de las herramientas (contorno oscuro + paleta del taller), mismo estilo que los
@@ -69,6 +69,18 @@ export function ToolIcon({ tool, className = 'hud-tool-icon' }: { tool: ToolIcon
           <path d="M18 15l8-3M18 19l8 3" stroke="#e3b34c" strokeWidth="3" strokeLinecap="round" />
           <circle cx="27" cy="12" r="2.2" fill="#72f5da" stroke={stroke} strokeWidth="1.2" />
           <circle cx="27" cy="22" r="2.2" fill="#72f5da" stroke={stroke} strokeWidth="1.2" />
+        </svg>
+      );
+    case 'spray':
+      return (
+        <svg className={className} viewBox="0 0 32 32" aria-hidden="true">
+          <rect x="9" y="11" width="12" height="18" rx="3" fill="#c84b36" stroke={stroke} strokeWidth="2.2" />
+          <path d="M9 17h12" stroke="#ffe066" strokeWidth="2.4" />
+          <path d="M11 11c0-3 2-4.5 4-4.5s4 1.5 4 4.5" fill="#a7adb3" stroke={stroke} strokeWidth="2" />
+          <rect x="13" y="3" width="4" height="4" rx="1" fill="#2b2f36" stroke={stroke} strokeWidth="1.6" />
+          <circle cx="23" cy="4.5" r="1.3" fill="#5fb4d8" />
+          <circle cx="26.5" cy="7" r="1.6" fill="#f2c12e" />
+          <circle cx="24" cy="9.5" r="1.1" fill="#4b5d32" />
         </svg>
       );
     case 'sawTable':

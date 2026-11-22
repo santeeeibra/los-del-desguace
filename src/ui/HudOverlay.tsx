@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import './hud.css';
-import { playEmoteSfx, playWeldClank, playWoodClick } from '../audio/sfxEngine';
+import { playCanRattle, playEmoteSfx, playWeldClank, playWoodClick } from '../audio/sfxEngine';
 import {
   DEFAULT_CHARACTER_CUSTOMIZATION,
   EMOTE_BY_ID,
@@ -32,6 +32,7 @@ import {
 import { LaserTable } from './LaserTable';
 import { SceneCutBar } from './SceneCutBar';
 import { ToolIcon } from './ToolIcons';
+import { NOZZLE_LABELS, PAINT_SWATCHES, sprayUi, useSprayUi, type SprayNozzle } from '../invention/paintStore';
 import { loadToolThumbnails, type HotbarToolId } from './toolThumbnailRenderer';
 import { sceneCutStore, useSceneCut } from '../invention/sceneCut';
 import { laserTableBridge } from '../invention/laserTableBridge';
@@ -129,6 +130,12 @@ const HOTBAR_TOOL_META: Record<HotbarToolId, { key: string; short: string; name:
     short: 'Cables',
     name: 'Pinza de Cables',
     tip: 'Cables (5) — Clic en origen y clic en destino para conectar energía y lógica',
+  },
+  spray: {
+    key: 'Y',
+    short: 'Aerosol',
+    name: 'Aerosol',
+    tip: 'Aerosol (Y) — Clic para pintar. R cambia entre Pintar todo y Mano alzada',
   },
 };
 
@@ -613,6 +620,12 @@ export function HudOverlay() {
   const nearCutStation = useGameStore((s) => s.nearCutStation);
   const canOpenCutStationRef = useRef(false);
   const grinderEquipped = useGameStore((s) => s.grinderEquipped);
+  const sprayEquipped = useGameStore((s) => s.sprayEquipped);
+  const spray = useSprayUi();
+  const [sprayLatched, setSprayLatched] = useState(false);
+  useEffect(() => {
+    if (!sprayEquipped) { setSprayLatched(false); playerInput.touchToolLatch = false; }
+  }, [sprayEquipped]);
   const sawEquipped = useGameStore((s) => s.sawEquipped);
   const sawPhase = useGameStore((s) => s.sawPhase);
   const welderEquipped = useGameStore((s) => s.welderEquipped);
@@ -930,12 +943,15 @@ export function HudOverlay() {
     sawEquipped,
     wiringActive,
     wireToolEquipped,
+    sprayEquipped,
   });
   const assemblyLabels = {
     release: 'Liberar', lift: 'Levantar', push: 'Empujar', heavy: 'Muy pesado',
     drop: 'Apoyar', position: 'Mover', place: 'Fijar aquí',
   } as const;
   const interactLabel = seated ? 'Salir del asiento'
+    : sprayEquipped && !carriedKind
+      ? (spray.mode === 'fill' ? 'Pintar todo' : sprayLatched ? 'Apagar aerosol' : 'Pintar a mano')
     : sawEquipped && !carriedKind
       ? (sawPhase === 'trace' ? (showTouch ? 'Cortar ahora' : 'Soltá para cortar') : sawPhase === 'cut' ? 'Cortando…' : (showTouch ? 'Marcar inicio' : 'Trazar corte'))
     : grinderEquipped && !carriedKind && nearbyTargetMounted ? 'Cortar unión'
@@ -999,7 +1015,8 @@ export function HudOverlay() {
     : 'Elegir origen';
   const useWireAction = !seated && !carriedKind && wiringActive;
   const primaryLabel = useWireAction ? wireActionLabel : interactLabel;
-  const primaryReady = useWireAction ? canWireTarget && !wireDestination?.blocked : canInteract;
+  const sprayActive = !seated && sprayEquipped && !carriedKind && !useWireAction;
+  const primaryReady = sprayActive || (useWireAction ? canWireTarget && !wireDestination?.blocked : canInteract);
   const nearReticle = !seated && (cameraMode === 'firstPerson' || wrenchAiming);
   const holdAction = !useWireAction && (
     assemblyInteraction === 'push' ||
@@ -1010,6 +1027,7 @@ export function HudOverlay() {
   // Con amoladora o sierra apuntando a un objetivo válido, el botón es solo de herramienta (mantener):
   // no dispara el agarre. Sin objetivo válido vuelve a ser el agarre de siempre.
   const toolOnlyHold = !useWireAction && !seated && !carriedKind && (
+    sprayEquipped ||
     (grinderEquipped && nearbyTargetMounted) ||
     (sawEquipped && (Boolean(nearbyTargetKind) || sawPhase !== 'idle'))
   );
@@ -2401,6 +2419,36 @@ export function HudOverlay() {
               )}
             </div>
           )}
+          {!seated && !isDelivery && sprayEquipped && (
+            <div className="hud-spray-panel wood-sign" role="toolbar" aria-label="Aerosol: color, modo y boquilla">
+              <div className="hud-spray-swatches">
+                {PAINT_SWATCHES.map((sw) => (
+                  <button key={sw.id} type="button" className="hud-spray-swatch"
+                    aria-pressed={spray.swatch === sw.id} title={sw.label} aria-label={sw.label}
+                    data-eraser={sw.color === null || undefined}
+                    style={sw.color ? { background: sw.color } : undefined}
+                    onClick={() => { sprayUi.setSwatch(sw.id); playCanRattle(); }} />
+                ))}
+              </div>
+              <button type="button" className="hud-ctx-btn is-accent hud-spray-mode"
+                onClick={() => {
+                  sprayUi.toggleMode();
+                  playerInput.touchToolLatch = false;
+                  setSprayLatched(false);
+                  playWoodClick();
+                }}>
+                {spray.mode === 'fill' ? 'Pintar todo' : 'Mano alzada'}{!showTouch && <kbd>R</kbd>}
+              </button>
+              {spray.mode === 'freehand' && (
+                <div className="hud-spray-nozzles">
+                  {(Object.keys(NOZZLE_LABELS) as SprayNozzle[]).map((n) => (
+                    <button key={n} type="button" className="hud-ctx-btn" aria-pressed={spray.nozzle === n}
+                      onClick={() => { sprayUi.setNozzle(n); playWoodClick(); }}>{NOZZLE_LABELS[n]}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           {!seated && !isDelivery && (
             <div className="hud-hotbar-row">
               <div className="hud-slots hud-hotbar" role="toolbar" aria-label="Herramientas y bolsillos">
@@ -2810,6 +2858,15 @@ export function HudOverlay() {
                     disabled={!primaryReady}
                     onPointerDown={(event) => {
                       event.stopPropagation();
+                      if (sprayActive && showTouch) {
+                        // Aerosol táctil: Pintar todo = un toque; Mano alzada = un toque enciende y otro apaga.
+                        if (spray.mode === 'fill') playerInput.sprayTap = true;
+                        else {
+                          playerInput.touchToolLatch = !playerInput.touchToolLatch;
+                          setSprayLatched(playerInput.touchToolLatch);
+                        }
+                        return;
+                      }
                       if (touchToggle) {
                         if (playerInput.touchToolLatch) playerInput.touchToolLatch = false;
                         else {

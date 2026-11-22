@@ -19,11 +19,12 @@ import { emptyInventory, INVENTORY_SIZE, placeInInventory, type InventoryItem, t
 export type TouchOverlayMode = 'auto' | 'on' | 'off';
 export type CameraViewMode = 'firstPerson' | 'thirdPersonClose' | 'thirdPersonWide';
 export type MouseLookMode = 'pointerLock' | 'drag';
-export type ActiveTool = 'hand' | 'wrench' | 'welder' | 'grinder' | 'saw' | 'wire';
-export const HOTBAR_TOOLS = ['wrench', 'welder', 'grinder', 'saw', 'wire'] as const;
+export type ActiveTool = 'hand' | 'wrench' | 'welder' | 'grinder' | 'saw' | 'wire' | 'spray';
+export const HOTBAR_TOOLS = ['wrench', 'welder', 'grinder', 'saw', 'wire', 'spray'] as const;
 
-export function getActiveTool(s: Pick<GameHudState, 'wrenchEquipped' | 'welderEquipped' | 'grinderEquipped' | 'sawEquipped' | 'wiringActive' | 'wireToolEquipped'>): ActiveTool {
+export function getActiveTool(s: Pick<GameHudState, 'wrenchEquipped' | 'welderEquipped' | 'grinderEquipped' | 'sawEquipped' | 'wiringActive' | 'wireToolEquipped'> & { sprayEquipped?: boolean }): ActiveTool {
   if (s.wireToolEquipped || s.wiringActive) return 'wire';
+  if (s.sprayEquipped) return 'spray';
   if (s.sawEquipped) return 'saw';
   if (s.grinderEquipped) return 'grinder';
   if (s.welderEquipped) return 'welder';
@@ -151,6 +152,8 @@ export interface GameHudState {
   grinderEquipped: boolean;
   /** Sierra láser en la mano: traza una línea sobre cualquier pieza y la corta. */
   sawEquipped: boolean;
+  /** Aerosol en la mano: pinta la pieza entera o a mano alzada. */
+  sprayEquipped: boolean;
   /** Fase de la sierra: esperando, trazando la línea o cortando. */
   sawPhase: 'idle' | 'trace' | 'cut';
   /** Avance (0–1) de la soldadura que se está haciendo con la soldadora. */
@@ -229,6 +232,7 @@ let state: GameHudState = {
   nearCutStation: false,
   grinderEquipped: false,
   sawEquipped: false,
+  sprayEquipped: false,
   sawPhase: 'idle',
   weldProgress: 0,
   wrenchAiming: false,
@@ -454,7 +458,8 @@ export const gameStore = {
     const isLaserTool = next !== 'hand';
     state = {
       ...state,
-      wrenchEquipped: next === 'wrench' || next === 'welder' || next === 'grinder' || next === 'saw' || next === 'wire',
+      wrenchEquipped: next === 'wrench' || next === 'welder' || next === 'grinder' || next === 'saw' || next === 'wire' || next === 'spray',
+      sprayEquipped: next === 'spray',
       welderEquipped: next === 'welder',
       grinderEquipped: next === 'grinder',
       sawEquipped: next === 'saw',
@@ -543,7 +548,7 @@ export const gameStore = {
       wireHintClearTimer = null;
     }
     state = {
-      ...state, wrenchEquipped: !state.wrenchEquipped, welderEquipped: false, grinderEquipped: false, sawEquipped: false, sawPhase: 'idle', wireToolEquipped: false, wrenchAiming: false, wrenchAimLocked: false, wrenchTarget: null,
+      ...state, wrenchEquipped: !state.wrenchEquipped, welderEquipped: false, grinderEquipped: false, sawEquipped: false, sprayEquipped: false, sawPhase: 'idle', wireToolEquipped: false, wrenchAiming: false, wrenchAimLocked: false, wrenchTarget: null,
       aimedWorkshopSlot: null, laserHint: null, laserPlacementReady: false, partMountReady: false, wireHint: null, pendingWireFrom: null, wiringActive: false,
     };
     emit();

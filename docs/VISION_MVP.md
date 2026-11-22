@@ -39,6 +39,13 @@ Cada pieza rescatada tiene un estado `condition: 'ok' | 'broken' | 'discharged'`
 - **Motores trabados (`broken`)** → se reparan en el Banco RPM (`Tab`).
 - **Baterías descargadas (`discharged`)** → se recargan cableándolas (`5`) a un generador.
 
+### 3.4 Aerosol: personalizar inventos (implementado, sin probar jugando)
+Herramienta **Aerosol** (tecla `Y` o botón en la barra) con paleta de 7 colores de taller + borrador.
+- **Pintar todo:** un clic/toque tiñe la pieza entera (sin texturas, solo color del material).
+- **Mano alzada:** trazos de aerógrafo donde pega el láser, con boquilla Fino/Medio/Grueso. El lienzo de 256×256 se crea recién en el primer trazo de cada malla.
+- `R` cambia de modo. En celular: Pintar todo = un toque; Mano alzada = un toque prende el gatillo y otro lo apaga.
+- Sirve para identificar el invento de cada jugador en multijugador y para mostrar creaciones en el Lobby.
+
 ## 4. Nivel vertical de referencia — "Operación: Pilas del Control" (propuesto)
 
 Noche cerrada con niebla (`<fogExp2>`). **Objetivo:** subir una montaña para recuperar las pilas de un control remoto de TV.

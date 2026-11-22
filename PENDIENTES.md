@@ -75,3 +75,13 @@ Las mismas reglas valen para cualquier invento; ya no hay casos especiales por t
   4. Triciclo (con horquilla y sin horquilla): doblar rápido sin volcar.
   5. Presets de siempre (auto, barril volador, robot con propulsores): que se manejen igual que antes.
 - Riesgos a mirar: el paso tierra↔aire mira si hay piso a menos de ~0.56 m bajo cada rueda; ruedas puestas arriba de un invento podrían hacerlo "volar" en el piso.
+
+## Aerosol (2026-11-22, sin probar jugando)
+- [x] Herramienta **Aerosol** en la barra (tecla `Y`), paleta: rojo óxido, amarillo vial, verde militar, celeste taller, naranja fuego, negro mate, blanco tiza y borrador.
+- [x] Modos con `R` o botón: **Pintar todo** (un clic tiñe la pieza y borra los trazos) y **Mano alzada** (aerógrafo donde pega el láser, boquilla Fino/Medio/Grueso).
+- [x] Celular: Pintar todo = un toque; Mano alzada = un toque prende el gatillo, otro lo apaga (pulgar libre para girar la cámara).
+- [x] Chorro de gotitas del color elegido, siseo suave y "clic-clac" de la lata al cambiar color.
+- [x] Liviano: el lienzo 256×256 se crea solo en el primer trazo; texturas se suben a la GPU como máximo cada 50 ms; se liberan cuando la pieza desaparece; el color base se reaplica si la pieza se rearma (H).
+- **Validar jugando:** pintar piezas con modelo GLB (si el UV es raro, el trazo puede salir en otro lugar de la pieza); FPS en iPhone 11 pintando a mano alzada; que el borrador devuelva el aspecto original; que el color se conserve al reconstruir con H.
+- Pendiente: modelo 3D de lata en la mano (hoy se ve la llave), guardar la pintura en los planos compartidos por URL.
+

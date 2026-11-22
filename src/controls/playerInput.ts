@@ -5,6 +5,7 @@ import type { ContractId } from '../modes/contracts';
 import { gameStore, HOTBAR_TOOLS } from '../state/gameStore';
 import { buildToolsLocked } from '../modes/gameModes';
 import { playWoodClick } from '../audio/sfxEngine';
+import { sprayUi } from '../invention/paintStore';
 
 export interface PlayerInputSnapshot {
   forward: boolean;
@@ -74,6 +75,8 @@ class PlayerInputBus {
    * enciende y otro lo apaga, así el pulgar queda libre para girar la cámara. En PC nunca se usa.
    */
   touchToolLatch = false;
+  /** Toque corto con el aerosol (un disparo de pintura). */
+  sprayTap = false;
   /** Solo táctil: pedido de cancelar el corte de la Sierra que está armado. */
   touchSawCancel = false;
   /** F mantenida (soldar con la soldadora). */
@@ -359,7 +362,19 @@ export function dispatchGameKeyDown(e: KeyDownLike) {
       break;
     case 'KeyR':
       if (!e.ctrlKey && !e.metaKey) {
+        const hudR = gameStore.getState();
+        // Con el aerosol en la mano (y nada cargado), R cambia de modo: Pintar todo ↔ Mano alzada.
+        if (hudR.sprayEquipped && !hudR.carriedKind) {
+          if (!e.repeat) { sprayUi.toggleMode(); playWoodClick(); }
+          break;
+        }
         playerInput.triggerCartAction(e.shiftKey ? 'rotate-back' : 'rotate');
+      }
+      break;
+    case 'KeyY':
+      if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && !gameStore.getState().seated && !buildToolsLocked()) {
+        gameStore.selectTool('spray');
+        playWoodClick();
       }
       break;
     case 'KeyB':
