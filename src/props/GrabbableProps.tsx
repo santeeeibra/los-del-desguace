@@ -10,6 +10,8 @@ import {
 } from '@react-three/rapier';
 import * as THREE from 'three';
 import { PlatformColliders, PlatformVisual } from './PlatformPiece';
+import { FragmentCollider, FragmentVisual } from './FragmentPiece';
+import { fragmentStore, useFragmentNonce } from '../invention/fragmentStore';
 import { sceneCutStore } from '../invention/sceneCut';
 import { getSharedTextures, PALETTE } from '../config/visualConfig';
 import { starterPartPosition, stockedPartPosition } from '../environment/workshopLayout';
@@ -339,6 +341,8 @@ const PHYSICS_PROPS: Record<
   // Plataforma de la Mesa de Corte: la masa real sale del área de chapa (ver platformStore).
   platform: { mass: 8, linearDamping: 0.7, angularDamping: 1.1, restitution: 0.05, friction: 0.9 },
   flag: { mass: 0.6, linearDamping: 0.5, angularDamping: 0.9, restitution: 0.08, friction: 0.8 },
+  // Trozo rebanado: la masa real sale de su volumen (ver fragmentStore).
+  fragment: { mass: 2, linearDamping: 0.6, angularDamping: 1.0, restitution: 0.06, friction: 0.9 },
 };
 
 function PropVisual({ kind, fallback, scale = 1 }: {
@@ -652,7 +656,7 @@ function GrabbableItem({
         type="dynamic"
         position={position}
         rotation={rotation}
-        mass={kind === 'platform' ? undefined : phys.mass}
+        mass={kind === 'platform' ? undefined : kind === 'fragment' ? (fragmentStore.get(id)?.mass ?? phys.mass) : phys.mass}
         linearDamping={phys.linearDamping}
         angularDamping={phys.angularDamping}
         restitution={phys.restitution}
@@ -695,6 +699,7 @@ function GrabbableItem({
           <CuboidCollider ref={colliderRef} args={[...NEW_PROP_BOUNDS[kind]]} />
         )}
         {kind === 'platform' && <PlatformColliders id={id} colliderRef={colliderRef} bodyRef={bodyRef} />}
+        {kind === 'fragment' && <FragmentCollider id={id} colliderRef={colliderRef} />}
       </RigidBody>
 
       {/* Decoupled visual mesh: syncs to Rapier body when free, and directly to carryAnchor when carried */}
@@ -702,6 +707,7 @@ function GrabbableItem({
         <group ref={artworkGroupRef} name="prop-artwork">
         {kind === 'crate' && <PropVisual kind={kind} fallback={legacyCrate} />}
         {kind === 'platform' && <PlatformVisual id={id} />}
+        {kind === 'fragment' && <FragmentVisual id={id} />}
 
         {kind === 'wheel' && <PropVisual kind={kind} scale={0.98} fallback={
           <group>
@@ -1086,13 +1092,24 @@ const GRABBABLE_SPAWNS: Omit<SingleGrabbableProps, 'resetSignal'>[] = [
 
 export function GrabbableProps({ resetSignal }: { resetSignal: number }) {
   const spawnedProps = useGameStore((s) => s.spawnedProps);
+  useFragmentNonce();
+  // Al quitar todos los trozos vuelven las piezas originales que se habían rebanado.
+  const hadFragments = useRef(false);
+  const fragmentCount = spawnedProps.filter((item) => item.kind === 'fragment').length;
+  useEffect(() => {
+    if (fragmentCount > 0) hadFragments.current = true;
+    else if (hadFragments.current) {
+      hadFragments.current = false;
+      fragmentStore.restoreAll();
+    }
+  }, [fragmentCount]);
 
   return (
     <group name="grabbable-props">
-      {GRABBABLE_SPAWNS.map((spawn) => (
+      {GRABBABLE_SPAWNS.filter((spawn) => !fragmentStore.isConsumed(spawn.id)).map((spawn) => (
         <GrabbableItem key={spawn.id} {...spawn} resetSignal={resetSignal} />
       ))}
-      {spawnedProps.map((item) => (
+      {spawnedProps.filter((item) => !fragmentStore.isConsumed(item.id)).map((item) => (
         <GrabbableItem key={item.id} {...item} resetSignal={resetSignal} />
       ))}
     </group>

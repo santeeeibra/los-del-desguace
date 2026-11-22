@@ -1696,3 +1696,35 @@
 
 /* Tronzadora: el cartel va debajo del de contexto para no taparse */
 .hud-context-stack.hud-cut-station { top: calc(50% + 62px); }
+
+/* ── Rebanar piezas ─────────────────────────────────────────────────── */
+.slice-ui { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
+.slice-ui > * { pointer-events: auto; }
+.slice-bar {
+  position: absolute;
+  left: 50%;
+  top: calc(max(10px, env(safe-area-inset-top)) + 58px);
+  transform: translateX(-50%);
+  width: min(560px, calc(100vw - 24px));
+  padding: 10px 16px;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+}
+.slice-title { font-family: var(--font-display); font-size: 18px; color: var(--hud-ink); text-align: center; }
+.slice-modes, .slice-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.slice-modes .hud-button[aria-pressed="true"] { background: linear-gradient(180deg, #3c8a7d, #24574f); color: #eafff9; }
+.slice-slider { display: flex; align-items: center; gap: 8px; }
+.slice-slider input[type="range"] { flex: 1; min-width: 0; accent-color: #24574f; height: 30px; }
+.slice-offset { min-width: 64px; text-align: right; font: 800 14px var(--font-body); color: var(--hud-ink); }
+.slice-status { margin: 0; font: 800 13px/1.3 var(--font-body); color: var(--hud-ink); text-align: center; }
+.slice-bar .hud-button { min-height: 44px; min-width: 44px; padding: 6px 12px; }
+.slice-bar .hud-button.is-primary { background: linear-gradient(180deg, #ffe074, #e39a24); color: #361906; }
+@media (max-height: 520px) {
+  .slice-bar { top: 8px; padding: 6px 10px; gap: 4px; }
+  .slice-title { font-size: 14px; }
+  .slice-status { display: none; }
+  .slice-bar .hud-button { min-height: 38px; font-size: 13px; padding: 4px 9px; }
+}

@@ -26,7 +26,8 @@ export type GrabbableKind =
   | 'boxingGlove'
   | 'droneRotor'
   | 'flag'
-  | 'platform';
+  | 'platform'
+  | 'fragment';
 
 export const NEW_PROP_BOUNDS = {
   boxingGlove: [0.17, 0.16, 0.3],
@@ -169,6 +170,11 @@ export const CARRY_PROFILES: Record<GrabbableKind, CarryProfile> = {
   flag: {
     holdDistance: 0.68, holdHeight: 0, armSpread: 0.16, armPitch: -1, tiltX: 0,
     dropRadius: 0.2, dropHalfExtents: NEW_PROP_BOUNDS.flag, dropHeightOffset: 0.39,
+  },
+  // Trozo de una pieza rebanada: tamaño genérico (el real sale de su casco convexo).
+  fragment: {
+    holdDistance: 0.7, holdHeight: -0.02, armSpread: 0.3, armPitch: -1.0, tiltX: 0.04,
+    dropRadius: 0.3, dropHalfExtents: [0.25, 0.25, 0.25], dropHeightOffset: 0.3,
   },
 };
 

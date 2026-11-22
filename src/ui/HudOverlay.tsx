@@ -21,6 +21,8 @@ import { useArenaAndBridgeState } from '../modes/arenaAndBridge';
 import { contractStore, useContractStore, WORKSHOP_CONTRACTS } from '../modes/contracts';
 import { LaserTable } from './LaserTable';
 import { SceneCutBar } from './SceneCutBar';
+import { SliceBar } from './SliceBar';
+import { sliceStore, useSlice } from '../invention/sliceStore';
 import { sceneCutStore, useSceneCut } from '../invention/sceneCut';
 import { laserTableBridge } from '../invention/laserTableBridge';
 import { DeliveryHud, DELIVERY_DESCRIPTION, useDeliveryStatusText } from './DeliveryHud';
@@ -79,7 +81,7 @@ const KEY_GUIDE_ROWS: ReadonlyArray<readonly [string, string]> = [
   ['X · M', 'Llave y mira láser'],
   ['Shift+X', 'Soldadora / amoladora'],
   ['L · K', 'Cablear / quitar cables'],
-  ['Shift+C', 'Cortar en escena'],
+  ['Shift+C', 'Cortar / rebanar una pieza'],
   ['Tab', 'Editor de piezas'],
   ['G', 'Gestos'],
   ['Alt+E', 'Más acciones'],
@@ -214,6 +216,7 @@ const ITEM_LABELS: Record<InventoryKind, string> = {
   droneRotor: 'Hélice de dron',
   flag: 'Bandera del taller',
   platform: 'Plataforma recortada',
+  fragment: 'Trozo cortado',
   blueprint: 'Plano Guía',
 };
 
@@ -243,6 +246,7 @@ const ITEM_SHORT: Record<InventoryKind, string> = {
   droneRotor: 'Hélice',
   flag: 'Bandera',
   platform: 'Plataforma',
+  fragment: 'Trozo',
   blueprint: 'Plano',
 };
 
@@ -774,7 +778,7 @@ export function HudOverlay() {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (sceneCutStore.isActive()) return;
+      if (sceneCutStore.isActive() || sliceStore.isActive()) return;
       if (benchOpen) {
         if (e.code === 'Escape' && !e.repeat) gameStore.setTestBench(false);
         return;
@@ -812,7 +816,7 @@ export function HudOverlay() {
         if (gameMode.mode === 'sandbox') {
           e.preventDefault();
           if (document.pointerLockElement) document.exitPointerLock?.();
-          startSceneCut(laserTableBridge.get()?.aimedNear() ?? laserTableBridge.get()?.aimed() ?? null);
+          startCut();
         }
       } else if (e.code === 'KeyG' && !e.repeat && !isInputFocused && !menuOpen && !showWelcome && !showFinish && !showContractFinish) {
         playWoodClick();
@@ -948,8 +952,32 @@ export function HudOverlay() {
   useEffect(() => {
     if (sceneCut.active && (gameMode.mode !== 'sandbox' || seated)) sceneCutStore.stop();
   }, [sceneCut.active, gameMode.mode, seated]);
+  const slice = useSlice();
+  useEffect(() => {
+    if (slice.active && (gameMode.mode !== 'sandbox' || seated)) sliceStore.stop();
+  }, [slice.active, gameMode.mode, seated]);
+  /** Un solo atajo para cortar: rebana la pieza a la que apuntás, o recorta la plataforma cercana. */
+  const startCut = () => {
+    const bridge = laserTableBridge.get();
+    const sliceId = bridge?.sliceTarget() ?? null;
+    if (bridge && sliceId) {
+      const prepared = bridge.prepareSlice(sliceId);
+      if (prepared.error || !prepared.kind || !prepared.right || !prepared.forward) {
+        gameStore.setWireHint(prepared.error ?? 'Esta pieza no se puede rebanar');
+        return;
+      }
+      sliceStore.start({
+        id: sliceId, label: ITEM_LABELS[prepared.kind], radius: prepared.radius ?? 0.5,
+        right: prepared.right, forward: prepared.forward,
+      });
+      setToolsOpen(false);
+      setMoreOpen(false);
+      return;
+    }
+    startSceneCut(bridge?.aimedNear() ?? bridge?.aimed() ?? null);
+  };
   const startSceneCut = (id: string | null) => {
-    if (!id) { gameStore.setWireHint('Acercate a una plataforma para cortarla'); return; }
+    if (!id) { gameStore.setWireHint('Apuntá a una pieza para rebanarla, o acercate a una plataforma'); return; }
     const error = sceneCutStore.start(id);
     if (error) gameStore.setWireHint(error);
     setToolsOpen(false);
@@ -969,6 +997,7 @@ export function HudOverlay() {
     <div className="hud-layer" data-scene-ready={sceneReady ? 'true' : 'false'} data-touch={showTouch}
       data-scene-cut={sceneCut.active ? 'true' : undefined}>
       <SceneCutBar bolts={<WoodBolts />} labels={ITEM_SHORT} touch={showTouch} />
+      <SliceBar bolts={<WoodBolts />} touch={showTouch} />
       {cutCandidate && !sceneCut.active && (
         <button type="button" className="hud-button is-accent scene-cut-start hud-interactive" data-suggested={suggestCut || undefined}
           onClick={() => startSceneCut(cutCandidate)}>✂ Cortar</button>
@@ -2129,7 +2158,7 @@ export function HudOverlay() {
                 )}
                 {gameMode.mode === 'sandbox' && (
                   <button type="button" className="hud-button is-accent"
-                    onClick={() => startSceneCut(laserTableBridge.get()?.aimedNear() ?? laserTableBridge.get()?.aimed() ?? null)}>
+                    onClick={startCut}>
                     Cortar en escena{!showTouch && <kbd>Shift+C</kbd>}
                   </button>
                 )}

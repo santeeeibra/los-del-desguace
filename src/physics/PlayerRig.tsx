@@ -92,7 +92,9 @@ import {
   type GrabbableEntry,
   type GrabbableKind,
 } from '../props/grabbableRegistry';
-import { gameStore, useGameStore } from '../state/gameStore';
+import { gameStore, useGameStore, MAX_EXTRA_PROPS } from '../state/gameStore';
+import { fragmentColors, fragmentStore } from '../invention/fragmentStore';
+import { ballPoints, cuboidPoints, cylinderPoints, planeRelativeTo, slicePoints, type V3 } from '../invention/sliceGeometry';
 
 interface PlayerRigProps {
   maxDustPuffs: number;
@@ -640,6 +642,7 @@ export function PlayerRig({
     droneRotor: InstanceType<typeof rapier.Cuboid>;
     flag: InstanceType<typeof rapier.Cuboid>;
     platform: InstanceType<typeof rapier.Cuboid>;
+    fragment: InstanceType<typeof rapier.Cuboid>;
     sweepBall: InstanceType<typeof rapier.Ball>;
   } | null>(null);
 
@@ -704,6 +707,26 @@ export function PlayerRig({
       },
     };
   }, [cameraSourceRef, cartBodyRef, enabled, workshop]);
+
+  /** Puntos del casco de una pieza en el espacio local de su cuerpo (para rebanarla). */
+  const sliceLocalPoints = (id: string): { points: THREE.Vector3[] } | { error: string } => {
+    const entry = grabbableRegistry.getById(id);
+    const collider = entry?.getCollider();
+    const record = fragmentStore.get(id);
+    if (record) return { points: record.points.map(([x, y, z]) => new THREE.Vector3(x, y, z)) };
+    if (!entry || !collider?.isValid()) return { error: 'Esta pieza no se puede rebanar' };
+    const shape = collider.shape;
+    let points: THREE.Vector3[];
+    if (shape instanceof rapier.Cuboid) points = cuboidPoints(shape.halfExtents.x, shape.halfExtents.y, shape.halfExtents.z);
+    else if (shape instanceof rapier.Cylinder) points = cylinderPoints(shape.halfHeight, shape.radius);
+    else if (shape instanceof rapier.Ball) points = ballPoints(shape.radius);
+    else return { error: 'Esta pieza no se puede rebanar' };
+    const lr = collider.rotationWrtParent();
+    const lt = collider.translationWrtParent();
+    const q = lr ? new THREE.Quaternion(lr.x, lr.y, lr.z, lr.w) : new THREE.Quaternion();
+    const offset = lt ? new THREE.Vector3(lt.x, lt.y, lt.z) : new THREE.Vector3();
+    return { points: points.map((p) => p.applyQuaternion(q).add(offset)) };
+  };
 
   // Mesa de Corte Láser: fabricar plataformas, recortarlas en el lugar y deshacer.
   const lastPlatformRef = useRef<string | null>(null);
@@ -939,6 +962,127 @@ export function PlayerRig({
         const viewYaw = t && me ? Math.atan2(me.x - t.x, me.z - t.z) : 0;
         return { viewYaw };
       },
+      sliceTarget() {
+        const id = grabbableRegistry.highlightedId;
+        const kind = id ? grabbableRegistry.getById(id)?.kind : undefined;
+        if (!id || !kind || kind === 'platform') return null;
+        return id;
+      },
+      prepareSlice(id) {
+        const entry = grabbableRegistry.getById(id);
+        const body = entry?.getBody();
+        if (!entry || !body?.isValid()) return { error: 'Apuntá a una pieza para rebanarla' };
+        const stored = gameStore.getState().inventorySlots.some((item) => item?.id === id);
+        if (carriedIdRef.current === id || stored) return { error: 'Soltá la pieza en el piso para rebanarla' };
+        const station = workshop.stationOf(id) ?? (workshop.idsOnStation(`custom:${id}`).length ? (`custom:${id}` as const) : null);
+        if (station && station !== 'drum' && workshopPhysics.isReleased(station)) {
+          return { error: 'Fijá la creación en el taller para rebanar una de sus piezas' };
+        }
+        const shape = sliceLocalPoints(id);
+        if ('error' in shape) return { error: shape.error };
+        const fwd = scratchRayDir.current.set(0, 0, -1).applyQuaternion(camera.quaternion).setY(0);
+        if (fwd.lengthSq() < 1e-4) fwd.set(0, 0, 1);
+        fwd.normalize();
+        if (document.pointerLockElement) document.exitPointerLock?.();
+        const radius = shape.points.reduce((max, p) => Math.max(max, p.length()), 0.1);
+        return {
+          kind: entry.kind,
+          radius,
+          right: { x: -fwd.z, y: 0, z: fwd.x },
+          forward: { x: fwd.x, y: 0, z: fwd.z },
+        };
+      },
+      slice(id, normalIn, offset) {
+        const entry = grabbableRegistry.getById(id);
+        const body = entry?.getBody();
+        if (!entry || !body?.isValid()) return { error: 'Elegí una pieza' };
+        if (carriedIdRef.current === id || gameStore.getState().inventorySlots.some((item) => item?.id === id)) {
+          return { error: 'Soltá la pieza en el piso para rebanarla' };
+        }
+        const station = workshop.stationOf(id) ?? (workshop.idsOnStation(`custom:${id}`).length ? (`custom:${id}` as const) : null);
+        if (station && station !== 'drum' && workshopPhysics.isReleased(station)) {
+          return { error: 'Fijá la creación en el taller para rebanar una de sus piezas' };
+        }
+        const shape = sliceLocalPoints(id);
+        if ('error' in shape) return { error: shape.error };
+        const origin = new THREE.Vector3().copy(body.translation() as THREE.Vector3);
+        const rot = new THREE.Quaternion().copy(body.rotation() as THREE.Quaternion);
+        const world = shape.points.map((p) => p.clone().applyQuaternion(rot).add(origin));
+        const normal = new THREE.Vector3(normalIn.x, normalIn.y, normalIn.z).normalize();
+        const d = normal.dot(origin) + offset;
+        const result = slicePoints(world, normal, d);
+        if ('error' in result) return { error: result.error };
+
+        const originalIsExtra = gameStore.getState().spawnedProps.some((item) => item.id === id);
+        if (gameStore.getState().spawnedProps.length + (originalIsExtra ? 1 : 2) > MAX_EXTRA_PROPS) {
+          return { error: 'El dispensador está lleno: retirá piezas extra' };
+        }
+
+        // Todo lo soldado a la pieza se suelta (ella misma y lo que colgaba de ella).
+        const dependents = station ? workshop.idsOnStation(station).filter((childId) => workshop.mountOf(childId)?.parentId === id) : [];
+        for (const rootId of [id, ...dependents]) {
+          for (const removedId of workshop.remove(rootId)) {
+            workshopPhysics.detach(removedId);
+            if (removedId !== id) unparkIfLoose(removedId);
+          }
+        }
+        workshopPhysics.updateMotors(workshop);
+        gameStore.setCanUndoMount(workshop.canUndo());
+
+        const parentRecord = fragmentStore.get(id);
+        const colors = parentRecord ? { base: parentRecord.base, cut: parentRecord.cut } : fragmentColors(entry.kind);
+        const parentPlanes = parentRecord?.cutPlanes.map((plane) => ({
+          n: new THREE.Vector3(...plane.n).applyQuaternion(rot), d: plane.d,
+        })) ?? [];
+        const sourceMass = body.mass();
+        const totalVolume = result.above.volume + result.below.volume;
+        const linvel = body.linvel();
+        const spawned: string[] = [];
+        for (const [half, sign] of [[result.above, 1], [result.below, -1]] as const) {
+          const gap = normal.clone().multiplyScalar(0.03 * sign);
+          const at = half.centroid.clone().add(gap);
+          const entryNew = gameStore.spawnExtraPart('fragment', [at.x, at.y, at.z]);
+          if (!entryNew) continue;
+          const local = half.points.map((p) => p.clone().sub(half.centroid));
+          const planes = [
+            ...parentPlanes.map((plane) => planeRelativeTo(plane.n, plane.n.dot(origin) + plane.d, half.centroid)),
+            planeRelativeTo(normal, d, half.centroid),
+          ];
+          fragmentStore.create({
+            id: entryNew.id,
+            points: local.map((p) => [p.x, p.y, p.z] as V3),
+            cutPlanes: planes,
+            mass: Math.max(0.15, sourceMass * (half.volume / totalVolume)),
+            sourceKind: parentRecord?.sourceKind ?? entry.kind,
+            base: colors.base,
+            cut: colors.cut,
+          });
+          spawned.push(entryNew.id);
+        }
+        // Mantener la velocidad de la pieza original en los trozos (cuando ya existan sus cuerpos).
+        let tries = 0;
+        const inherit = () => {
+          const bodies = spawned.map((fid) => grabbableRegistry.getById(fid)?.getBody());
+          if (bodies.every((b) => b?.isValid())) {
+            bodies.forEach((b, index) => {
+              b!.setLinvel({ x: linvel.x, y: linvel.y, z: linvel.z }, true);
+              const push = normal.clone().multiplyScalar(index === 0 ? 0.6 : -0.6);
+              b!.applyImpulse({ x: push.x * b!.mass(), y: push.y * b!.mass(), z: push.z * b!.mass() }, true);
+            });
+            return;
+          }
+          if (++tries < 30) requestAnimationFrame(inherit);
+        };
+        requestAnimationFrame(inherit);
+
+        // La pieza original desaparece.
+        fragmentStore.consume(id);
+        if (originalIsExtra) gameStore.removeExtraPart(id);
+        if (parentRecord) fragmentStore.forget(id);
+        dustPoolRef.current?.spawnBurst(origin.x, origin.y + 0.1, origin.z, 'spark');
+        playWeldClank();
+        return {};
+      },
       aimed() {
         const highlighted = grabbableRegistry.highlightedId;
         if (highlighted && grabbableRegistry.getById(highlighted)?.kind === 'platform') return highlighted;
@@ -1167,6 +1311,7 @@ export function PlayerRig({
         droneRotor: new rapier.Cuboid(...NEW_PROP_BOUNDS.droneRotor),
         flag: new rapier.Cuboid(...NEW_PROP_BOUNDS.flag),
         platform: new rapier.Cuboid(0.5, 0.05, 0.6),
+        fragment: new rapier.Cuboid(0.25, 0.25, 0.25),
         sweepBall: new rapier.Ball(0.16),
       };
     }

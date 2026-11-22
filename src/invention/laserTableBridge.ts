@@ -30,6 +30,15 @@ export interface LaserTableHandlers {
   aimedNear(): string | null;
   /** Deja la pieza lista para cortar en escena (fija la creación si estaba suelta). */
   prepareSceneCut(id: string): { error?: string; viewYaw?: number };
+  /** Pieza (no chapa) a la que apunta el jugador y que se puede rebanar, si hay. */
+  sliceTarget(): string | null;
+  /** Deja lista una pieza para rebanar: orientación de la vista y tamaño. */
+  prepareSlice(id: string): {
+    error?: string; kind?: GrabbableKind; radius?: number;
+    right?: { x: number; y: number; z: number }; forward?: { x: number; y: number; z: number };
+  };
+  /** Parte la pieza con un plano (normal en el mundo, distancia al centro) y suelta lo soldado. */
+  slice(id: string, normal: { x: number; y: number; z: number }, offset: number): { error?: string };
 }
 
 let handlers: LaserTableHandlers | null = null;

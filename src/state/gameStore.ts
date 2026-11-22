@@ -640,6 +640,12 @@ export const gameStore = {
     emit();
     return entry;
   },
+  /** Quita una pieza extra puntual (p. ej. la que se consumió al rebanarla). */
+  removeExtraPart(id: string) {
+    if (!state.spawnedProps.some((entry) => entry.id === id)) return;
+    state = { ...state, spawnedProps: state.spawnedProps.filter((entry) => entry.id !== id) };
+    emit();
+  },
   requestClearExtraParts() {
     clearExtraPartsRequested = true;
   },

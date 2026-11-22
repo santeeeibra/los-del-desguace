@@ -160,7 +160,7 @@ Pilares sociales y de mundo de la Fase 4 (en diseño 🧭):
 - **Física, Ensamblaje y Planos:** `src/physics/PlayerRig.tsx`, `src/invention/workshopPhysics.ts`, `src/invention/workshopAssembly.ts`, `src/invention/cartBlueprints.ts`, `src/invention/BlueprintHolograms.tsx`, `src/logic/blueprintManager.ts`, `src/logic/contraptionRegistry.ts`, `src/logic/logicGraph.ts`.
 - **Personaje y Expresiones:** `src/character/InventorCharacter.tsx`, `src/character/characterAppearance.ts`, `src/character/faceRigController.ts`, `src/character/heads/headRegistry.ts`, `src/character/outfits/outfitRegistry.ts`.
 - **Verificación obligatoria después de cada cambio de código:**
-  - `npx tsc --noEmit` (debe terminar con código `0`)
+  - `npx tsc -p tsconfig.app.json --noEmit` (debe terminar con código `0`; el `npx tsc --noEmit` de la raíz no revisa `src` porque `tsconfig.json` tiene `"files": []`)
   - `npm test` (toda la suite Vitest en verde)
 
 ---
