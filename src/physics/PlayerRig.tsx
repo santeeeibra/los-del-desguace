@@ -19,6 +19,8 @@ import {
 } from '../audio/sfxEngine';
 import { fillPart, sprayAt, sprayFx, sprayUi, tickPaint } from '../invention/paintStore';
 import { SprayMist } from '../invention/SprayMist';
+import { RoboticRopes } from '../invention/RoboticRopes';
+import { resetRoboticTools, stepRoboticTools } from '../invention/roboticsRuntime';
 import { buildCharacterAppearance } from '../character/characterCustomization';
 import { DustPuffPool, type DustPuffHandle } from '../character/DustPuffPool';
 import { InventorCharacter, type CharacterAnimData } from '../character/InventorCharacter';
@@ -496,6 +498,21 @@ export function PlayerRig({
       }
     }
     workshopPhysics.stepRunning(cartBodyRef.current, workshopTime.current);
+    // Bisagras, pistones y bases giratorias siguen su señal; pinzas y cabrestantes agarran/enrollan.
+    workshopPhysics.stepRobotics(dt);
+    stepRoboticTools({ world, rapier }, dt, (id) => {
+      const st = workshop.stationOf(id);
+      const out = new Set<number>();
+      if (!st) return out;
+      for (const pid of workshop.idsOnStation(st)) {
+        const b = grabbableRegistry.getById(pid)?.getBody();
+        if (b?.isValid()) out.add(b.handle);
+      }
+      const rid = customRootId(st);
+      const rb = rid ? grabbableRegistry.getById(rid)?.getBody() : st === 'cart' ? cartBodyRef.current : null;
+      if (rb?.isValid()) out.add(rb.handle);
+      return out;
+    });
     driveImpactCooldownRef.current = Math.max(0, driveImpactCooldownRef.current - dt);
     skidDustCooldownRef.current = Math.max(0, skidDustCooldownRef.current - dt);
     if (!seatId || !ctrl?.body) {
@@ -701,6 +718,7 @@ export function PlayerRig({
     platform: InstanceType<typeof rapier.Cuboid>;
     fragment: InstanceType<typeof rapier.Cuboid>;
     bodywork: InstanceType<typeof rapier.Cuboid>;
+    robotic: InstanceType<typeof rapier.Cuboid>;
     sweepBall: InstanceType<typeof rapier.Ball>;
   } | null>(null);
 
@@ -1380,6 +1398,7 @@ export function PlayerRig({
         platform: new rapier.Cuboid(0.5, 0.05, 0.6),
         fragment: new rapier.Cuboid(0.25, 0.25, 0.25),
         bodywork: new rapier.Cuboid(0.5, 0.18, 0.4),
+        robotic: new rapier.Cuboid(0.28, 0.17, 0.3),
         sweepBall: new rapier.Ball(0.16),
       };
     }
@@ -2298,6 +2317,7 @@ export function PlayerRig({
     if (cartAction === 'repair' || cartAction === 'retry' || cartAction === 'return-workshop') {
       // Reparar también pone vidrios nuevos en las ventanas de carrocería.
       bodyworkStore.repairGlass();
+      resetRoboticTools(world);
       const endRun = cartAction === 'return-workshop';
       const resetRun = cartAction !== 'repair';
       const contractId = contractStore.getState().activeContractId;
@@ -4301,6 +4321,7 @@ export function PlayerRig({
       </group>
       <DustPuffPool ref={dustPoolRef} maxCount={maxDustPuffs} />
       <SprayMist />
+      <RoboticRopes />
     </>
   );
 }

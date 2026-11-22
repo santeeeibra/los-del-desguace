@@ -21,7 +21,8 @@ import { BOWLING_BARREL_IDS } from '../modes/contracts';
 import { gameStore, useGameStore } from '../state/gameStore';
 import { PropEffect } from './CrazyPropEffects';
 import { grabbableRegistry, NEW_PROP_BOUNDS, type GrabbableKind } from './grabbableRegistry';
-import { BodyworkVisual, PropModel, rollCageLayout } from './PropModels';
+import { BodyworkVisual, PropModel, RoboticVisual, rollCageLayout } from './PropModels';
+import { ROBOTICS_SPECS, roboticHalfExtents, roboticKindFromId } from '../invention/robotics';
 import { BODYWORK_SPECS, bodyworkHalfExtents, bodyworkKindFromId, bodyworkStore, type GlassState } from '../invention/bodywork';
 import { playImpact, playWireSnap } from '../audio/sfxEngine';
 import { PROP_MODEL_URLS, USE_LEGACY_PROP_VISUALS } from './propModelConfig';
@@ -346,6 +347,7 @@ const PHYSICS_PROPS: Record<
   // Trozo rebanado: la masa real sale de su volumen (ver fragmentStore).
   fragment: { mass: 2, linearDamping: 0.6, angularDamping: 1.0, restitution: 0.06, friction: 0.9 },
   // Carrocería: la masa real (0.26–0.42 kg) sale de BODYWORK_SPECS para no lastrar el chasis.
+  robotic: { mass: 0.8, linearDamping: 0.6, angularDamping: 1.0, restitution: 0.05, friction: 0.9 },
   bodywork: { mass: 0.3, linearDamping: 0.6, angularDamping: 1.0, restitution: 0.05, friction: 0.85 },
 };
 
@@ -603,6 +605,7 @@ function GrabbableItem({
 
   const phys = PHYSICS_PROPS[kind];
   const bodyworkVariant = kind === 'bodywork' ? bodyworkKindFromId(id) : null;
+  const roboticVariant = kind === 'robotic' ? roboticKindFromId(id) : null;
   const glassState = useGlassState(bodyworkVariant === 'window_frame' ? id : null);
 
   // Primitivas originales: fallback mientras carga el GLB y modo comparación (?props=legacy)
@@ -665,6 +668,7 @@ function GrabbableItem({
         mass={kind === 'platform' ? undefined
           : kind === 'fragment' ? (fragmentStore.get(id)?.mass ?? phys.mass)
           : kind === 'bodywork' && bodyworkVariant ? BODYWORK_SPECS[bodyworkVariant].mass
+          : roboticVariant ? ROBOTICS_SPECS[roboticVariant].mass
           : phys.mass}
         onContactForce={bodyworkVariant === 'window_frame' ? (e) => {
           // Vidrio: el impulso del golpe (fuerza × paso físico) lo raja o lo hace estallar antes que el marco.
@@ -722,6 +726,7 @@ function GrabbableItem({
           <CuboidCollider ref={colliderRef} args={bodyworkHalfExtents(bodyworkVariant)} />
         )}
         {bodyworkVariant === 'roll_cage' && <RollCageColliders colliderRef={colliderRef} />}
+        {roboticVariant && <CuboidCollider ref={colliderRef} args={roboticHalfExtents(roboticVariant)} />}
       </RigidBody>
 
       {/* Decoupled visual mesh: syncs to Rapier body when free, and directly to carryAnchor when carried */}
@@ -731,6 +736,7 @@ function GrabbableItem({
         {kind === 'platform' && <PlatformVisual id={id} />}
         {kind === 'fragment' && <FragmentVisual id={id} />}
         {bodyworkVariant && <BodyworkVisual kind={bodyworkVariant} glass={glassState} />}
+        {roboticVariant && <RoboticVisual kind={roboticVariant} />}
 
         {kind === 'wheel' && <PropVisual kind={kind} scale={0.98} fallback={
           <group>

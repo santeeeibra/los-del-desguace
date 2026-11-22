@@ -4,6 +4,7 @@ import type { WorkshopAssembly, WorkshopMount, WorkshopSlot, WorkshopStation } f
 import { isCustomStation } from './workshopAssembly';
 import { steerPivotLocal, WHEEL_RADIUS } from './platformShape';
 import { BODYWORK_SPECS, bodyworkKindFromId } from './bodywork';
+import { actuatorAxis, actuatorKindFromId, createRoboticJoint, ROBOTICS_SPECS, roboticKindFromId, stepRoboticActuator, type RoboticJointRecord } from './robotics';
 import {
   BreakMonitor,
   hasBreakLimits,
@@ -105,7 +106,9 @@ export function supportWidthAtCenter(points: { x: number; z: number }[]): number
 /** Chapas de carrocería: su soldadura se suelta al superar el umbral de su ficha (choques fuertes). */
 function bodyworkBreakLimits(id: string): BreakLimits | undefined {
   const kind = bodyworkKindFromId(id);
-  return kind ? { breakForce: BODYWORK_SPECS[kind].breakForce } : undefined;
+  if (kind) return { breakForce: BODYWORK_SPECS[kind].breakForce };
+  const robotic = roboticKindFromId(id);
+  return robotic ? { breakForce: ROBOTICS_SPECS[robotic].breakForce } : undefined;
 }
 
 export function steerLateralLimit(supportWidth: number): number {
@@ -295,6 +298,9 @@ export function createWorkshopPhysics(
     }
     return m > 0 ? { x: x / m, y: y / m, z: z / m } : { ...bodies[0].translation() };
   }
+
+  /** Articulaciones robóticas por pieza hija (la señal se lee del actuador madre). */
+  const roboticJoints = new Map<string, { record: RoboticJointRecord; actuatorId: string }>();
 
   /** Ancho de apoyo (a la altura del centro de masa) de cada estación, medido al doblar. */
   const supportWidths = new Map<WorkshopStation, number>();
@@ -553,6 +559,18 @@ export function createWorkshopPhysics(
       }
       const bwLimits = bodyworkBreakLimits(id);
       if (bwLimits) record.breakLimits = bwLimits;
+      // Soldado encima de una bisagra, pistón o base giratoria: la unión pasa a ser una articulación motorizada.
+      const actuator = actuatorKindFromId(mount.parentId);
+      if (actuator && mount.parentId && !localAxis) {
+        if (record.joint.isValid()) world.removeImpulseJoint(record.joint, true);
+        const parentActuatorId = mount.parentId;
+        record.createJoint = () => {
+          const rec = createRoboticJoint({ world, rapier }, id, actuator, parentBody, body, pose.position, actuatorAxis(actuator));
+          roboticJoints.set(id, { record: rec, actuatorId: parentActuatorId });
+          return rec.joint;
+        };
+        record.joint = record.createJoint();
+      }
       breakMonitor.reset(id);
       mounts.set(id, record);
     },
@@ -692,6 +710,17 @@ export function createWorkshopPhysics(
     },
     isCartReleased() {
       return releasedStations.has('cart');
+    },
+    /** Mueve bisagras, pistones y bases giratorias según la señal cableada a cada actuador. */
+    stepRobotics(dt: number) {
+      for (const [id, { record, actuatorId }] of roboticJoints) {
+        const mount = mounts.get(id);
+        if (!mount || mount.joint !== record.joint || !record.joint.isValid()) { roboticJoints.delete(id); continue; }
+        if (parkedParts.has(record.childBody)) continue;
+        const signal = engineSignal?.(actuatorId) ?? 0;
+        // Bisagra: con señal abre, sin señal cierra. Base giratoria: gira con señal. Pistón: se estira con señal.
+        stepRoboticActuator(rapier, record, record.kind === 'hinge' ? (signal > 0.5 ? 1 : 0) : signal, dt);
+      }
     },
     /** El conjunto lo gobierna el control de vuelo (sin ruedas, o con ruedas y despegado). */
     usesFlightControl(station: WorkshopStation, assembly: WorkshopAssembly) {

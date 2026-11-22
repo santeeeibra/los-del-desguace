@@ -94,3 +94,12 @@ Las mismas reglas valen para cualquier invento; ya no hay casos especiales por t
 - **Validar jugando:** que el encastre quede bien pegado al chasis (las medidas del chasis son aproximadas: 1.1 × 0.16 × 1.9); que la cuña quede con el filo hacia afuera; umbrales de rotura y de vidrio (vienen de la ficha, pueden ser muy altos o muy bajos); que piezas tan livianas no tiemblen soldadas a un chasis pesado.
 - Pendiente: el bonus aerodinámico (`computeAeroBonus`) todavía no se aplica a la velocidad; las puertas no abren con bisagra; las chapas no entran en planos compartidos por URL; la vista previa (fantasma) no muestra el encastre, solo el montaje real.
 
+## Piezas robóticas (2026-11-22, sin probar jugando)
+- [x] 5 piezas en el Dispensador: **Bisagra Motorizada, Pistón Extensible, Base Giratoria 360°, Pinza Mecánica y Cabrestante con Soga**.
+- [x] Lo que se suelda **encima** de una bisagra, pistón o base giratoria queda articulado y se mueve con la señal cableada al actuador (interruptor o temporizador): bisagra abre/cierra, pistón se estira, base gira mientras hay señal.
+- [x] **Puertas:** una Puerta de Chapa soldada sobre una Bisagra abre y cierra con un interruptor.
+- [x] **Pinza:** con señal agarra la pieza más cercana (nunca al jugador ni a su propio invento); sin señal la suelta.
+- [x] **Cabrestante:** con señal lanza el gancho hacia adelante, engancha lo primero que toca y enrolla; sin señal traba la soga. Soga 3D que se pone roja con la tensión. H suelta pinzas y recoge ganchos.
+- **Validar jugando:** que la pieza soldada sobre la bisagra no "salte" al soldarla (la articulación usa el eje de la bisagra y puede reacomodar la pieza); fuerza de los motores con cargas pesadas; que el gancho apunte hacia donde se ve; que la pinza no agarre cosas raras del escenario.
+- Pendiente: control directo desde el asiento (hoy solo con señal lógica), la bisagra no cambia su eje si se suelda girada, el gancho no se suelta solo (solo con H).
+

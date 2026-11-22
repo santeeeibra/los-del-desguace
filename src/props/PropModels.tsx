@@ -3,6 +3,7 @@ import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { PROP_MODEL_URLS, USE_LEGACY_PROP_VISUALS } from './propModelConfig';
 import { BODYWORK_SPECS, type BodyworkKind, type GlassState } from '../invention/bodywork';
+import { ROBOTICS_SPECS, type RoboticPartKind } from '../invention/robotics';
 
 /**
  * Modelos estilizados generados en Blender (ver art/blender/build_props.py).
@@ -196,5 +197,67 @@ export function BodyworkVisual({ kind, glass }: { kind: BodyworkKind; glass?: Gl
         </group>
       );
     }
+  }
+}
+
+// ---------- Piezas robóticas (bisagra, pistón, base giratoria, pinza, cabrestante) ----------
+const rbBody = new THREE.MeshStandardMaterial({ color: '#e0a526', roughness: 0.45, metalness: 0.3 });
+const rbDark = new THREE.MeshStandardMaterial({ color: '#2b2f36', roughness: 0.5, metalness: 0.5 });
+const rbChrome = new THREE.MeshStandardMaterial({ color: '#d7dde1', roughness: 0.2, metalness: 0.9 });
+const rbRope = new THREE.MeshStandardMaterial({ color: '#c9a45a', roughness: 0.9 });
+
+export function RoboticVisual({ kind }: { kind: RoboticPartKind }) {
+  const [w, h, d] = ROBOTICS_SPECS[kind].size;
+  switch (kind) {
+    case 'hinge':
+      return (
+        <group>
+          <mesh castShadow material={rbBody} position={[0, -h / 4, 0]}><boxGeometry args={[w, h / 2, d]} /></mesh>
+          <mesh castShadow material={rbChrome} rotation={[0, 0, Math.PI / 2]}><cylinderGeometry args={[h / 2.6, h / 2.6, w * 1.04, 14]} /></mesh>
+          <mesh castShadow material={rbDark} position={[0, h / 4, 0]}><boxGeometry args={[w * 0.6, h / 2, d * 0.8]} /></mesh>
+        </group>
+      );
+    case 'piston':
+      return (
+        <group>
+          <mesh castShadow material={rbBody} rotation={[Math.PI / 2, 0, 0]} position={[0, 0, -d * 0.1]}>
+            <cylinderGeometry args={[w / 2, w / 2, d * 0.8, 14]} />
+          </mesh>
+          <mesh castShadow material={rbChrome} rotation={[Math.PI / 2, 0, 0]} position={[0, 0, d * 0.35]}>
+            <cylinderGeometry args={[w / 4, w / 4, d * 0.3, 10]} />
+          </mesh>
+          <mesh castShadow material={rbDark} position={[0, 0, d / 2]}><boxGeometry args={[w * 0.7, h * 0.7, 0.04]} /></mesh>
+        </group>
+      );
+    case 'bearing':
+      return (
+        <group>
+          <mesh castShadow material={rbDark} position={[0, -h / 4, 0]}><cylinderGeometry args={[w / 2, w / 2, h / 2, 20]} /></mesh>
+          <mesh castShadow material={rbBody} position={[0, h / 4, 0]}><cylinderGeometry args={[w / 2.3, w / 2.3, h / 2, 20]} /></mesh>
+          <mesh material={rbChrome} position={[w / 3, h / 2 + 0.005, 0]}><boxGeometry args={[0.06, 0.01, 0.02]} /></mesh>
+        </group>
+      );
+    case 'claw':
+      return (
+        <group>
+          <mesh castShadow material={rbBody} position={[0, h / 4, 0]}><boxGeometry args={[w * 0.6, h / 2, d * 0.5]} /></mesh>
+          {[-1, 1].map((s) => (
+            <group key={s}>
+              <mesh castShadow material={rbChrome} position={[s * w * 0.35, -h / 6, 0]} rotation={[0, 0, s * 0.25]}>
+                <boxGeometry args={[0.05, h * 0.65, d * 0.35]} />
+              </mesh>
+            </group>
+          ))}
+        </group>
+      );
+    case 'winch':
+      return (
+        <group>
+          <mesh castShadow material={rbDark} position={[0, -h / 2 + 0.04, 0]}><boxGeometry args={[w, 0.08, d]} /></mesh>
+          <mesh castShadow material={rbBody} rotation={[0, 0, Math.PI / 2]}><cylinderGeometry args={[h / 2.4, h / 2.4, w * 0.9, 16]} /></mesh>
+          <mesh material={rbRope} rotation={[0, 0, Math.PI / 2]}><cylinderGeometry args={[h / 3, h / 3, w * 0.7, 16]} /></mesh>
+          <mesh castShadow material={rbChrome} position={[0, 0, d / 2]}><torusGeometry args={[0.05, 0.015, 6, 12]} /></mesh>
+        </group>
+      );
   }
 }

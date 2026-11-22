@@ -103,6 +103,8 @@ export const PART_LOGIC_SPECS: Partial<Record<CrazyPartKind, PartLogicSpec>> = {
     nodeKind: 'and',
     label: 'Puerta AND',
   },
+  // Bisagra, pistón, base giratoria, pinza y cabrestante: reciben señal de control (interruptor/temporizador).
+  robotic: { nodeKind: 'piston', defaultConfig: { gain: 1 }, label: 'Pieza robótica' },
   magnet: {
     nodeKind: 'magnet',
     defaultConfig: { gain: 1 },

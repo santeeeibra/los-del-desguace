@@ -32,7 +32,16 @@ import {
 import { LaserTable } from './LaserTable';
 import { SceneCutBar } from './SceneCutBar';
 import { ToolIcon } from './ToolIcons';
-import { BODYWORK_KINDS, BODYWORK_SPECS, type BodyworkKind } from '../invention/bodywork';
+import { BODYWORK_KINDS, BODYWORK_SPECS } from '../invention/bodywork';
+import { ROBOTIC_KINDS, ROBOTICS_SPECS, type RoboticPartKind } from '../invention/robotics';
+
+const ROBOTIC_HINTS: Record<RoboticPartKind, string> = {
+  hinge: 'Bisagra: soldá algo encima (una puerta, un brazo) y cablealo a un interruptor para abrir y cerrar.',
+  piston: 'Pistón: lo que soldes encima se estira hacia adelante al recibir señal.',
+  bearing: 'Base giratoria: lo que soldes encima gira 360° mientras tenga señal.',
+  claw: 'Pinza: con señal agarra lo que tenga cerca; sin señal lo suelta.',
+  winch: 'Cabrestante: con señal lanza el gancho hacia adelante, engancha y enrolla la soga.',
+};
 import { NOZZLE_LABELS, PAINT_SWATCHES, sprayUi, useSprayUi, type SprayNozzle } from '../invention/paintStore';
 import { loadToolThumbnails, type HotbarToolId } from './toolThumbnailRenderer';
 import { sceneCutStore, useSceneCut } from '../invention/sceneCut';
@@ -276,6 +285,7 @@ const ITEM_LABELS: Record<InventoryKind, string> = {
   platform: 'Plataforma recortada',
   fragment: 'Trozo cortado',
   bodywork: 'Carrocería',
+  robotic: 'Pieza robótica',
   blueprint: 'Plano Guía',
 };
 
@@ -307,10 +317,11 @@ const ITEM_SHORT: Record<InventoryKind, string> = {
   platform: 'Plataforma',
   fragment: 'Trozo',
   bodywork: 'Chapa',
+  robotic: 'Robot',
   blueprint: 'Plano',
 };
 
-const SPAWNER_ITEMS: readonly { kind: GrabbableKind; label: string; hint?: string; variant?: BodyworkKind }[] = [
+const SPAWNER_ITEMS: readonly { kind: GrabbableKind; label: string; hint?: string; variant?: string }[] = [
   { kind: 'boxingGlove', label: 'Puño de resorte', hint: 'Apuntá el guante y elegí Probar o cablealo a un interruptor.' },
   { kind: 'droneRotor', label: 'Hélice de dron', hint: 'Empuja hacia el lado de las palas. Soldala y conectá una señal.' },
   { kind: 'flag', label: 'Bandera del taller', hint: 'Soldala para distinguir tu invento.' },
@@ -335,6 +346,12 @@ const SPAWNER_ITEMS: readonly { kind: GrabbableKind; label: string; hint?: strin
     label: BODYWORK_SPECS[variant].label,
     variant,
     hint: `${BODYWORK_SPECS[variant].label}: acercala al borde de un chasis o de otra chapa; R cambia el ángulo (0°, ±45°, ±90°).`,
+  })),
+  ...ROBOTIC_KINDS.map((variant) => ({
+    kind: 'robotic' as const,
+    label: ROBOTICS_SPECS[variant].label,
+    variant,
+    hint: ROBOTIC_HINTS[variant],
   })),
 ];
 
