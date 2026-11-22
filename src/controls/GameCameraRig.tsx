@@ -353,7 +353,7 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'KeyC') keyOrbit.current.right = true;
+      if (e.code === 'KeyC' && !e.shiftKey) keyOrbit.current.right = true;
     };
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.code === 'KeyC') keyOrbit.current.right = false;

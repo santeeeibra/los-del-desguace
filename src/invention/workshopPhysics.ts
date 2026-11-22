@@ -174,6 +174,32 @@ export function createWorkshopPhysics(
     }
   }
 
+  /**
+   * Gira el conjunto entero como sólido rígido: lleva el giro del chasis a `nextYaw` y suma a cada pieza
+   * la velocidad que le corresponde por su posición. Si solo se tocara el chasis, las ruedas quedarían con
+   * su velocidad vieja y las uniones se estirarían hasta despegarlas.
+   */
+  function yawAssembly(bodies: RapierRigidBody[], root: RapierRigidBody, nextYaw: number, turnAngle: number) {
+    const dOmega = nextYaw - root.angvel().y;
+    const c = root.translation();
+    const cosA = Math.cos(turnAngle);
+    const sinA = Math.sin(turnAngle);
+    for (const b of bodies) {
+      if (!b.isValid()) continue;
+      const w = b.angvel();
+      const v = b.linvel();
+      const t = b.translation();
+      b.setAngvel({ x: w.x, y: w.y + dOmega, z: w.z }, true);
+      const vx = v.x + dOmega * (t.z - c.z);
+      const vz = v.z - dOmega * (t.x - c.x);
+      if (Math.hypot(vx, vz) > 0.35 && turnAngle !== 0) {
+        b.setLinvel({ x: vx * cosA + vz * sinA, y: v.y, z: -vx * sinA + vz * cosA }, true);
+      } else {
+        b.setLinvel({ x: vx, y: v.y, z: vz }, true);
+      }
+    }
+  }
+
   function assemblyBodies(station: WorkshopStation, root: RapierRigidBody): RapierRigidBody[] {
     const bodies = [root];
     for (const mount of mounts.values()) {
@@ -516,8 +542,8 @@ export function createWorkshopPhysics(
         const sideVel = vel.x * rightX + vel.z * rightZ;
         if (Math.abs(sideVel) > 0.02) {
           const gripRate = airborne ? 1.8 : 6.5;
-          const grip = -sideVel * root.mass() * Math.min(1, dt * gripRate);
-          root.applyImpulse({ x: rightX * grip, y: 0, z: rightZ * grip }, true);
+          const grip = -sideVel * totalMass * Math.min(1, dt * gripRate);
+          applyImpulseAtCenterOfMass(bodies, root, { x: rightX * grip, y: 0, z: rightZ * grip });
         }
       }
       // En vuelo libre (sin ruedas) el giro lo gobierna stabilizeAndFlyAssembly; aquí solo se redirige la velocidad.
@@ -579,14 +605,7 @@ export function createWorkshopPhysics(
         const yawLimit = Math.min(3, STEER_MAX_LATERAL / Math.max(0.5, Math.abs(along)));
         const yawRate = Math.max(-yawLimit, Math.min(yawLimit, along * Math.tan(angle) / wheelbase));
         const nextYaw = av.y + (yawRate - av.y) * Math.min(1, dt * 14);
-        root.setAngvel({ x: av.x, y: nextYaw, z: av.z }, true);
-        const v2 = root.linvel();
-        if (Math.hypot(v2.x, v2.z) > 0.35) {
-          const turnAngle = nextYaw * dt * 0.85;
-          const cosA = Math.cos(turnAngle);
-          const sinA = Math.sin(turnAngle);
-          root.setLinvel({ x: v2.x * cosA + v2.z * sinA, y: v2.y, z: -v2.x * sinA + v2.z * cosA }, true);
-        }
+        yawAssembly(bodies, root, nextYaw, Math.hypot(vel.x, vel.z) > 0.35 ? nextYaw * dt * 0.85 : 0);
         return;
       }
       if (Math.abs(steer) < 0.05) {
@@ -599,27 +618,13 @@ export function createWorkshopPhysics(
       if (upVector.set(0, 1, 0).applyQuaternion(driveRotation.copy(root.rotation())).y < 0.6) return;
       const effectiveSteer = forwardSpeed < -0.5 && !airborne ? -steer : steer;
       // El giro máximo baja con la velocidad (aceleración lateral acotada): a 13 m/s ya no hace trompos.
-      const speedYawCap = STEER_MAX_LATERAL / Math.max(3, Math.abs(forwardSpeed));
+      const speedYawCap = Math.max(1.5, (STEER_MAX_LATERAL * 2) / Math.max(3, Math.abs(forwardSpeed)));
       const targetYaw = -effectiveSteer * Math.min(airborne ? 2.4 : 2.85, speedYawCap);
       const nextY = av.y + (targetYaw - av.y) * Math.min(1, dt * (airborne ? 10 : 14));
-      root.setAngvel({ x: av.x * 0.88, y: nextY, z: av.z * 0.88 }, true);
-      root.applyTorqueImpulse({ x: 0, y: -effectiveSteer * totalMass * 2.2 * dt, z: 0 }, true);
-      // Redirigir suavemente la velocidad horizontal al girar para trazar curvas ágiles
-      const grippedVelocity = root.linvel();
-      const horizSpeed = Math.hypot(grippedVelocity.x, grippedVelocity.z);
-      if (horizSpeed > 0.35) {
-        const turnAngle = nextY * dt * (airborne ? 0.45 : 0.85);
-        const cosA = Math.cos(turnAngle);
-        const sinA = Math.sin(turnAngle);
-        root.setLinvel(
-          {
-            x: grippedVelocity.x * cosA + grippedVelocity.z * sinA,
-            y: grippedVelocity.y,
-            z: -grippedVelocity.x * sinA + grippedVelocity.z * cosA,
-          },
-          true,
-        );
-      }
+      root.setAngvel({ x: av.x * 0.88, y: av.y, z: av.z * 0.88 }, true);
+      // Giro + redirección de velocidad aplicados a todo el conjunto (no solo al chasis) para no despegar ruedas.
+      const horizSpeed = Math.hypot(vel.x, vel.z);
+      yawAssembly(bodies, root, nextY, horizSpeed > 0.35 ? nextY * dt * (airborne ? 0.45 : 0.85) : 0);
     },
     driveAssembly(
       station: WorkshopStation,

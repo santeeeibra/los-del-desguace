@@ -79,6 +79,7 @@ const KEY_GUIDE_ROWS: ReadonlyArray<readonly [string, string]> = [
   ['X · M', 'Llave y mira láser'],
   ['Shift+X', 'Soldadora / amoladora'],
   ['L · K', 'Cablear / quitar cables'],
+  ['Shift+C', 'Cortar en escena'],
   ['Tab', 'Editor de piezas'],
   ['G', 'Gestos'],
   ['Alt+E', 'Más acciones'],
@@ -805,6 +806,14 @@ export function HudOverlay() {
         e.preventDefault();
         if (document.pointerLockElement) document.exitPointerLock?.();
         setMoreOpen((open) => !open);
+      } else if (e.code === 'KeyC' && e.shiftKey && !e.repeat && !isInputFocused && !e.ctrlKey && !e.altKey && !e.metaKey &&
+        !seated && !menuOpen && !emotesOpen && !showWelcome && !showFinish && !showContractFinish && !benchOpen) {
+        // Atajo de Cortar en escena (modo Taller Libre).
+        if (gameMode.mode === 'sandbox') {
+          e.preventDefault();
+          if (document.pointerLockElement) document.exitPointerLock?.();
+          startSceneCut(laserTableBridge.get()?.aimedNear() ?? laserTableBridge.get()?.aimed() ?? null);
+        }
       } else if (e.code === 'KeyG' && !e.repeat && !isInputFocused && !menuOpen && !showWelcome && !showFinish && !showContractFinish) {
         playWoodClick();
         setEmotesOpen((prev) => !prev);
@@ -847,7 +856,7 @@ export function HudOverlay() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [menuOpen, menuTab, moreOpen, seated, showWelcome, showFinish, showContractFinish, emotesOpen, benchOpen, openParts]);
+  }, [menuOpen, menuTab, moreOpen, seated, showWelcome, showFinish, showContractFinish, emotesOpen, benchOpen, openParts, gameMode.mode]);
 
   const showTouch = touchMode === 'on' || (touchMode === 'auto' && isTouchDevice);
   const assemblyLabels = {
@@ -2121,7 +2130,7 @@ export function HudOverlay() {
                 {gameMode.mode === 'sandbox' && (
                   <button type="button" className="hud-button is-accent"
                     onClick={() => startSceneCut(laserTableBridge.get()?.aimedNear() ?? laserTableBridge.get()?.aimed() ?? null)}>
-                    Cortar en escena
+                    Cortar en escena{!showTouch && <kbd>Shift+C</kbd>}
                   </button>
                 )}
               </div>

@@ -91,7 +91,7 @@ export function ThirdPersonCamera({ targetSourceRef, resetSignal }: ThirdPersonC
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'KeyQ') keyOrbit.current.left = true;
-      if (e.code === 'KeyC') keyOrbit.current.right = true;
+      if (e.code === 'KeyC' && !e.shiftKey) keyOrbit.current.right = true;
     };
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.code === 'KeyQ') keyOrbit.current.left = false;
