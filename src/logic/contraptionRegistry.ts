@@ -264,13 +264,25 @@ export function stepWireConnection(targetId: string | null): {
   return { status: 'connected', message: `${toPort === 'power' ? 'Energía' : 'Control'} conectado a ${target.label}` };
 }
 
+/** Señal forzada desde el asiento (tecla F / botón Accionar) para piezas robóticas sin interruptor. */
+const forcedSignals = new Set<string>();
+
+/** Alterna la señal de varias piezas a la vez; devuelve si quedaron encendidas. */
+export function toggleForcedSignal(ids: string[]): boolean {
+  const on = !ids.some((id) => forcedSignals.has(id));
+  for (const id of ids) {
+    if (on) forcedSignals.add(id); else forcedSignals.delete(id);
+  }
+  return on;
+}
+
 export function getWiredEngineSignal(id: string): number | undefined {
-  if (manualPulses.has(id)) return 1;
+  if (manualPulses.has(id) || forcedSignals.has(id)) return 1;
   return contraptionGraph.hasIncoming(id) ? contraptionGraph.getOutput(id) : undefined;
 }
 
 export function getPartLogicOutput(id: string): number {
-  if (activeTurbo.has(id) || manualPulses.has(id)) return 1;
+  if (activeTurbo.has(id) || manualPulses.has(id) || forcedSignals.has(id)) return 1;
   return contraptionGraph.hasIncoming(id) ? contraptionGraph.getOutput(id) : 0;
 }
 

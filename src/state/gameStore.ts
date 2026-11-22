@@ -143,6 +143,10 @@ export interface GameHudState {
   canUndoMount: boolean;
   seated: boolean;
   seatedFlightMode: boolean;
+  /** El vehículo donde va sentado tiene piezas robóticas o un interruptor (botón Accionar). */
+  seatedRobotics: boolean;
+  /** Hay un cabrestante enganchado (botón Soltar gancho). */
+  winchHooked: boolean;
   wrenchEquipped: boolean;
   /** Soldadora equipada (implica el rayo láser de la llave). */
   welderEquipped: boolean;
@@ -227,6 +231,8 @@ let state: GameHudState = {
   canUndoMount: false,
   seated: false,
   seatedFlightMode: false,
+  seatedRobotics: false,
+  winchHooked: false,
   wrenchEquipped: false,
   welderEquipped: false,
   nearCutStation: false,
@@ -366,6 +372,16 @@ export const gameStore = {
   },
   refreshBlueprints() {
     state = { ...state, blueprints: listBlueprints() };
+    emit();
+  },
+  setSeatedRobotics(on: boolean) {
+    if (state.seatedRobotics === on) return;
+    state = { ...state, seatedRobotics: on };
+    emit();
+  },
+  setWinchHooked(on: boolean) {
+    if (state.winchHooked === on) return;
+    state = { ...state, winchHooked: on };
     emit();
   },
   setSeated(seated: boolean, flightMode = false) {

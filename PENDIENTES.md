@@ -101,5 +101,8 @@ Las mismas reglas valen para cualquier invento; ya no hay casos especiales por t
 - [x] **Pinza:** con señal agarra la pieza más cercana (nunca al jugador ni a su propio invento); sin señal la suelta.
 - [x] **Cabrestante:** con señal lanza el gancho hacia adelante, engancha lo primero que toca y enrolla; sin señal traba la soga. Soga 3D que se pone roja con la tensión. H suelta pinzas y recoge ganchos.
 - **Validar jugando:** que la pieza soldada sobre la bisagra no "salte" al soldarla (la articulación usa el eje de la bisagra y puede reacomodar la pieza); fuerza de los motores con cargas pesadas; que el gancho apunte hacia donde se ve; que la pinza no agarre cosas raras del escenario.
-- Pendiente: control directo desde el asiento (hoy solo con señal lógica), la bisagra no cambia su eje si se suelda girada, el gancho no se suelta solo (solo con H).
+- [x] **Desde el asiento:** `F` (PC) o botón **⚙ Accionar** (celular, junto al TURBO) alterna el interruptor montado en el vehículo; si no hay interruptor, prende/apaga directo las piezas robóticas del vehículo.
+- [x] **Soltar gancho:** `N` o botón **Soltar gancho** (aparece cuando hay un cabrestante enganchado, sentado o a pie). No reinicia el resto del vehículo.
+- [x] **Bisagra girada:** la pieza soldada encima conserva su rotación (eslabón intermedio) y gira sobre el eje de la bisagra tal como quedó soldada: sirve para puertas de costado y para palas/rampas que suben y bajan.
+- Validar jugando: que F sentado no choque con otras acciones; que la pieza sobre la bisagra no tiemble por el eslabón intermedio.
 

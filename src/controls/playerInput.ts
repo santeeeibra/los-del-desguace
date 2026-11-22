@@ -78,6 +78,10 @@ class PlayerInputBus {
   touchToolLatch = false;
   /** Toque corto con el aerosol (un disparo de pintura). */
   sprayTap = false;
+  /** Desde el asiento: alternar interruptor / piezas robóticas del vehículo (F o botón Accionar). */
+  seatRoboticsToggle = false;
+  /** Soltar el gancho del cabrestante (N o botón Soltar gancho). */
+  winchRelease = false;
   /** Solo táctil: pedido de cancelar el corte de la Sierra que está armado. */
   touchSawCancel = false;
   /** F mantenida (soldar con la soldadora). */
@@ -350,7 +354,14 @@ export function dispatchGameKeyDown(e: KeyDownLike) {
     case 'KeyQ':
       if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) gameStore.selectPreviousInventory();
       break;
+    case 'KeyN':
+      if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) playerInput.winchRelease = true;
+      break;
     case 'KeyF':
+      if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && gameStore.getState().seated) {
+        playerInput.seatRoboticsToggle = true;
+        break;
+      }
       if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
         playerInput.weldHeld = true;
         playerInput.triggerPartAction('smart-use');

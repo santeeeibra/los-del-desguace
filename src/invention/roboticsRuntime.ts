@@ -102,6 +102,27 @@ export function stepRoboticTools({ world, rapier }: Pick<PhysicsContext, 'world'
   for (const id of [...winches.keys()]) if (!seen.has(id)) { winches.delete(id); winchRopes.delete(id); }
 }
 
+/** Suelta y recoge los ganchos (solo los de `ids`, o todos). Devuelve cuántos soltó. */
+export function releaseWinchHooks(ids?: Set<string>): number {
+  let n = 0;
+  for (const [id, s] of winches) {
+    if (ids && !ids.has(id)) continue;
+    if (!s.anchorBody && !s.anchorWorldPoint) continue;
+    s.anchorBody = null;
+    s.anchorWorldPoint = null;
+    s.cableLength = 0;
+    s.reelCommand = 0;
+    winchRopes.delete(id);
+    n++;
+  }
+  return n;
+}
+
+export function anyWinchHooked(): boolean {
+  for (const s of winches.values()) if (s.anchorBody || s.anchorWorldPoint) return true;
+  return false;
+}
+
 /** Reparar (H): sueltan las pinzas y se recogen los ganchos. */
 export function resetRoboticTools(world: PhysicsContext['world']) {
   for (const s of claws.values()) releaseClawGrip(world, s);

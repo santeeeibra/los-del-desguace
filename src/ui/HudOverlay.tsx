@@ -647,6 +647,8 @@ export function HudOverlay() {
   const canOpenCutStationRef = useRef(false);
   const grinderEquipped = useGameStore((s) => s.grinderEquipped);
   const sprayEquipped = useGameStore((s) => s.sprayEquipped);
+  const seatedRobotics = useGameStore((s) => s.seatedRobotics);
+  const winchHooked = useGameStore((s) => s.winchHooked);
   const spray = useSprayUi();
   const [sprayLatched, setSprayLatched] = useState(false);
   useEffect(() => {
@@ -2434,16 +2436,26 @@ export function HudOverlay() {
                   <span><kbd>WASD</kbd> Volar</span>
                   <span><kbd>Espacio</kbd> Subir</span>
                   <span><kbd>Shift</kbd> Bajar</span>
+                  {seatedRobotics && <span><kbd>F</kbd> Accionar</span>}
+                  {winchHooked && <span><kbd>N</kbd> Soltar gancho</span>}
                   <span><kbd>E</kbd> Bajar del invento</span>
                 </>
               ) : (
                 <>
                   <span><kbd>WASD</kbd> Conducir</span>
                   <span><kbd>Espacio</kbd> Turbo</span>
+                  {seatedRobotics && <span><kbd>F</kbd> Accionar</span>}
+                  {winchHooked && <span><kbd>N</kbd> Soltar gancho</span>}
                   <span><kbd>E</kbd> Salir del asiento</span>
                 </>
               )}
             </div>
+          )}
+          {!seated && !isDelivery && winchHooked && (
+            <button type="button" className="hud-ctx-btn is-danger hud-winch-free"
+              onClick={() => { playerInput.winchRelease = true; playWoodClick(); }}>
+              Soltar gancho{!showTouch && <kbd>N</kbd>}
+            </button>
           )}
           {!seated && !isDelivery && sprayEquipped && (
             <div className="hud-spray-panel wood-sign" role="toolbar" aria-label="Aerosol: color, modo y boquilla">
@@ -2818,6 +2830,18 @@ export function HudOverlay() {
                     >
                       {seatedFlightMode ? '↑ ASCENDER / TURBO' : '🔥 TURBO'}
                     </button>
+                    {seatedRobotics && (
+                      <button type="button" className="hud-ctx-btn is-wire hud-robot-btn"
+                        onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); playerInput.seatRoboticsToggle = true; }}>
+                        ⚙ Accionar
+                      </button>
+                    )}
+                    {winchHooked && (
+                      <button type="button" className="hud-ctx-btn is-danger hud-robot-btn"
+                        onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); playerInput.winchRelease = true; }}>
+                        Soltar gancho
+                      </button>
+                    )}
                   </div>
                   <div className="hud-pedal-row">
                     <button

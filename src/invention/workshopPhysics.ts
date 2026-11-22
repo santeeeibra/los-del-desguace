@@ -561,15 +561,26 @@ export function createWorkshopPhysics(
       if (bwLimits) record.breakLimits = bwLimits;
       // Soldado encima de una bisagra, pistón o base giratoria: la unión pasa a ser una articulación motorizada.
       const actuator = actuatorKindFromId(mount.parentId);
-      if (actuator && mount.parentId && !localAxis) {
+      if (actuator && mount.parentId && !localAxis && !knuckle) {
+        // Articulación en dos tramos: actuador → eslabón (gira/se estira sobre el eje del actuador, que
+        // sigue la rotación con la que se soldó el actuador) → pieza (soldada fija con SU rotación).
+        // Así la pieza no "salta" al soldarla girada: una puerta de costado o una pala que sube y baja.
+        const linkWorld = new Vector3().copy(pose.position).applyQuaternion(parentBody.rotation()).add(parentPos);
+        const link = world.createRigidBody(rapier.RigidBodyDesc.dynamic()
+          .setTranslation(linkWorld.x, linkWorld.y, linkWorld.z)
+          .setRotation(parentBody.rotation())
+          .setAdditionalMassProperties(0.3, CENTER, { x: 0.03, y: 0.03, z: 0.03 }, LEVEL_ROTATION)
+          .setAdditionalSolverIterations(4));
+        const rec = createRoboticJoint({ world, rapier }, id, actuator, parentBody, link, pose.position, actuatorAxis(actuator));
+        roboticJoints.set(id, { record: rec, actuatorId: mount.parentId });
         if (record.joint.isValid()) world.removeImpulseJoint(record.joint, true);
-        const parentActuatorId = mount.parentId;
         record.createJoint = () => {
-          const rec = createRoboticJoint({ world, rapier }, id, actuator, parentBody, body, pose.position, actuatorAxis(actuator));
-          roboticJoints.set(id, { record: rec, actuatorId: parentActuatorId });
-          return rec.joint;
+          const j = world.createImpulseJoint(rapier.JointData.fixed(CENTER, pose.rotation, CENTER, LEVEL_ROTATION), link, body, true);
+          j.setContactsEnabled(false);
+          return j;
         };
         record.joint = record.createJoint();
+        record.knuckle = link;
       }
       breakMonitor.reset(id);
       mounts.set(id, record);
@@ -715,7 +726,7 @@ export function createWorkshopPhysics(
     stepRobotics(dt: number) {
       for (const [id, { record, actuatorId }] of roboticJoints) {
         const mount = mounts.get(id);
-        if (!mount || mount.joint !== record.joint || !record.joint.isValid()) { roboticJoints.delete(id); continue; }
+        if (!mount || !record.joint.isValid() || !record.childBody.isValid()) { roboticJoints.delete(id); continue; }
         if (parkedParts.has(record.childBody)) continue;
         const signal = engineSignal?.(actuatorId) ?? 0;
         // Bisagra: con señal abre, sin señal cierra. Base giratoria: gira con señal. Pistón: se estira con señal.

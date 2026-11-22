@@ -16,11 +16,12 @@ import {
   setEngineHum,
   setRollingAudio,
   setSprayHiss,
+  playWoodClick,
 } from '../audio/sfxEngine';
 import { fillPart, sprayAt, sprayFx, sprayUi, tickPaint } from '../invention/paintStore';
 import { SprayMist } from '../invention/SprayMist';
 import { RoboticRopes } from '../invention/RoboticRopes';
-import { resetRoboticTools, stepRoboticTools } from '../invention/roboticsRuntime';
+import { anyWinchHooked, releaseWinchHooks, resetRoboticTools, stepRoboticTools } from '../invention/roboticsRuntime';
 import { buildCharacterAppearance } from '../character/characterCustomization';
 import { DustPuffPool, type DustPuffHandle } from '../character/DustPuffPool';
 import { InventorCharacter, type CharacterAnimData } from '../character/InventorCharacter';
@@ -79,6 +80,7 @@ import {
   stepWireConnection,
   syncPartConditionToGraph,
   toggleSwitchNode,
+  toggleForcedSignal,
 } from '../logic/contraptionRegistry';
 import {
   listBlueprints,
@@ -2310,6 +2312,35 @@ export function PlayerRig({
           }
         }
         gameStore.setWireHint(error ?? `${isPreset ? 'Preset cargado en el taller' : 'Plano cargado'} · ${blueprint.name}`);
+      }
+    }
+
+    // Piezas robóticas desde el asiento (F / botón Accionar) y soltar gancho (N / botón Soltar gancho).
+    {
+      const seatStation = seatedIdRef.current ? workshop.stationOf(seatedIdRef.current) : undefined;
+      const stationIds = seatStation ? workshop.idsOnStation(seatStation) : [];
+      const switches = stationIds.filter((pid) => grabbableRegistry.getById(pid)?.kind === 'switchBox');
+      const robots = stationIds.filter((pid) => grabbableRegistry.getById(pid)?.kind === 'robotic');
+      gameStore.setSeatedRobotics(Boolean(seatStation) && (switches.length > 0 || robots.length > 0));
+      gameStore.setWinchHooked(anyWinchHooked());
+      if (playerInput.seatRoboticsToggle) {
+        playerInput.seatRoboticsToggle = false;
+        if (switches.length) {
+          let msg = '';
+          for (const sw of switches) msg = toggleSwitchNode(sw);
+          gameStore.setWireHint(msg);
+          playWoodClick();
+        } else if (robots.length) {
+          const on = toggleForcedSignal(robots);
+          gameStore.setWireHint(on ? 'Robótica encendida' : 'Robótica apagada');
+          playWoodClick();
+        }
+      }
+      if (playerInput.winchRelease) {
+        playerInput.winchRelease = false;
+        // Sentado: solo los ganchos de este vehículo. A pie: todos los enganchados.
+        const n = releaseWinchHooks(seatStation ? new Set(robots) : undefined);
+        gameStore.setWireHint(n ? 'Gancho suelto y recogido' : 'No hay ningún gancho enganchado');
       }
     }
 

@@ -2046,3 +2046,8 @@
 @media (pointer: coarse) {
   .hud-spray-swatch { width: 32px; height: 32px; }
 }
+
+/* Robótica desde el asiento y gancho del cabrestante */
+.hud-robot-btn { touch-action: none; min-height: 44px; }
+.hud-winch-free { display: block; margin: 0 auto 8px; pointer-events: auto; }
+.hud-winch-free kbd { margin-left: 6px; }
