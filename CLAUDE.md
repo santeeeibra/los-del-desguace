@@ -40,6 +40,39 @@
 4. **Prueba, Destrucción y Reparación 1-Clic:** Conducción arcade estable, rotura controlada de soldaduras en choques fuertes y botón de reparación instantánea.
 5. **Identidad, Personaje y Controles:** *El Vestidor del Yunke*, 7 gestos animados con audio, pantalla completa PC/iOS, joystick ampliado y controles táctiles de conducción de 2 pedales.
 
+### Diseño de Niveles: "Un problema físico, un invento" (aclarado por el creador, 2026-11-22)
+
+> **No son niveles de escalada ni de plataformas tipo *PEAK*.** Cada nivel/etapa es un **problema físico concreto** que se resuelve **armando y probando un invento**. *PEAK* solo sirve de referencia para la progresión por etapas con dificultad creciente y la misma metodología.
+
+**Ejemplos del creador (norte de diseño):**
+- Armar un prototipo o máquina que **cruza un puente** sin romperse (ruedas, masa, tracción).
+- Armar un **helicóptero con imán** para destapar una olla gigante que tapa un desagüe (vuelo, equilibrio, carga).
+- Armar una **máquina que rompe autos** hasta abrir paso a algo (empuje, corte, fuerza de choque).
+- Y así: cada etapa combina o endurece lo aprendido.
+
+**Metodología común a todos los niveles:**
+1. **Objetivo físico claro y visible** desde la zona de armado.
+2. **Zona de armado** con límites (presupuesto de piezas/peso).
+3. **Prueba:** se suelta el invento y se mira qué pasa; reparar en 1 clic y reintentar.
+4. **Éxito medible** con medallas por tiempo y eficiencia (menos piezas, menos daño).
+
+**Regla de las dos rutas (NO obligatoria):**
+- Algunos niveles/etapas, **no todos**, se pueden resolver **caminando** (parkour/trepada), pero esa ruta es **mucho más larga** (orden de 5 a 10 veces el tiempo del invento). Nunca es un bloqueo: nadie queda trabado si no construye.
+- La ruta a pie debe ser **legible y señalizada**; el invento es el camino corto y directo.
+- La medalla base se obtiene por cualquier ruta; las medallas altas premian el invento eficiente.
+- Un nivel **no debe poder terminarse igual de rápido a pie**: tiene que existir una barrera real (foso, tapa pesada, muro de autos) que solo el invento salte rápido.
+- Idealmente hay **más de una solución con invento** (ej. helicóptero con imán o grúa con cable).
+
+**Nivel 2 definido con el creador (2026-11-22), "El Callejón de los Autos":** callejón de desguace tapado por **dos barreras de autos seguidas**, una liviana (autos de ~90 kg, 2 de alto) y otra pesada (~320 kg, 3 de alto, con autos marcados con una X amarilla que son puntos débiles). Los autos se **empujan y se rompen por impacto** (si el golpe es fuerte se parten en 3 o 4 trozos y pesan menos); no se cortan con sierra en esta versión. Meta: portón del taller con tuerca gigante luminosa. Ruta a pie: pasarela elevada en zigzag por el lado izquierdo, ~8 veces más larga. El detalle de medidas y arte está en `docs/PEDIDO_ANTIGRAVITY_NIVELES.md`. **Implementado en código (2026-11-22, sin probar jugando):** `src/modes/carBarriers.ts` (distribución, masas y umbrales; 16 autos en la barrera A y 36 en la B), `src/environment/CarBarriers.tsx` (autos dinámicos, rotura por `onContactForce` con umbral por auto, 4 trozos de 20 % de la masa, trozos que desaparecen a los 35 s, pila que se rearma con `runNonce`) y `Level2CarAlley` en `ExpeditionLevels.tsx` (bahía, callejón de 17 m, pasarela a 5 m de altura con rampas). **Pendiente:** afinar umbrales de rotura con una máquina real, alargar la pasarela con zigzag (hoy rodea casi en línea recta), medir rendimiento en iPhone 11 y cargar los GLB de autos de Antigravity (no hay código que los cargue todavía).
+
+**Escalones de dificultad previstos:**
+1. **Puente** (ruedas, masa, tracción; sin trampas) → nivel 1.
+2. **Autos a romper** (empujar/cortar; sierra y amoladora ya existen) → nivel 2.
+3. **Helicóptero con imán** (vuelo + carga con contrapeso) → nivel 3.
+4. **Siguientes:** combinar mecanismos y sumar restricciones (piezas limitadas, viento, tiempo).
+
+**Estado actual de las expediciones (`src/modes/expeditionLevels.ts`):** los 3 niveles hechos (Pantano de Aceite, Cañón del Viento, Planta Trituradora) son recorridos de obstáculos que se cruzan a pie casi igual de rápido que con máquina; **no cumplen aún esta metodología**. Se conservan la base técnica (checkpoints, tiempos, tuercas, física) y se van a reconvertir; **el Nivel 1 ya fue reconvertido (2026-11-22, sin commitear ni desplegar) a "El Puente del Abismo"**: bahía de armado al inicio (las piezas del dispensador aparecen ahí vía `bayLocal`), puente angosto de 66 m sobre un abismo de 12 m y ruta a pie opcional (rampa izquierda, barro del fondo, rampa derecha). Decisión del creador: **bahía de armado dentro de cada nivel** (no se arma en el taller ni se transporta la máquina). Pendiente: probarlo jugando (máquina real cruzando, tiempo a pie vs invento), medallas por tiempo/piezas y el nivel 3. El nivel 2 ya tiene su versión en código (ver arriba). **Herramientas (2026-11-22):** soldadora, amoladora y sierra láser trabajan solo con **Ctrl + clic sostenido** (`GameCameraRig.tsx`, `usePrimaryAction`); el clic solo queda para el agarre con el láser, y amoladora y sierra no disparan el agarre. **Validar el diseño de cada nivel con el creador antes de implementarlo.**
+
 ---
 
 ## 2. Identidad Visual y Estilo de UI (Guía de Diseño Obligatoria)

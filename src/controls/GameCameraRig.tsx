@@ -203,14 +203,20 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
     };
 
     let mouseHoldActive = false;
-    const needsHold = () => {
+    // Soldadora, amoladora y sierra solo trabajan con Ctrl + clic sostenido; el clic solo es agarre con el láser.
+    const needsHold = (ctrl: boolean) => {
       const s = gameStore.getState();
-      return s.assemblyInteraction === 'push' || s.welderEquipped || s.grinderEquipped || s.sawEquipped;
+      return s.assemblyInteraction === 'push' || (ctrl && (s.welderEquipped || s.grinderEquipped || s.sawEquipped));
     };
-    const usePrimaryAction = (request?: InteractRequest) => {
-      if (needsHold()) {
+    const usePrimaryAction = (request?: InteractRequest, ctrl = false) => {
+      if (needsHold(ctrl)) {
         mouseHoldActive = true;
         playerInput.interactHeld = true;
+        // Amoladora y sierra solo usan el clic sostenido: no deben agarrar ni mover la pieza.
+        const s = gameStore.getState();
+        if (s.assemblyInteraction !== 'push' && (s.grinderEquipped || s.sawEquipped)) return;
+        // La soldadora solo necesita el clic para armar la soldadura de una pieza que llevás en la mano.
+        if (s.assemblyInteraction !== 'push' && s.welderEquipped && !s.carriedKind) return;
       }
       playerInput.triggerInteract(request);
     };
@@ -251,7 +257,7 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
       dom.focus({ preventScroll: true });
       if (e.pointerType === 'mouse' && document.pointerLockElement === dom) {
         if (e.button === 0 && !playerInput.menuOpen) {
-          usePrimaryAction();
+          usePrimaryAction(undefined, e.ctrlKey);
           return;
         }
         if (e.button === 2 && !playerInput.menuOpen) {
@@ -267,8 +273,8 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
         }
       }
       if (e.pointerType === 'mouse' && e.button === 0 && !playerInput.menuOpen) {
-        if (needsHold()) {
-          usePrimaryAction();
+        if (needsHold(e.ctrlKey)) {
+          usePrimaryAction(undefined, e.ctrlKey);
         } else {
           leftTap = {
             id: e.pointerId,
@@ -393,7 +399,7 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
       // Pointerdown no se repite al agregar otro botón mientras se sostiene el derecho.
       if (e.button === 0 && (e.buttons & 2) !== 0 && aimPointerId !== null && !playerInput.menuOpen) {
         e.preventDefault();
-        usePrimaryAction();
+        usePrimaryAction(undefined, e.ctrlKey);
       }
     };
     const onMouseUp = (e: MouseEvent) => {
@@ -404,6 +410,11 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
       if (e.code === 'KeyC' && !e.shiftKey) keyOrbit.current.right = true;
     };
     const onKeyUp = (e: KeyboardEvent) => {
+      // Soltar Ctrl corta la herramienta aunque el clic siga apretado.
+      if (e.code === 'ControlLeft' || e.code === 'ControlRight') {
+        const s = gameStore.getState();
+        if (s.welderEquipped || s.grinderEquipped || s.sawEquipped) stopMouseHold();
+      }
       if (e.code === 'KeyC') keyOrbit.current.right = false;
     };
     const onBlur = () => {

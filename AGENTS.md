@@ -53,4 +53,11 @@
 - **Antes de cambiar masas de props:** `tests/presetStability.test.ts` replica las masas de `GrabbableProps.tsx`; mantenerlas iguales o el test deja de representar el juego.
 - **Pendiente:** prueba manual en navegador (montar barril, volar, bajar) y confirmar que el personaje se ve sentado. Hito 2 y 3 siguen en diseño: no implementar sin aprobar con el creador.
 
+## 5. Notas de Coordinación (2026-11-22)
+
+- **Quién tocó qué:** Claude hizo el Nivel 1 "El Puente del Abismo" y el Nivel 2 "El Callejón de los Autos" en código (`ExpeditionLevels.tsx`, `CarBarriers.tsx`, `carBarriers.ts`), conectó el arte `.glb` de niveles (`LevelArt.tsx`) y cambió las herramientas a Ctrl + clic sostenido (`GameCameraRig.tsx`). Antigravity entregó el arte del Nivel 1 en `public/models/levels/level-1-puente.glb`.
+- **Para Antigravity:** el pedido del Nivel 2 (escenario, 4 carrocerías, variantes con X amarilla, trozos) está en `docs/PEDIDO_ANTIGRAVITY_NIVELES.md`. El Nivel 3 sigue sin aprobar: no modelarlo.
+- **Pendiente:** probar a mano ambos niveles con una máquina real, afinar los umbrales de rotura (`carBreakForce`), cargar los GLB de autos y medir rendimiento en iPhone 11.
+- **Estado:** `npm run build` OK y 203/203 tests.
+
 - **Vuelo libre:** el control de vuelo de mecanismos sin ruedas está unificado en `stabilizeAndFlyAssembly` (ver `CLAUDE.md`, "Control de vuelo libre"). No volver a aplicar par o velocidad angular solo al cuerpo raíz: hace oscilar el conjunto.

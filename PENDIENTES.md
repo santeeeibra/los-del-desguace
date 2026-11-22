@@ -4,6 +4,10 @@
 
 - [Plan de entregas y pedido para Antigravity](./docs/PLAN_ANIMACION_Y_RESPUESTA.md). La primera entrega cubre el agarre y montaje de una rueda, el Banco RPM y una vuelta en pista.
 
+## Niveles de invento
+
+- [Pedido para Antigravity: arte 3D de los niveles](./docs/PEDIDO_ANTIGRAVITY_NIVELES.md). Nivel 1 (puente) tiene código y falta arte. Niveles 2 (autos a romper) y 3 (helicóptero con imán) son propuesta: validar con el creador antes de modelar.
+
 ## Motor de juego
 
 - Permitir ubicar uniones sobre piezas ya montadas. Reusar las uniones fijas, los ejes y la transmisión que prueban el carrito y el tambor.

@@ -23,6 +23,7 @@ import {
   EXPEDITION_LEVEL_BY_ID,
   EXPEDITION_LEVELS,
   expeditionStore,
+  localToWorld,
   useExpeditionStore,
   type ExpeditionLevelId,
 } from '../modes/expeditionLevels';
@@ -1522,7 +1523,16 @@ export function HudOverlay() {
                       type="button"
                       className="hud-spawner-btn"
                       onClick={() => {
-                        const spawned = gameStore.spawnExtraPart(kind);
+                        // En un nivel de invento, las piezas aparecen en la bahía de armado del nivel.
+                        const bay = activeExpedition?.bayLocal;
+                        const bayPos: [number, number, number] | undefined = activeExpedition && bay
+                          ? localToWorld(activeExpedition.origin, [
+                              bay[0] - 4 + (spawnedProps.length % 5) * 2,
+                              bay[1] + 2.5,
+                              bay[2] - 2 + Math.floor(spawnedProps.length / 5) * 2.2,
+                            ])
+                          : undefined;
+                        const spawned = gameStore.spawnExtraPart(kind, bayPos);
                         playWoodClick();
                         gameStore.setWireHint(
                           spawned ? hint ?? `Pieza agregada: ${ITEM_LABELS[kind]}` : 'Límite de piezas extra alcanzado'
@@ -2316,12 +2326,12 @@ export function HudOverlay() {
                     ? 'Soltá para cortar'
                     : sawPhase === 'cut'
                       ? 'Cortando…'
-                      : <><kbd>Mantené + Arrastrá</kbd> Cortar</>}
+                      : <><kbd>Ctrl + Clic sostenido</kbd> Arrastrá y cortá</>}
                 </span>
               ) : activeTool === 'grinder' ? (
-                <span><kbd>Mantené Clic izq.</kbd> Cortar unión</span>
+                <span><kbd>Ctrl + Clic sostenido</kbd> Cortar unión</span>
               ) : activeTool === 'welder' ? (
-                <span><kbd>Mantené Clic izq.</kbd> Soldar</span>
+                <span><kbd>Ctrl + Clic sostenido</kbd> Soldar</span>
               ) : activeTool === 'wire' ? (
                 <span><kbd>Clic izq.</kbd> {pendingWireFrom ? 'Destino' : 'Origen'} · <kbd>Clic der.</kbd> Cancelar</span>
               ) : (

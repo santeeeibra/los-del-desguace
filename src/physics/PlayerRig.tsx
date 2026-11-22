@@ -93,7 +93,7 @@ import {
   type GrabbableKind,
 } from '../props/grabbableRegistry';
 import { gameStore, useGameStore, MAX_EXTRA_PROPS } from '../state/gameStore';
-import { EXPEDITION_LEVEL_BY_ID, expeditionStore, mudDragMultiplier, windGustFactor } from '../modes/expeditionLevels';
+import { EXPEDITION_LEVEL_BY_ID, expeditionStore, mudDragMultiplier } from '../modes/expeditionLevels';
 import { fragmentColors, fragmentStore } from '../invention/fragmentStore';
 import { liveCut } from '../invention/liveCut';
 import {
@@ -2484,20 +2484,11 @@ export function PlayerRig({
       const lx = ctrl.currPos.x - def.origin[0];
       const ly = ctrl.currPos.y - def.origin[1];
       const lz = ctrl.currPos.z - def.origin[2];
-      if (expState.activeLevelId === 'level-1-swamp' && lz > 11 && lz < 37 && Math.abs(lx) < 8.6 && ly < 0.75) {
+      // Nivel 1: el fondo del abismo es barro que frena al jugador a pie (la ruta lenta).
+      if (expState.activeLevelId === 'level-1-swamp' && lz > 13 && lz < 80 && Math.abs(lx) < 24 && ly < -10) {
         const v = ctrl.body.linvel();
         const drag = mudDragMultiplier(dt, 4.8);
         ctrl.body.setLinvel({ x: v.x * drag, y: v.y, z: v.z * drag }, true);
-      } else if (expState.activeLevelId === 'level-2-wind') {
-        const now = performance.now() * 0.001;
-        let windX = 0;
-        if (lz > 16 && lz < 28 && ly > 1.5 && ly < 8.5) windX = 10.5 * windGustFactor(now, 0);
-        else if (lz > 43 && lz < 53 && ly > 8 && ly < 15.5) windX = -12.0 * windGustFactor(now, 1.5);
-        else if (lz > 54 && lz < 65 && ly > 11 && ly < 18.5) windX = 12.0 * windGustFactor(now, 3.8);
-        if (Math.abs(windX) > 0.2) {
-          const v = ctrl.body.linvel();
-          ctrl.body.setLinvel({ x: v.x + windX * dt, y: v.y, z: v.z }, true);
-        }
       }
     }
     const inventoryAction = playerInput.consumeInventoryAction();

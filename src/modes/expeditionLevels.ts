@@ -20,6 +20,8 @@ export interface ExpeditionLevelDef {
   origin: readonly [number, number, number];
   /** Punto de aparición inicial (en coordenadas locales respecto a `origin`). */
   spawnLocal: readonly [number, number, number];
+  /** Centro de la bahía de armado del nivel (local): ahí aparecen las piezas del dispensador. */
+  bayLocal?: readonly [number, number, number];
   /** Puntos de control intermedios (locales). */
   checkpointsLocal: readonly (readonly [number, number, number])[];
   /** Meta / cima final (local). */
@@ -34,38 +36,42 @@ export const EXPEDITION_LEVELS: readonly ExpeditionLevelDef[] = [
   {
     id: 'level-1-swamp',
     number: 1,
-    title: 'Pantano de Aceite',
-    subtitle: 'Tracción, puente levadizo y grúa rota',
-    badge: 'Terreno · 98 m',
-    lengthLabel: '98 m · 3 tramos',
-    summary: 'Cruzá la fosa de aceite, bajá el puente levadizo de la grúa (o saltá la brecha) y llegá al muelle alto.',
+    title: 'El Puente del Abismo',
+    subtitle: 'Armá una máquina que cruce el puente angosto',
+    badge: 'Invento · 98 m',
+    lengthLabel: '98 m · puente de 66 m',
+    summary:
+      'Armá en la bahía una máquina que cruce el puente angosto sin caerse. Si preferís ir a pie, bajá por la rampa, cruzá el barro del fondo y trepá del otro lado: se tarda muchísimo más.',
     origin: [140, 0, 0],
     spawnLocal: [0, 1.8, 4],
+    bayLocal: [0, 0, 6],
     checkpointsLocal: [
-      [0, 1.8, 40],
-      [0, 1.8, 74],
+      [0, 1.8, 46],
+      [0, 1.8, 84],
     ],
-    goalLocal: [0, 7.6, 96],
-    goldenNutLocal: [-5.8, 7.2, 56],
-    fallKillY: -6,
+    goalLocal: [0, 1.6, 96],
+    goldenNutLocal: [0, -10.2, 46],
+    fallKillY: -20,
   },
   {
     id: 'level-2-wind',
     number: 2,
-    title: 'Cañón del Viento',
-    subtitle: 'Ascenso vertical de 24 m con ráfagas',
-    badge: 'Altura · 24 m',
-    lengthLabel: '92 m · 24 m alto',
-    summary: 'Escalá o volá entre islas de chatarra esquivando turbinas con viento cruzado hasta el helipuerto del faro.',
+    title: 'El Callejón de los Autos',
+    subtitle: 'Armá una máquina pesada que rompa dos barreras de autos',
+    badge: 'Impacto · 98 m',
+    lengthLabel: '98 m · 2 barreras',
+    summary:
+      'Un callejón del desguace está tapado por dos pilas de autos: una liviana y otra pesada. Armá una máquina con masa y velocidad para empujarlos y romperlos hasta el portón. A pie se puede rodear por la pasarela de arriba, pero se tarda mucho más.',
     origin: [280, 0, 0],
     spawnLocal: [0, 1.8, 4],
+    bayLocal: [0, 0, 6],
     checkpointsLocal: [
-      [0, 8.6, 36],
-      [0, 17.6, 70],
+      [0, 1.8, 50],
+      [0, 1.8, 80],
     ],
-    goalLocal: [0, 25.4, 90],
-    goldenNutLocal: [-6.4, 15.8, 53],
-    fallKillY: -7,
+    goalLocal: [0, 1.6, 96],
+    goldenNutLocal: [-7, 6.2, 84],
+    fallKillY: -8,
   },
   {
     id: 'level-3-crusher',
@@ -106,6 +112,8 @@ export interface ExpeditionState {
   elapsedSec: number;
   completedNow: boolean;
   goldenNutThisRun: boolean;
+  /** Sube cada vez que se inicia un nivel: los elementos físicos (autos) se reconstruyen. */
+  runNonce: number;
   /** Destino de teletransporte en mundo (con nonce para disparar incluso al mismo punto). */
   teleportRequest: { pos: [number, number, number]; nonce: number } | null;
   progress: Record<ExpeditionLevelId, ExpeditionProgressEntry>;
@@ -182,6 +190,7 @@ let state: ExpeditionState = {
   elapsedSec: 0,
   completedNow: false,
   goldenNutThisRun: false,
+  runNonce: 0,
   teleportRequest: null,
   progress: loadProgress(),
 };
@@ -210,6 +219,7 @@ export const expeditionStore = {
       elapsedSec: 0,
       completedNow: false,
       goldenNutThisRun: state.progress[id].goldenNut,
+      runNonce: state.runNonce + 1,
       teleportRequest: { pos: spawnPos, nonce: teleportNonce },
     };
     playWoodClick();
@@ -295,6 +305,7 @@ export const expeditionStore = {
       elapsedSec: 0,
       completedNow: false,
       goldenNutThisRun: false,
+      runNonce: 0,
       teleportRequest: null,
       progress: defaultProgress(),
     };

@@ -7,12 +7,12 @@ import { playWeldClank } from '../audio/sfxEngine';
 import {
   EXPEDITION_LEVEL_BY_ID,
   expeditionStore,
-  localToWorld,
   useExpeditionStore,
-  windGustFactor,
   type ExpeditionLevelDef,
 } from '../modes/expeditionLevels';
 import { gameStore } from '../state/gameStore';
+import { CarBarrier } from './CarBarriers';
+import { LevelArt, useGreyboxVisible } from './LevelArt';
 
 /**
  * Materiales compartidos de bajo costo (sin texturas pesadas ni luces extra) para mantener
@@ -54,14 +54,20 @@ function Block({
   mat?: THREE.Material;
   shadow?: boolean;
 }) {
+  const visible = useGreyboxVisible();
   return (
     <RigidBody type="fixed" position={pos} rotation={rot} colliders={false}>
       <CuboidCollider args={[size[0] / 2, size[1] / 2, size[2] / 2]} />
-      <mesh material={mat} castShadow={shadow} receiveShadow>
+      <mesh material={mat} castShadow={shadow} receiveShadow visible={visible}>
         <boxGeometry args={size} />
       </mesh>
     </RigidBody>
   );
+}
+
+/** Decoración de prueba que se oculta cuando el nivel ya tiene su arte .glb. */
+function GreyboxOnly({ children }: { children: React.ReactNode }) {
+  return <group visible={useGreyboxVisible()}>{children}</group>;
 }
 
 /** Baliza de punto de control visible a larga distancia. */
@@ -200,196 +206,13 @@ function useExpeditionTracker(
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   NIVEL 1 — EL PANTANO DE ACEITE Y LA GRÚA ROTA (98 m)
+   NIVEL 1 — EL PUENTE DEL ABISMO (98 m · un problema físico, un invento)
+   Bahía de armado → puente angosto de 66 m sobre un abismo → plataforma final.
+   Ruta a pie (opcional, mucho más lenta): rampa izquierda, barro del fondo, rampa derecha.
    ═══════════════════════════════════════════════════════════════════════════ */
-function Level1OilSwamp({
-  def,
-  playerSourceRef,
-  checkpointIndex,
-  goldenNutCollected,
-  completedNow,
-}: {
-  def: ExpeditionLevelDef;
-  playerSourceRef: React.RefObject<CameraTargetSource>;
-  checkpointIndex: number;
-  goldenNutCollected: boolean;
-  completedNow: boolean;
-}) {
-  const playerPos = useExpeditionTracker(def, playerSourceRef, checkpointIndex, goldenNutCollected, completedNow);
-  const [bridgeLowered, setBridgeLowered] = useState(false);
-  const bridgeBodyRef = useRef<RapierRigidBody | null>(null);
-  const bridgeAngleRef = useRef(0.92);
-  const bridgeQuat = useMemo(() => new THREE.Quaternion(), []);
-  const bridgeAxis = useMemo(() => new THREE.Vector3(1, 0, 0), []);
-  const oilRef = useRef<THREE.Mesh>(null);
+const RAMP_ANGLE = Math.atan2(12, 22);
 
-  useFrame(({ clock }, rawDelta) => {
-    const dt = Math.min(rawDelta, 0.05);
-    if (oilRef.current) {
-      oilRef.current.position.y = -0.34 + Math.sin(clock.elapsedTime * 2.2) * 0.03;
-    }
-
-    // Detectar activación del contrapeso del puente levadizo (en [4.2, 0.8, 46])
-    if (!bridgeLowered) {
-      const lx = playerPos.current.x - def.origin[0];
-      const ly = playerPos.current.y - def.origin[1];
-      const lz = playerPos.current.z - def.origin[2];
-      if (Math.hypot(lx - 4.2, ly - 0.8, lz - 46) < 2.2) {
-        setBridgeLowered(true);
-        playWeldClank();
-        gameStore.celebrate('¡Puente levadizo bajado!', 'Paso libre sobre la quebrada');
-      }
-    }
-
-    // Animar suavemente el puente levadizo cinemático
-    const targetAngle = bridgeLowered ? 0 : 0.92;
-    if (Math.abs(bridgeAngleRef.current - targetAngle) > 0.002) {
-      bridgeAngleRef.current = THREE.MathUtils.lerp(bridgeAngleRef.current, targetAngle, 1 - Math.exp(-3.2 * dt));
-    }
-    if (bridgeBodyRef.current?.isValid()) {
-      const a = bridgeAngleRef.current;
-      // Pivote en z = 49, y = 0.0 (extiende 11m hacia +Z)
-      const halfLen = 5.5;
-      const worldPivot = localToWorld(def.origin, [0, 0.0, 49]);
-      bridgeBodyRef.current.setNextKinematicTranslation({
-        x: worldPivot[0],
-        y: worldPivot[1] + Math.sin(a) * halfLen,
-        z: worldPivot[2] + Math.cos(a) * halfLen,
-      });
-      bridgeQuat.setFromAxisAngle(bridgeAxis, -a);
-      bridgeBodyRef.current.setNextKinematicRotation({
-        x: bridgeQuat.x, y: bridgeQuat.y, z: bridgeQuat.z, w: bridgeQuat.w,
-      });
-    }
-  });
-
-  return (
-    <group position={def.origin}>
-      {/* Plataforma de salida (0..11m) */}
-      <Block pos={[0, -0.5, 5]} size={[14, 1, 12]} mat={MATS.deck} />
-      <Block pos={[-6.8, 0.5, 5]} size={[0.4, 1.2, 12]} mat={MATS.woodDark} />
-      <Block pos={[6.8, 0.5, 5]} size={[0.4, 1.2, 12]} mat={MATS.woodDark} />
-
-      {/* TRAMO 1: Fosa de barro/aceite (z = 11..37, 26m de largo) */}
-      <Block pos={[0, -1.1, 24]} size={[18, 1, 28]} mat={MATS.deckDark} shadow={false} />
-      <mesh ref={oilRef} position={[0, -0.34, 24]} material={MATS.oil} receiveShadow>
-        <boxGeometry args={[17.6, 0.14, 26]} />
-      </mesh>
-      {/* Islas / pasarela central irregular para vehículos */}
-      <Block pos={[0, -0.32, 17]} size={[4.2, 0.5, 5.5]} rot={[0.04, 0.08, 0]} mat={MATS.wood} />
-      <Block pos={[1.2, -0.25, 25]} size={[4.0, 0.5, 6.2]} rot={[-0.03, -0.1, 0]} mat={MATS.wood} />
-      <Block pos={[-0.8, -0.3, 33]} size={[4.4, 0.5, 5.2]} rot={[0.03, 0.06, 0]} mat={MATS.wood} />
-
-      {/* Ruta de Parkour elevada por contenedores volcados (izquierda y derecha) */}
-      <Block pos={[-6.2, 0.9, 15]} size={[2.8, 2.2, 6.2]} rot={[0.08, 0.12, -0.08]} mat={MATS.tealContainer} />
-      <Block pos={[-5.4, 1.5, 22.5]} size={[2.6, 2.2, 5.8]} rot={[-0.06, -0.08, 0.06]} mat={MATS.rust} />
-      <Block pos={[-6.0, 1.1, 30.2]} size={[2.8, 2.2, 6.0]} rot={[0.05, 0.1, 0]} mat={MATS.tealContainer} />
-      <Block pos={[6.2, 0.8, 19]} size={[2.6, 2.0, 6.4]} rot={[-0.06, -0.12, 0.08]} mat={MATS.rust} />
-      <Block pos={[5.6, 1.2, 28]} size={[2.6, 2.0, 6.0]} rot={[0.08, 0.08, -0.06]} mat={MATS.tealContainer} />
-
-      {/* Isla Checkpoint 1 (z = 37..49) */}
-      <Block pos={[0, -0.5, 43]} size={[14, 1, 12]} mat={MATS.deck} />
-      <CheckpointBeacon pos={[0, 0, 40]} active={checkpointIndex >= 1} />
-
-      {/* Contrapeso / Interruptor del puente levadizo */}
-      <Block pos={[4.2, 0.25, 46]} size={[2.2, 0.5, 2.2]} mat={bridgeLowered ? MATS.beaconOn : MATS.hazardYellow} />
-      <mesh position={[4.2, 1.35, 46]} material={bridgeLowered ? MATS.beaconOn : MATS.beaconOff}>
-        <boxGeometry args={[0.35, 1.8, 0.35]} />
-      </mesh>
-
-      {/* TRAMO 2: Quebrada de la Grúa Rota (z = 49..60, brecha de 11m) */}
-      <RigidBody ref={bridgeBodyRef} type="kinematicPosition" position={[0, 0, 54.5]} colliders={false}>
-        <CuboidCollider args={[3.2, 0.28, 5.5]} />
-        <mesh material={MATS.hazardYellow} castShadow receiveShadow>
-          <boxGeometry args={[6.4, 0.56, 11]} />
-        </mesh>
-      </RigidBody>
-
-      {/* Grúa pórtico caída al costado izquierdo (ruta de parkour aéreo + cabina con Tuerca Dorada) */}
-      <Block pos={[-5.8, 2.2, 49]} size={[2.2, 4.4, 2.2]} mat={MATS.craneOrange} />
-      <Block pos={[-5.8, 4.6, 52.5]} size={[2.2, 0.5, 5.5]} rot={[-0.36, 0, 0]} mat={MATS.craneOrange} />
-      {/* Cabina de la grúa con Tuerca Dorada */}
-      <Block pos={[-5.8, 5.9, 56]} size={[3.2, 0.5, 3.6]} mat={MATS.craneOrange} />
-      <Block pos={[-5.8, 3.8, 60.2]} size={[1.8, 0.45, 6.2]} rot={[0.38, 0, 0]} mat={MATS.craneOrange} />
-      {/* Escalera de cajas para subir a la grúa a pie */}
-      <Block pos={[-5.8, 0.7, 45.2]} size={[2.2, 1.4, 2.0]} mat={MATS.wood} />
-      <Block pos={[-5.8, 1.9, 46.9]} size={[2.2, 1.4, 1.8]} mat={MATS.wood} />
-      <GoldenNutPickup pos={[def.goldenNutLocal[0], def.goldenNutLocal[1], def.goldenNutLocal[2]]} collected={goldenNutCollected} />
-
-      {/* Plataforma tras el puente + Checkpoint 2 (z = 60..77) */}
-      <Block pos={[0, -0.5, 68.5]} size={[14, 1, 17]} mat={MATS.deck} />
-      <CheckpointBeacon pos={[0, 0, 74]} active={checkpointIndex >= 2} />
-
-      {/* TRAMO 3: Rampa larga hacia el Muelle Alto (z = 77..92, sube a y = 6.5m) */}
-      <Block pos={[0, 2.8, 84.5]} size={[9.5, 0.8, 16.8]} rot={[-0.39, 0, 0]} mat={MATS.wood} />
-      {/* Pasarela lateral con chicanas para parkour */}
-      <Block pos={[6.2, 1.8, 80.5]} size={[2.4, 0.5, 5.2]} rot={[-0.32, 0, 0]} mat={MATS.steel} />
-      <Block pos={[6.2, 4.4, 86.5]} size={[2.4, 0.5, 5.6]} rot={[-0.32, 0, 0]} mat={MATS.steel} />
-      {/* Muelle de Cima (z = 92..102, y = 6.5m) */}
-      <Block pos={[0, 6.0, 96.5]} size={[14, 1.0, 10]} mat={MATS.deck} />
-      <SummitArch pos={[0, 6.5, 96]} completed={completedNow} />
-    </group>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   NIVEL 2 — EL CAÑÓN DEL VIENTO (92 m · 24 m DE ALTURA ESTILO PEAK)
-   ═══════════════════════════════════════════════════════════════════════════ */
-function WindTurbine({
-  pos,
-  dir,
-  phase,
-}: {
-  pos: [number, number, number];
-  dir: 1 | -1;
-  phase: number;
-}) {
-  const bladesRef = useRef<THREE.Group>(null);
-  const sockRef = useRef<THREE.Mesh>(null);
-  const ribbonRef = useRef<THREE.Mesh>(null);
-
-  useFrame(({ clock }, rawDelta) => {
-    const dt = Math.min(rawDelta, 0.05);
-    const gust = windGustFactor(clock.elapsedTime, phase);
-    if (bladesRef.current) {
-      bladesRef.current.rotation.x += dt * (2.5 + gust * 14);
-    }
-    if (sockRef.current) {
-      sockRef.current.rotation.z = dir * (0.35 + gust * 1.15);
-    }
-    if (ribbonRef.current) {
-      ribbonRef.current.visible = gust > 0.12;
-      ribbonRef.current.position.x = dir * (2.4 + ((clock.elapsedTime * 11 + phase * 3) % 10));
-      ribbonRef.current.scale.x = 0.6 + gust * 1.6;
-    }
-  });
-
-  return (
-    <group position={pos}>
-      {/* Carcasa de la turbina */}
-      <mesh material={MATS.steel} castShadow>
-        <cylinderGeometry args={[2.2, 2.2, 1.4, 12]} />
-      </mesh>
-      <group ref={bladesRef} position={[dir * 0.85, 0, 0]}>
-        {[0, 1, 2, 3].map((i) => (
-          <mesh key={i} rotation={[(i * Math.PI) / 2, 0, 0]} position={[0, 0, 0]} material={MATS.hazardYellow}>
-            <boxGeometry args={[0.16, 3.6, 0.45]} />
-          </mesh>
-        ))}
-      </group>
-      {/* Manga de viento animada */}
-      <mesh ref={sockRef} position={[0, 2.6, 0]} material={MATS.craneOrange}>
-        <coneGeometry args={[0.35, 1.7, 8]} />
-      </mesh>
-      {/* Cinta visual de ráfaga */}
-      <mesh ref={ribbonRef} position={[dir * 4, 0, 0]} material={MATS.windRibbon}>
-        <boxGeometry args={[2.6, 0.14, 0.14]} />
-      </mesh>
-    </group>
-  );
-}
-
-function Level2WindCanyon({
+function Level1BridgeAbyss({
   def,
   playerSourceRef,
   checkpointIndex,
@@ -403,67 +226,142 @@ function Level2WindCanyon({
   completedNow: boolean;
 }) {
   useExpeditionTracker(def, playerSourceRef, checkpointIndex, goldenNutCollected, completedNow);
+  const oilRef = useRef<THREE.Mesh>(null);
+
+  useFrame(({ clock }) => {
+    if (oilRef.current) oilRef.current.position.y = -11.88 + Math.sin(clock.elapsedTime * 2.2) * 0.03;
+  });
 
   return (
     <group position={def.origin}>
-      {/* Base de salida (y = 0) */}
-      <Block pos={[0, -0.5, 5]} size={[14, 1, 12]} mat={MATS.cliffTop} />
-      <Block pos={[0, -4.5, 5]} size={[16, 7, 14]} mat={MATS.cliff} shadow={false} />
+      {/* Bahía de armado (z = -1..13): plataforma sólida, con pista pintada y bordes bajos */}
+      <Block pos={[0, -6.5, 6]} size={[24, 13, 14]} mat={MATS.deck} />
+      <GreyboxOnly>
+        <mesh position={[0, 0.03, 6]} material={MATS.hazardYellow} receiveShadow>
+          <boxGeometry args={[11, 0.06, 8]} />
+        </mesh>
+        <mesh position={[0, 0.07, 6]} material={MATS.deckDark} receiveShadow>
+          <boxGeometry args={[10.4, 0.06, 7.4]} />
+        </mesh>
+      </GreyboxOnly>
+      <Block pos={[-11.8, 0.5, 6]} size={[0.4, 1.2, 14]} mat={MATS.woodDark} />
+      <Block pos={[11.8, 0.5, 6]} size={[0.4, 1.2, 14]} mat={MATS.woodDark} />
+      <Block pos={[0, 0.5, -0.8]} size={[24, 1.2, 0.4]} mat={MATS.woodDark} />
 
-      {/* TRAMO 1: Subida a la Isla 1 (z = 11..34, y = 0 → 7m) */}
-      {/* Rampa de lanzamiento central */}
-      <Block pos={[0, 2.9, 21]} size={[7.6, 0.8, 19.5]} rot={[-0.36, 0, 0]} mat={MATS.wood} />
-      {/* Escalones laterales para escalada a pie */}
-      <Block pos={[-5.4, 1.5, 14]} size={[3.2, 0.7, 3.6]} mat={MATS.cliffTop} />
-      <Block pos={[-6.0, 3.2, 19]} size={[3.2, 0.7, 3.6]} mat={MATS.cliffTop} />
-      <Block pos={[-5.2, 4.9, 24.5]} size={[3.2, 0.7, 3.6]} mat={MATS.cliffTop} />
-      <Block pos={[-4.8, 6.2, 29.5]} size={[3.6, 0.7, 4.0]} mat={MATS.cliffTop} />
+      {/* Abismo: paredes y fondo de barro (z = 13..80, fondo en y = -12) */}
+      <Block pos={[0, -12.5, 46]} size={[48, 1, 72]} mat={MATS.deckDark} shadow={false} />
+      <GreyboxOnly>
+        <mesh ref={oilRef} position={[0, -11.88, 46]} material={MATS.oil} receiveShadow>
+          <boxGeometry args={[47, 0.1, 67]} />
+        </mesh>
+      </GreyboxOnly>
+      <Block pos={[-24.5, -6, 46]} size={[1, 12, 68]} mat={MATS.cliff} />
+      <Block pos={[24.5, -6, 46]} size={[1, 12, 68]} mat={MATS.cliff} />
 
-      {/* Turbina #1 (sopla hacia +X en z = 22) */}
-      <WindTurbine pos={[-8.8, 4.2, 22]} dir={1} phase={0} />
+      {/* El puente angosto (3 m de ancho × 67 m), con bordes señalizados */}
+      <Block pos={[0, -0.25, 46.5]} size={[3, 0.5, 67]} mat={MATS.wood} />
+      <GreyboxOnly>
+        <mesh position={[-1.35, 0.03, 46.5]} material={MATS.hazardYellow}>
+          <boxGeometry args={[0.2, 0.06, 67]} />
+        </mesh>
+        <mesh position={[1.35, 0.03, 46.5]} material={MATS.hazardYellow}>
+          <boxGeometry args={[0.2, 0.06, 67]} />
+        </mesh>
+      </GreyboxOnly>
+      <CheckpointBeacon pos={[0, 0, 46]} active={checkpointIndex >= 1} />
 
-      {/* Isla 1 + Checkpoint 1 (z = 31..41, y = 7m) */}
-      <Block pos={[0, 6.5, 36]} size={[13, 1.0, 10]} mat={MATS.cliffTop} />
-      <Block pos={[0, 2.0, 36]} size={[11, 8, 9]} mat={MATS.cliff} shadow={false} />
-      <CheckpointBeacon pos={[0, 7.0, 36]} active={checkpointIndex >= 1} />
-
-      {/* TRAMO 2: Corredor de Viento Cruzado (z = 41..66, y = 7 → 16m) */}
-      <Block pos={[0, 9.2, 46.5]} size={[6.8, 0.7, 11.5]} rot={[-0.38, 0, 0]} mat={MATS.steel} />
-      <Block pos={[0, 11.4, 53.5]} size={[8.5, 0.9, 5.5]} mat={MATS.deck} />
-      <Block pos={[0, 13.8, 61.0]} size={[6.8, 0.7, 11.5]} rot={[-0.38, 0, 0]} mat={MATS.steel} />
-
-      {/* Turbinas cruzadas alternadas */}
-      <WindTurbine pos={[8.6, 11.8, 48]} dir={-1} phase={1.5} />
-      <WindTurbine pos={[-8.6, 14.8, 59]} dir={1} phase={3.8} />
-
-      {/* Repisa secreta detrás de la zona media con Tuerca Dorada */}
-      <Block pos={[-6.4, 14.3, 53]} size={[3.4, 0.6, 3.4]} mat={MATS.wood} />
+      {/* Ruta a pie (larga): rampa izquierda hacia el fondo y rampa derecha hacia la salida */}
+      <Block pos={[-8, -6.44, 22.76]} size={[6, 1, 25.1]} rot={[RAMP_ANGLE, 0, 0]} mat={MATS.woodDark} />
+      <Block pos={[8, -6.44, 69.24]} size={[6, 1, 25.1]} rot={[-RAMP_ANGLE, 0, 0]} mat={MATS.woodDark} />
       <GoldenNutPickup pos={[def.goldenNutLocal[0], def.goldenNutLocal[1], def.goldenNutLocal[2]]} collected={goldenNutCollected} />
 
-      {/* Isla 2 + Checkpoint 2 (z = 66..74, y = 16m) */}
-      <Block pos={[0, 15.5, 70]} size={[12, 1.0, 9]} mat={MATS.cliffTop} />
-      <Block pos={[0, 9.0, 70]} size={[9.5, 12, 7.5]} mat={MATS.cliff} shadow={false} />
-      <CheckpointBeacon pos={[0, 16.0, 70]} active={checkpointIndex >= 2} />
-
-      {/* TRAMO 3: Ascenso Final al Faro (z = 74..86, y = 16 → 24m) */}
-      <Block pos={[0, 19.6, 80]} size={[6.2, 0.8, 15.0]} rot={[-0.48, 0, 0]} mat={MATS.wood} />
-      {/* Vigas escalonadas laterales (ruta alternativa a pie) */}
-      <Block pos={[4.8, 17.6, 76.5]} size={[2.8, 0.6, 3.2]} mat={MATS.steel} />
-      <Block pos={[5.2, 19.8, 80.5]} size={[2.8, 0.6, 3.2]} mat={MATS.steel} />
-      <Block pos={[4.6, 22.0, 84.5]} size={[2.8, 0.6, 3.2]} mat={MATS.steel} />
-
-      {/* Cima — Helipuerto del Faro (z = 86..96, y = 24m) */}
-      <Block pos={[0, 23.5, 91]} size={[14, 1.0, 11]} mat={MATS.deck} />
-      <Block pos={[0, 14.0, 91]} size={[10, 18, 9]} mat={MATS.cliff} shadow={false} />
-      {/* Torre del Faro decorativa */}
-      <mesh position={[5.2, 27.5, 94.5]} material={MATS.rust} castShadow>
-        <cylinderGeometry args={[1.0, 1.4, 7.5, 10]} />
-      </mesh>
-      <mesh position={[5.2, 31.8, 94.5]} material={MATS.gold}>
-        <cylinderGeometry args={[1.15, 1.15, 1.2, 10]} />
-      </mesh>
-      <SummitArch pos={[0, 24.0, 90]} completed={completedNow} />
+      {/* Plataforma final (z = 80..98) con Checkpoint 2 y meta */}
+      <Block pos={[0, -6.5, 89]} size={[24, 13, 18]} mat={MATS.deck} />
+      <CheckpointBeacon pos={[0, 0, 84]} active={checkpointIndex >= 2} />
+      <SummitArch pos={[0, 0.1, 96]} completed={completedNow} />
     </group>
+  );
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   NIVEL 2 — EL CALLEJÓN DE LOS AUTOS (98 m · dos barreras de autos que se rompen por impacto)
+   Bahía de armado → callejón de 17 m tapado por una barrera liviana (z 33..41) y una pesada
+   (z 60..70) → portón del taller. Ruta a pie opcional: pasarela elevada sobre el lado izquierdo.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const CATWALK_Y = 5;
+const CATWALK_X = -7;
+const UP_RAMP_ANGLE = Math.atan2(CATWALK_Y, 17);
+const DOWN_RAMP_ANGLE = Math.atan2(CATWALK_Y, 12);
+
+function Level2CarAlley({
+  def,
+  playerSourceRef,
+  checkpointIndex,
+  goldenNutCollected,
+  completedNow,
+}: {
+  def: ExpeditionLevelDef;
+  playerSourceRef: React.RefObject<CameraTargetSource>;
+  checkpointIndex: number;
+  goldenNutCollected: boolean;
+  completedNow: boolean;
+}) {
+  useExpeditionTracker(def, playerSourceRef, checkpointIndex, goldenNutCollected, completedNow);
+  const { runNonce } = useExpeditionStore();
+  const upLen = Math.hypot(17, CATWALK_Y);
+  const downLen = Math.hypot(12, CATWALK_Y);
+
+  return (
+    <>
+      <group position={def.origin}>
+        {/* Bahía de armado (z = -1..13) */}
+        <Block pos={[0, -6.5, 6]} size={[24, 13, 14]} mat={MATS.deck} />
+        <GreyboxOnly>
+          <mesh position={[0, 0.03, 6]} material={MATS.hazardYellow} receiveShadow>
+            <boxGeometry args={[11, 0.06, 8]} />
+          </mesh>
+          <mesh position={[0, 0.07, 6]} material={MATS.deckDark} receiveShadow>
+            <boxGeometry args={[10.4, 0.06, 7.4]} />
+          </mesh>
+        </GreyboxOnly>
+        <Block pos={[-11.8, 0.5, 6]} size={[0.4, 1.2, 14]} mat={MATS.woodDark} />
+        <Block pos={[11.8, 0.5, 6]} size={[0.4, 1.2, 14]} mat={MATS.woodDark} />
+        <Block pos={[0, 0.5, -0.8]} size={[24, 1.2, 0.4]} mat={MATS.woodDark} />
+
+        {/* Callejón (z = 13..98, 17 m de ancho) con paredes de contenedores de 6 m */}
+        <Block pos={[0, -3.5, 55.5]} size={[17, 7, 85]} mat={MATS.deck} />
+        <Block pos={[-9, 3, 55.5]} size={[1, 6, 85]} mat={MATS.tealContainer} />
+        <Block pos={[9, 3, 55.5]} size={[1, 6, 85]} mat={MATS.rust} />
+        <Block pos={[-10.75, 3, 13.5]} size={[3.5, 6, 1]} mat={MATS.deckDark} />
+        <Block pos={[10.75, 3, 13.5]} size={[3.5, 6, 1]} mat={MATS.deckDark} />
+        <Block pos={[0, 3, 98.5]} size={[17, 6, 1]} mat={MATS.deckDark} />
+
+        <CheckpointBeacon pos={[0, 0, 50]} active={checkpointIndex >= 1} />
+        <CheckpointBeacon pos={[0, 0, 80]} active={checkpointIndex >= 2} />
+        <SummitArch pos={[0, 0.1, 96]} completed={completedNow} />
+
+        {/* Ruta a pie (opcional): rampa de subida, pasarela sobre el lado izquierdo y rampa de bajada */}
+        <Block
+          pos={[CATWALK_X, CATWALK_Y / 2 - 0.24, 21.5 + 0.08]}
+          size={[3, 0.5, upLen]}
+          rot={[-UP_RAMP_ANGLE, 0, 0]}
+          mat={MATS.woodDark}
+        />
+        <Block pos={[CATWALK_X, CATWALK_Y - 0.25, 58]} size={[3, 0.5, 56]} mat={MATS.wood} />
+        <Block
+          pos={[CATWALK_X, CATWALK_Y / 2 - 0.23, 92 - 0.1]}
+          size={[3, 0.5, downLen]}
+          rot={[DOWN_RAMP_ANGLE, 0, 0]}
+          mat={MATS.woodDark}
+        />
+        <GoldenNutPickup pos={[def.goldenNutLocal[0], def.goldenNutLocal[1], def.goldenNutLocal[2]]} collected={goldenNutCollected} />
+      </group>
+
+      {/* Barreras de autos: cuerpos dinámicos en coordenadas de mundo; se rearman al reiniciar */}
+      <CarBarrier id="a" origin={def.origin} runKey={runNonce} />
+      <CarBarrier id="b" origin={def.origin} runKey={runNonce} />
+    </>
   );
 }
 
@@ -743,35 +641,19 @@ export function ExpeditionLevels({
   if (!activeLevelId) return null;
   const def = EXPEDITION_LEVEL_BY_ID[activeLevelId];
 
-  if (activeLevelId === 'level-1-swamp') {
-    return (
-      <Level1OilSwamp
-        def={def}
-        playerSourceRef={playerSourceRef}
-        checkpointIndex={checkpointIndex}
-        goldenNutCollected={goldenNutThisRun}
-        completedNow={completedNow}
-      />
-    );
-  }
-  if (activeLevelId === 'level-2-wind') {
-    return (
-      <Level2WindCanyon
-        def={def}
-        playerSourceRef={playerSourceRef}
-        checkpointIndex={checkpointIndex}
-        goldenNutCollected={goldenNutThisRun}
-        completedNow={completedNow}
-      />
-    );
-  }
+  const levelProps = {
+    def,
+    playerSourceRef,
+    checkpointIndex,
+    goldenNutCollected: goldenNutThisRun,
+    completedNow,
+  };
+  // LevelArt carga el .glb del nivel (si existe) y oculta los bloques de prueba; la física no cambia.
   return (
-    <Level3CrusherPlant
-      def={def}
-      playerSourceRef={playerSourceRef}
-      checkpointIndex={checkpointIndex}
-      goldenNutCollected={goldenNutThisRun}
-      completedNow={completedNow}
-    />
+    <LevelArt levelId={activeLevelId} origin={def.origin}>
+      {activeLevelId === 'level-1-swamp' && <Level1BridgeAbyss {...levelProps} />}
+      {activeLevelId === 'level-2-wind' && <Level2CarAlley {...levelProps} />}
+      {activeLevelId === 'level-3-crusher' && <Level3CrusherPlant {...levelProps} />}
+    </LevelArt>
   );
 }
