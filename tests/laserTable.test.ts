@@ -99,6 +99,8 @@ describe('Mesa de Corte Láser — triciclo desde cero', () => {
     wheelAt('rueda-izq', -0.75, -0.5);
     wheelAt('rueda-der', 0.75, -0.5);
     wheelAt('rueda-frente', 0, 0.8 + 0.385);
+    // Sin motor soldado el vehículo no avanza: se monta uno sobre la plataforma.
+    expect(workshop.mountOnPart('motor', 'plat', 'engine', undefined, 'fixture')).not.toBeNull();
 
     expect(physics.isSteerable('rueda-frente')).toBe(true);
     expect(physics.isSteerable('rueda-izq')).toBe(false);

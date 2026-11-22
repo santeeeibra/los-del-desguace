@@ -106,6 +106,7 @@ describe('armado en el taller', () => {
       world.createCollider(rapier.ColliderDesc.cuboid(0.65, 0.055, 1.12).setMass(14), root);
       const seat = world.createRigidBody(rapier.RigidBodyDesc.fixed()
         .setRotation({ x: 0, y: Math.SQRT1_2, z: 0, w: Math.SQRT1_2 }));
+      assembly.mountFreeOnCart('motor-test', 'engine');
       physics.toggleAssembly('cart', root, assembly, true);
       physics.driveAssembly('cart', root, 1, 1 / 60, assembly, seat);
       expect(root.linvel().z).toBeGreaterThan(0);

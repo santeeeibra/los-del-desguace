@@ -45,6 +45,28 @@ describe('soldadura libre y conducción', () => {
     world.free();
   });
 
+  it('sin motor soldado el carrito no avanza, y con motor sí', async () => {
+    await rapier.init();
+    const world = new rapier.World({ x: 0, y: 0, z: 0 });
+    const physics = createWorkshopPhysics({ world, rapier });
+    const workshop = new WorkshopAssembly();
+    const chassis = world.createRigidBody(rapier.RigidBodyDesc.fixed().setTranslation(0, 1, 0));
+    world.createCollider(rapier.ColliderDesc.cuboid(0.65, 0.055, 1.12).setMass(14), chassis);
+    physics.toggleCart(chassis, workshop);
+    world.step();
+
+    workshop.mountFreeOnCart('w-1', 'wheel', { x: 1, y: 0, z: 0 });
+    physics.driveAssembly('cart', chassis, 1, 0.016, workshop);
+    world.step();
+    expect(chassis.linvel().z).toBeCloseTo(0, 3);
+
+    workshop.mountFreeOnCart('eng-1', 'engine');
+    physics.driveAssembly('cart', chassis, 1, 0.016, workshop);
+    world.step();
+    expect(chassis.linvel().z).toBeGreaterThan(0.1);
+    world.free();
+  });
+
   it('guarda y restaura una rueda soldada perpendicular al frente del carrito', async () => {
     await rapier.init();
     const world = new rapier.World({ x: 0, y: 0, z: 0 });

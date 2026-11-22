@@ -870,6 +870,8 @@ export function createWorkshopPhysics(
       if (flightControlled(station, assembly)) return;
       if (upVector.set(0, 1, 0).applyQuaternion(driveRotation.copy(root.rotation())).y < 0.42) return;
       const engine = assembly?.engineOnStation(station);
+      // Sin motor soldado no hay tracción: si se corta el motor el vehículo deja de andar.
+      if (assembly && !engine) return;
       if (assembly && engine && engineSignal?.(engine) === 0 && !assembly.hasBattery(station)) return;
       const bodies = assemblyBodies(station, root);
       const totalMass = Math.max(bodies.reduce((sum, b) => sum + (b.isValid() ? b.mass() : 0), 0), 1);
