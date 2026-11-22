@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import './hud.css';
-import { playEmoteSfx, playWoodClick } from '../audio/sfxEngine';
+import { playEmoteSfx, playWeldClank, playWoodClick } from '../audio/sfxEngine';
 import {
   DEFAULT_CHARACTER_CUSTOMIZATION,
   EMOTE_BY_ID,
@@ -16,6 +16,7 @@ import type { QualityLevel } from '../config/visualConfig';
 import { playerInput } from '../controls/playerInput';
 import { WORKSHOP_SLOT_BY_ID } from '../invention/workshopAssembly';
 import { dispenserAllowedFor, presetsAllowedFor } from '../modes/devAccess';
+import { getPartCondition, setPartCondition, usePartConditionVersion } from '../props/partCondition';
 import { buildBlueprintShareUrl, decodeBlueprintCode, deleteBlueprint, encodeBlueprintCode, PRESET_BLUEPRINTS, readBlueprintFromUrl, saveBlueprint } from '../logic/blueprintManager';
 import { canSelectWirePart, clearPendingWire, contraptionGraph, describeWireDestination, isPartWired, PART_LOGIC_SPECS } from '../logic/contraptionRegistry';
 import { useArenaAndBridgeState } from '../modes/arenaAndBridge';
@@ -629,6 +630,8 @@ export function HudOverlay() {
   const wireToolEquipped = useGameStore((s) => s.wireToolEquipped);
   const testBench = useGameStore((s) => s.testBench);
   const benchOpen = testBench !== null;
+  usePartConditionVersion();
+  const brokenBenchEngines = (testBench?.engines ?? []).filter((id) => getPartCondition(id) === 'broken');
   const laserPlacementReady = useGameStore((s) => s.laserPlacementReady);
   const partMountReady = useGameStore((s) => s.partMountReady);
   const workshopStatus = useGameStore((s) => s.workshopStatus);
@@ -2240,6 +2243,18 @@ export function HudOverlay() {
             <button type="button" className="hud-button hud-bench-stop" onClick={() => gameStore.setBenchPower(0)}>
               Parar
             </button>
+            {brokenBenchEngines.length > 0 && (
+              <div className="hud-workshop-status" role="status">
+                Motor dañado: rinde muy poco y chispea.
+                <button type="button" className="hud-button is-accent" onClick={() => {
+                  for (const id of brokenBenchEngines) setPartCondition(id, 'ok');
+                  playWeldClank();
+                  gameStore.celebrate('¡Motor reparado!', 'Ya rinde como nuevo');
+                }}>
+                  Reparar motor
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

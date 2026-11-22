@@ -223,9 +223,10 @@ export class WorkshopAssembly {
     return false;
   }
 
-  hasBattery(station: WorkshopStation): boolean {
-    for (const mount of this.mounted.values()) {
-      if (mount.station === station && mount.type === 'battery') return true;
+  /** `usable` permite descartar baterías que no entregan energía (por ejemplo, descargadas). */
+  hasBattery(station: WorkshopStation, usable?: (id: string) => boolean): boolean {
+    for (const [id, mount] of this.mounted) {
+      if (mount.station === station && mount.type === 'battery' && (!usable || usable(id))) return true;
     }
     return false;
   }

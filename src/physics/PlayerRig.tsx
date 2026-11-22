@@ -70,6 +70,7 @@ import {
   setTimerPeriod,
   stepContraptionLogic,
   stepWireConnection,
+  syncPartConditionToGraph,
   toggleSwitchNode,
 } from '../logic/contraptionRegistry';
 import {
@@ -82,7 +83,12 @@ import {
 import { arenaAndBridgeStore, BRIDGE_SPAN_Z_MAX, BRIDGE_SPAN_Z_MIN } from '../modes/arenaAndBridge';
 import { BOWLING_BARREL_IDS, contractStore } from '../modes/contracts';
 import { isInTowerNutReach } from '../modes/towerMirador';
-import { presetsAllowedFor } from '../modes/devAccess';
+import { defaultJointBreakFor, presetsAllowedFor } from '../modes/devAccess';
+import { nearestChargeStation } from '../props/chargeStations';
+import { onJointBroken } from '../props/jointEvents';
+import { hasSceneJoint, releaseSceneJoint } from './sceneJoints';
+import { isCuttableTarget } from '../props/worldTags';
+import { getPartCondition, partIdsWithCondition, setPartCondition } from '../props/partCondition';
 import { buildToolsLocked, gameModeStore } from '../modes/gameModes';
 import { multiplayerStore } from '../multiplayer/multiplayerStore';
 import { rotatedHalfHeight, rotatedSupportDistance, wrenchStep, WRENCH_STEP, type WrenchAxis } from '../invention/wrenchRotation';
@@ -236,6 +242,7 @@ export function PlayerRig({
   const sharedLoadedRef = useRef(false);
   const prevCartSpeedRef = useRef(0);
   const weldBreakCooldownRef = useRef(0);
+  const brokenSparkTimerRef = useRef(0);
   const weldArmedRef = useRef(false);
   const weldChargeRef = useRef(0);
   const weldSparkClockRef = useRef(0);
@@ -1001,6 +1008,7 @@ export function PlayerRig({
         const entry = grabbableRegistry.getById(id);
         const body = entry?.getBody();
         if (!entry || !body?.isValid()) return { error: 'Elegí una pieza' };
+        if (!isCuttableTarget(id, entry.kind)) return { error: 'Ese material no se puede cortar con la sierra' };
         if (carriedIdRef.current === id || gameStore.getState().inventorySlots.some((item) => item?.id === id)) {
           return { error: 'Soltá la pieza en el piso para rebanarla' };
         }
@@ -2039,6 +2047,16 @@ export function PlayerRig({
     const dt = Math.min(rawDelta, 0.05);
     const ctrl = ecctrlRef.current;
     if (!ctrl || !ctrl.body) return;
+
+    // Motores rotos: chispean hasta repararlos en el Banco RPM.
+    brokenSparkTimerRef.current -= dt;
+    if (brokenSparkTimerRef.current <= 0) {
+      brokenSparkTimerRef.current = 0.7;
+      for (const id of partIdsWithCondition('broken')) {
+        const at = grabbableRegistry.getById(id)?.getBody()?.translation();
+        if (at) dustPoolRef.current?.spawnBurst(at.x, at.y + 0.25, at.z, 'spark');
+      }
+    }
 
     const clearedExtras = gameStore.clearExtraParts(({ id }) => {
       if (workshop.isMounted(id) || workshop.idsOnStation(`custom:${id}`).length > 0) return false;
@@ -3111,7 +3129,22 @@ export function PlayerRig({
     const interact = interactReq !== null;
     const primaryWire = interact && wiringActive && !carriedIdRef.current;
     const wireShortcut = playerInput.consumeWire();
-    if (primaryWire || wireShortcut) {
+    // Batería descargada + generador cerca + conectar sin apuntar a otra pieza = recarga.
+    const wirePending = gameStore.getState().pendingWireFrom;
+    const rechargeId = (primaryWire || wireShortcut) && wirePending && !actionTargetId &&
+      getPartCondition(wirePending) === 'discharged' &&
+      nearestChargeStation(scratchPlayerPos.current.x, scratchPlayerPos.current.y, scratchPlayerPos.current.z)
+      ? wirePending : null;
+    if (rechargeId) {
+      setPartCondition(rechargeId, 'ok');
+      syncPartConditionToGraph(rechargeId);
+      clearPendingWire();
+      gameStore.setWireHint(null);
+      gameStore.celebrate('¡Batería cargada!', 'Ya entrega energía');
+      playWireSnap();
+      const chargedAt = grabbableRegistry.getById(rechargeId)?.getBody()?.translation();
+      if (chargedAt) dustPoolRef.current?.spawnBurst(chargedAt.x, chargedAt.y + 0.2, chargedAt.z, 'spark');
+    } else if (primaryWire || wireShortcut) {
       const result = primaryWire && !actionTargetId
         ? { status: 'invalid', message: 'Apuntá a una pieza compatible' }
         : stepWireConnection(actionTargetId);
@@ -3173,6 +3206,10 @@ export function PlayerRig({
       const grindStation = workshop.stationOf(actionTargetId);
       if (grindStation && workshop.isMounted(actionTargetId) && customRootId(grindStation) !== actionTargetId) {
         grindTargetId = actionTargetId;
+      } else if (hasSceneJoint(actionTargetId)) {
+        // Unión rompible del escenario (por ejemplo, el foco del faro): la amoladora también la corta.
+        const sceneKind = grabbableRegistry.getById(actionTargetId)?.kind;
+        if (sceneKind && isCuttableTarget(actionTargetId, sceneKind)) grindTargetId = actionTargetId;
       }
     }
     if (grindTargetId && (playerInput.interactHeld || playerInput.weldHeld)) {
@@ -3202,6 +3239,7 @@ export function PlayerRig({
             remBody.wakeUp();
           }
         }
+        releaseSceneJoint(grindTargetId);
         workshopPhysics.updateMotors(workshop);
         gameStore.setCanUndoMount(workshop.canUndo());
         if (cutBody && cutBody.isValid()) {
@@ -3693,10 +3731,43 @@ export function PlayerRig({
   });
 
   // Physics-step carry wall & rotation safety (pure Rapier constraints, separate from render interpolation)
+  // Juntas rompibles: suelta las piezas cuya unión superó su umbral de fuerza o par.
+  const releaseBrokenMounts = (ids: readonly string[]) => {
+    let released = false;
+    for (const id of ids) {
+      if (!workshop.isMounted(id)) continue;
+      const at = grabbableRegistry.getById(id)?.getBody()?.translation();
+      for (const remId of workshop.remove(id)) {
+        workshopPhysics.detach(remId);
+        const body = grabbableRegistry.getById(remId)?.getBody();
+        if (body?.isValid()) {
+          body.setBodyType(rapier.RigidBodyType.Dynamic, true);
+          body.wakeUp();
+        }
+      }
+      if (at) dustPoolRef.current?.spawnBurst(at.x, at.y + 0.2, at.z, 'spark');
+      released = true;
+    }
+    if (!released) return;
+    workshopPhysics.updateMotors(workshop);
+    playSpark();
+    contractStore.setBrokenWelds(contractStore.getState().brokenWeldsCount + 1, Boolean(lastIntactBlueprintRef.current));
+    gameStore.setWireHint('¡Se soltó una pieza! Tocá Reparar (1 clic)');
+  };
+
+  // Uniones rompibles del escenario: chispas y sonido cuando una cede.
+  useEffect(() => onJointBroken((at) => {
+    dustPoolRef.current?.spawnBurst(at.x, at.y + 0.2, at.z, 'spark');
+    playSpark();
+  }), []);
+
   useAfterPhysicsStep((physicsWorld) => {
+    const brokenMounts = workshopPhysics.stepBreakage(1 / 60, defaultJointBreakFor(expeditionStore.getState().activeLevelId));
+    if (brokenMounts.length > 0) releaseBrokenMounts(brokenMounts);
     if (gameStore.getState().testBench && workshopTime.current >= nextBenchSample.current) {
       nextBenchSample.current = workshopTime.current + 0.05;
       gameStore.setBenchRpm(workshopPhysics.benchRpm());
+      gameStore.setBenchEngines([...(workshopPhysics.benchMotors() ?? [])]);
     }
     const ctrl = ecctrlRef.current;
     if (!ctrl || !ctrl.body) return;

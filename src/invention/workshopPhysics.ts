@@ -3,6 +3,15 @@ import { Euler, Quaternion, Vector3 } from 'three';
 import type { WorkshopAssembly, WorkshopMount, WorkshopSlot, WorkshopStation } from './workshopAssembly';
 import { isCustomStation } from './workshopAssembly';
 import { steerPivotLocal } from './platformShape';
+import {
+  BreakMonitor,
+  hasBreakLimits,
+  weightMultiple,
+  WORLD_GRAVITY_Y,
+  type BodyKinematics,
+  type BreakLimits,
+} from '../physics/jointLoad';
+import { engineConditionFactor, getPartCondition } from '../props/partCondition';
 
 type PhysicsContext = ReturnType<typeof useRapier>;
 type ImpulseJoint = ReturnType<PhysicsContext['world']['createImpulseJoint']>;
@@ -22,6 +31,18 @@ interface MountRecord {
   speed: number;
   braking?: boolean;
   localPose?: MountLocalPose;
+  /** Umbral opcional para que la unión se suelte por impacto o tensión (ver `stepBreakage`). */
+  breakLimits?: BreakLimits;
+}
+
+/** Una batería descargada no entrega energía. */
+const batteryUsable = (id: string) => getPartCondition(id) !== 'discharged';
+
+function kinematicsOf(body: RapierRigidBody): BodyKinematics {
+  const mass = body.mass();
+  const principal = typeof body.principalInertia === 'function' ? body.principalInertia() : null;
+  const inertia = principal ? (principal.x + principal.y + principal.z) / 3 : mass * 0.04;
+  return { mass, linvel: body.linvel(), angvel: body.angvel(), inertia };
 }
 
 /** Recorrido por defecto de una rueda de dirección cuando nada la estorba. */
@@ -147,6 +168,7 @@ export function createWorkshopPhysics(
   }
   const driveDirection = new Vector3();
   const steerForward = new Vector3();
+  const breakMonitor = new BreakMonitor();
   const steerLocal = new Vector3();
   const steerInvRoot = new Quaternion();
   const driveRotation = new Quaternion();
@@ -241,7 +263,7 @@ export function createWorkshopPhysics(
       const rawThrottle = driver?.station === slot.station ? driver.throttle : undefined;
       // Zona muerta: un acelerador casi nulo (joystick/gatillo sin soltar del todo) no debe mover el motor.
       const driverThrottle = rawThrottle === undefined ? undefined : Math.abs(rawThrottle) < 0.05 ? 0 : rawThrottle;
-      const autoPowered = assembly.hasBattery(slot.station);
+      const autoPowered = assembly.hasBattery(slot.station, batteryUsable);
       const engineDirection = engine ? motorDirection?.(engine) ?? 1 : 1;
       // Si el conductor está sentado: usa su acelerador (o marcha mínima si hay señal cableada activa)
       const testThrottle = bench?.rotors.has(partId) ? testPower : undefined;
@@ -250,7 +272,7 @@ export function createWorkshopPhysics(
         // Con asiento montado y sin conductor ni señal cableada, las ruedas no arrancan solas.
         : (wired ?? (assembly.hasSeat(slot.station) ? 0 : engineDirection));
       const axleDirection = slot.type === 'wheel' ? motorDirection?.(partId) ?? 1 : 1;
-      const speed = engine && !parkedParts.has(body) ? SPIN_SPEED * factor * axleDirection : 0;
+      const speed = engine && !parkedParts.has(body) ? SPIN_SPEED * factor * axleDirection * engineConditionFactor(engine) : 0;
       if (speed !== 0) active = true;
       const shouldBrake = speed === 0 && (driverThrottle !== undefined || testThrottle !== undefined);
       if (speed === mount.speed && shouldBrake === Boolean(mount.braking)) continue;
@@ -319,6 +341,7 @@ export function createWorkshopPhysics(
         joint.setContactsEnabled(false);
         return joint;
       };
+      breakMonitor.reset(id);
       mounts.set(id, { slot, joint: createJoint(), createJoint, body, speed: 0 });
     },
     attachOnPart(
@@ -400,6 +423,7 @@ export function createWorkshopPhysics(
         const limits = steerLimits?.(id, mount, pose);
         applySteerLimits(record, limits ?? { min: -STEER_DEFAULT, max: STEER_DEFAULT });
       }
+      breakMonitor.reset(id);
       mounts.set(id, record);
     },
     getLocalAttachment(id: string) {
@@ -463,6 +487,7 @@ export function createWorkshopPhysics(
     detach(id: string) {
       const mount = mounts.get(id);
       if (!mount) return;
+      breakMonitor.reset(id);
       if (mount.joint.isValid()) world.removeImpulseJoint(mount.joint, true);
       if (mount.axleMount) {
         parkedParts.delete(mount.axleMount);
@@ -481,6 +506,50 @@ export function createWorkshopPhysics(
       }
     },
     updateMotors,
+    /** Fija (o quita con `null`) el umbral de rotura de la unión de una pieza montada. */
+    setBreakLimits(id: string, limits: BreakLimits | null) {
+      const mount = mounts.get(id);
+      if (!mount) return;
+      if (limits && hasBreakLimits(limits)) mount.breakLimits = { ...limits };
+      else delete mount.breakLimits;
+      breakMonitor.reset(id);
+    },
+    getBreakLimits(id: string): BreakLimits | null {
+      return mounts.get(id)?.breakLimits ?? null;
+    },
+    /**
+     * Junta rompible: mira la carga de cada unión de una estación liberada y devuelve los ids que superaron su
+     * umbral (`breakLimits`, o `defaults` por masa si no tienen). Quien llama los suelta y dispara las chispas.
+     * Se invoca una vez por paso físico (`dt` en segundos).
+     */
+    stepBreakage(dt: number, defaults?: { forceMultiple: number; torqueAlpha: number }): string[] {
+      const broken: string[] = [];
+      for (const [id, mount] of mounts) {
+        const body = mount.body;
+        if (!body.isValid() || parkedParts.has(body) || !releasedStations.has(mount.slot.station)) {
+          breakMonitor.reset(id);
+          continue;
+        }
+        const kin = kinematicsOf(body);
+        const limits: BreakLimits | undefined = hasBreakLimits(mount.breakLimits)
+          ? mount.breakLimits
+          : defaults
+            ? {
+              breakForce: weightMultiple(kin.mass, defaults.forceMultiple, WORLD_GRAVITY_Y),
+              breakTorque: kin.inertia * defaults.torqueAlpha,
+            }
+            : undefined;
+        if (!limits) {
+          breakMonitor.reset(id);
+          continue;
+        }
+        if (breakMonitor.update(id, kin, limits, dt, WORLD_GRAVITY_Y)) {
+          broken.push(id);
+          breakMonitor.reset(id);
+        }
+      }
+      return broken;
+    },
     isDrivenWheel(id: string) {
       return (mounts.get(id)?.speed ?? 0) !== 0;
     },
@@ -1025,6 +1094,7 @@ export function createWorkshopPhysics(
     },
     reset(cart?: RapierRigidBody | null) {
       stopBench();
+      breakMonitor.clear();
       for (const { joint, axleMount, knuckle, slot, body } of mounts.values()) {
         if (joint.isValid()) world.removeImpulseJoint(joint, true);
         if (axleMount?.isValid()) world.removeRigidBody(axleMount);

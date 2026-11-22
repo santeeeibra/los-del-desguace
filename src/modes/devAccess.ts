@@ -37,3 +37,15 @@ export function presetsAllowedFor(mode: GameModeId, activeLevelId: ExpeditionLev
   if (devToolsEnabled()) return true;
   return !activeLevelId && mode === 'sandbox';
 }
+
+/**
+ * Umbral por defecto de las juntas rompibles en los niveles del MVP (piezas del patio):
+ * la unión cede a `forceMultiple` veces el peso de la pieza o a `torqueAlpha` rad/s² de aceleración angular.
+ * En Taller Libre y niveles viejos las soldaduras siguen sin romperse solas.
+ */
+export const MVP_JOINT_BREAK_DEFAULTS = { forceMultiple: 16, torqueAlpha: 600 } as const;
+
+export function defaultJointBreakFor(activeLevelId: ExpeditionLevelId | null) {
+  if (!activeLevelId) return undefined;
+  return EXPEDITION_LEVEL_BY_ID[activeLevelId].partsSource === 'yard' ? MVP_JOINT_BREAK_DEFAULTS : undefined;
+}

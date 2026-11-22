@@ -1,3 +1,5 @@
+import { getPartCondition, partIdsWithCondition } from '../props/partCondition';
+import { isMagneticTarget, magneticAnchors } from '../props/worldTags';
 import { Quaternion, Vector3 } from 'three';
 import type { RapierRigidBody } from '@react-three/rapier';
 import { playHornSfx, playSpringBoing } from '../audio/sfxEngine';
@@ -156,15 +158,23 @@ export const BOXING_REACH = 1.45;
 const scratchQuat = new Quaternion();
 const scratchDir = new Vector3();
 
+/** Una batería `discharged` no entrega energía: su carga en el grafo queda en 0 hasta recargarla. */
+export function syncPartConditionToGraph(id: string): void {
+  const node = contraptionGraph.getNode(id);
+  if (node?.kind === 'battery') node.config.charge = getPartCondition(id) === 'discharged' ? 0 : 1;
+}
+
 export function ensurePartLogicNode(id: string, kind: CrazyPartKind) {
   const existing = contraptionGraph.getNode(id);
   if (existing) return existing;
   const spec = PART_LOGIC_SPECS[kind];
   if (!spec) return undefined;
-  return contraptionGraph.addNode(id, spec.nodeKind, spec.defaultConfig ?? {}, {
+  const node = contraptionGraph.addNode(id, spec.nodeKind, spec.defaultConfig ?? {}, {
     label: spec.label,
     bodyId: id,
   });
+  if (spec.nodeKind === 'battery') syncPartConditionToGraph(id);
+  return node;
 }
 
 export function clearPendingWire(): void {
@@ -217,7 +227,8 @@ export function stepWireConnection(targetId: string | null): {
       return { status: 'invalid', message: 'Elegí una batería, un asiento, un interruptor, un temporizador o una puerta AND' };
     }
     gameStore.setPendingWireFrom(targetId);
-    return { status: 'pending', message: `${target.label} · Apuntá al destino y volvé a conectar` };
+    const flat = getPartCondition(targetId) === 'discharged' ? ' · Está descargada: acercala a un generador y conectá sin apuntar a nada' : '';
+    return { status: 'pending', message: `${target.label} · Apuntá al destino y volvé a conectar${flat}` };
   }
   if (pendingWireFrom === targetId) {
     return { status: 'invalid', message: 'Elegí otra pieza como destino' };
@@ -436,6 +447,7 @@ export function stepContraptionLogic(
   tickCooldowns(springCooldowns, dt);
   tickCooldowns(hornCooldowns, dt);
   tickCooldowns(boxingCooldowns, dt);
+  for (const id of partIdsWithCondition('discharged')) syncPartConditionToGraph(id);
 
   activeTurbo.clear();
   if (turboParts) {
@@ -562,6 +574,7 @@ export function stepContraptionLogic(
       for (const other of grabbableRegistry.getAll()) {
         if (other.id === entry.id) continue;
         if (isMountedPart?.(other.id)) continue;
+        if (!isMagneticTarget(other.id, other.kind)) continue;
         const ob = other.getBody();
         if (!ob || !ob.isValid() || !ob.isEnabled() || !ob.isDynamic()) continue;
         const op = ob.translation();
@@ -574,6 +587,18 @@ export function stepContraptionLogic(
           const pull = 22 * dt;
           ob.applyImpulse({ x: dx * inv * pull, y: dy * inv * pull + 3 * dt, z: dz * inv * pull }, true);
         }
+      }
+      // Escalada magnética: postes y rieles metálicos del mapa atraen al imán encendido hacia su eje.
+      for (const anchor of magneticAnchors().values()) {
+        const ay = Math.min(anchor.yMax, Math.max(anchor.yMin, mPos.y));
+        const dx = anchor.x - mPos.x;
+        const dy = ay - mPos.y;
+        const dz = anchor.z - mPos.z;
+        const distSq = dx * dx + dy * dy + dz * dz;
+        if (distSq < 0.04 || distSq > anchor.range * anchor.range) continue;
+        const inv = 1 / Math.sqrt(distSq);
+        const pull = 30 * dt * Math.min(1, (anchor.range * anchor.range - distSq) / (anchor.range * anchor.range) + 0.35);
+        body.applyImpulse({ x: dx * inv * pull, y: dy * inv * pull + 6 * dt, z: dz * inv * pull }, true);
       }
     }
   }

@@ -132,7 +132,7 @@ export interface GameHudState {
   wiringActive: boolean;
   /** Pinza de cableado equipada en el slot 5 (mantiene el modo cableado entre conexiones). */
   wireToolEquipped: boolean;
-  testBench: { power: number; rpm: number } | null;
+  testBench: { power: number; rpm: number; engines: readonly string[] } | null;
   laserPlacementReady: boolean;
   partMountReady: boolean;
   workshopStatus: string | null;
@@ -485,12 +485,18 @@ export const gameStore = {
   },
   setTestBench(open: boolean) {
     if (Boolean(state.testBench) === open) return;
-    state = { ...state, testBench: open ? { power: 0, rpm: 0 } : null };
+    state = { ...state, testBench: open ? { power: 0, rpm: 0, engines: [] } : null };
     emit();
   },
   setBenchPower(power: number) {
     if (!state.testBench || !Number.isFinite(power)) return;
     state = { ...state, testBench: { ...state.testBench, power: Math.min(1, Math.max(0, power)) } };
+    emit();
+  },
+  setBenchEngines(ids: readonly string[]) {
+    const bench = state.testBench;
+    if (!bench || (bench.engines.length === ids.length && bench.engines.every((id, i) => id === ids[i]))) return;
+    state = { ...state, testBench: { ...bench, engines: [...ids] } };
     emit();
   },
   setBenchRpm(rpm: number) {
