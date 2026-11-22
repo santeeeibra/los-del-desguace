@@ -2,7 +2,7 @@ import type { RapierCollider, RapierRigidBody, useRapier } from '@react-three/ra
 import { Euler, Quaternion, Vector3 } from 'three';
 import type { WorkshopAssembly, WorkshopMount, WorkshopSlot, WorkshopStation } from './workshopAssembly';
 import { isCustomStation } from './workshopAssembly';
-import { steerPivotLocal } from './platformShape';
+import { steerPivotLocal, WHEEL_RADIUS } from './platformShape';
 import {
   BreakMonitor,
   hasBreakLimits,
@@ -51,8 +51,16 @@ const STEER_STIFFNESS = 24000;
 const STEER_DAMPING = 1400;
 /** Aceleración lateral máxima que pide la dirección (m/s²): a más velocidad, curva más abierta. */
 const STEER_MAX_LATERAL = 9;
-/** Triciclo (1 rueda de dirección y 2 fijas): menos aceleración lateral para no volcar al doblar rápido. */
-const STEER_MAX_LATERAL_TRICYCLE = 6.5;
+/** Piso de aceleración lateral para vehículos angostos (bici en fila, triciclo con la carga atrás). */
+const STEER_MIN_LATERAL = 4.5;
+/** Ancho de apoyo a la altura del centro de masa con el que se permite la aceleración lateral máxima (m). */
+const STEER_REFERENCE_TRACK = 1.1;
+/** Por debajo de este ancho de apoyo el vehículo recibe estabilizador de balanceo (m). */
+const NARROW_TRACK = 0.6;
+/** Distancia extra bajo la rueda para darla por apoyada en el piso (m). */
+const GROUND_PROBE = 0.18;
+/** Tiempo sin ruedas apoyadas antes de pasar al control de vuelo (salto de rampa corto = sigue en tierra). */
+const AIR_ENTER_DELAY = 0.25;
 const steerScratch = new Quaternion();
 const steerScratch2 = new Quaternion();
 
@@ -60,8 +68,41 @@ const steerScratch2 = new Quaternion();
  * Regla general de montaje: una rueda soldada con eje lateral (izquierda-derecha de su pieza madre)
  * y adelante del centro de esa pieza se suelda con mangueta y dirige.
  */
-export function qualifiesForSteering(localPoint: { x: number; z: number }, localAxis: { x: number; y: number; z: number }) {
-  return Math.abs(localAxis.x) > 0.9 && localPoint.z > 0.12;
+export function qualifiesForSteering(
+  localPoint: { x: number; z: number },
+  localAxis: { x: number; y: number; z: number },
+  /** z local del centro de masa del invento (en el marco de la pieza madre): dirigen las ruedas de adelante. */
+  centerOfMassZ = 0,
+) {
+  return Math.abs(localAxis.x) > 0.9 && localPoint.z > centerOfMassZ + 0.12;
+}
+
+/**
+ * Ancho del apoyo (casco de las ruedas en planta) a la altura del centro de masa. Los puntos van en el
+ * marco del vehículo con el centro de masa en el origen (z hacia adelante). Una fila de ruedas da ~0,
+ * un auto da su trocha, un triciclo da menos que su trocha trasera.
+ */
+export function supportWidthAtCenter(points: { x: number; z: number }[]): number {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i];
+    if (Math.abs(a.z) < 0.05) { lo = Math.min(lo, a.x); hi = Math.max(hi, a.x); }
+    for (let j = i + 1; j < points.length; j++) {
+      const b = points[j];
+      if ((a.z < 0) === (b.z < 0) || a.z === b.z) continue;
+      const t = a.z / (a.z - b.z);
+      const x = a.x + (b.x - a.x) * t;
+      lo = Math.min(lo, x);
+      hi = Math.max(hi, x);
+    }
+  }
+  return hi > lo ? hi - lo : 0;
+}
+
+/** Aceleración lateral permitida según el ancho de apoyo: continua, sin casos especiales por tipo. */
+export function steerLateralLimit(supportWidth: number): number {
+  return Math.max(STEER_MIN_LATERAL, Math.min(STEER_MAX_LATERAL, STEER_MAX_LATERAL * supportWidth / STEER_REFERENCE_TRACK));
 }
 
 const CENTER = { x: 0, y: 0, z: 0 };
@@ -235,6 +276,82 @@ export function createWorkshopPhysics(
       if (mount.knuckle?.isValid()) bodies.push(mount.knuckle);
     }
     return bodies;
+  }
+
+  /** Centro de masa del conjunto (mundo). */
+  function centerOfMass(bodies: RapierRigidBody[]) {
+    let m = 0; let x = 0; let y = 0; let z = 0;
+    for (const b of bodies) {
+      if (!b.isValid()) continue;
+      const bm = b.mass(); const t = b.translation();
+      x += t.x * bm; y += t.y * bm; z += t.z * bm; m += bm;
+    }
+    return m > 0 ? { x: x / m, y: y / m, z: z / m } : { ...bodies[0].translation() };
+  }
+
+  /** Ancho de apoyo (a la altura del centro de masa) de cada estación, medido al doblar. */
+  const supportWidths = new Map<WorkshopStation, number>();
+
+  function measureSupport(station: WorkshopStation, root: RapierRigidBody, bodies: RapierRigidBody[]) {
+    const com = centerOfMass(bodies);
+    const inv = steerInvRoot.copy(root.rotation()).invert();
+    const points: { x: number; z: number }[] = [];
+    for (const record of mounts.values()) {
+      if (record.slot.station !== station || record.slot.type !== 'wheel' || !record.body.isValid()) continue;
+      const t = record.body.translation();
+      const l = steerLocal.set(t.x - com.x, t.y - com.y, t.z - com.z).applyQuaternion(inv);
+      points.push({ x: l.x, z: l.z });
+    }
+    const width = points.length >= 2 ? supportWidthAtCenter(points) : STEER_REFERENCE_TRACK;
+    supportWidths.set(station, width);
+    return { com, width };
+  }
+
+  /** Estado tierra/aire de los vehículos con ruedas y propulsión de vuelo (con histéresis). */
+  const airModes = new Map<WorkshopStation, { flying: boolean; airTime: number }>();
+
+  function wheelsTouchGround(station: WorkshopStation, bodies: RapierRigidBody[]) {
+    const own = new Set(bodies.filter((b) => b.isValid()).map((b) => b.handle));
+    for (const record of mounts.values()) {
+      if (record.slot.station !== station || record.slot.type !== 'wheel' || !record.body.isValid()) continue;
+      const t = record.body.translation();
+      const ray = new rapier.Ray({ x: t.x, y: t.y, z: t.z }, { x: 0, y: -1, z: 0 });
+      const hit = world.castRay(
+        ray, WHEEL_RADIUS + GROUND_PROBE, true, rapier.QueryFilterFlags.EXCLUDE_SENSORS,
+        undefined, undefined, undefined, (collider) => {
+          const parent = collider.parent();
+          return !parent || !own.has(parent.handle);
+        },
+      );
+      if (hit) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Regla única tierra ↔ aire: sin ruedas siempre manda el control de vuelo; con ruedas manda el de
+   * vuelo solo si hay propulsión de vuelo y el conjunto está despegado (o se pide subir). Al volver a
+   * apoyar las ruedas sin pedir subir, vuelven a mandar las ruedas.
+   */
+  function updateAirMode(station: WorkshopStation, assembly: WorkshopAssembly, bodies: RapierRigidBody[], ascend: boolean, dt: number) {
+    if (!assembly.hasWheels(station)) { airModes.delete(station); return true; }
+    if (!assembly.hasFlightPropulsion(station)) { airModes.delete(station); return false; }
+    const state = airModes.get(station) ?? { flying: false, airTime: 0 };
+    const grounded = wheelsTouchGround(station, bodies);
+    state.airTime = grounded ? 0 : state.airTime + dt;
+    if (state.flying) {
+      if (grounded && !ascend) state.flying = false;
+    } else if (ascend || state.airTime > AIR_ENTER_DELAY) {
+      state.flying = true;
+    }
+    airModes.set(station, state);
+    return state.flying;
+  }
+
+  function flightControlled(station: WorkshopStation, assembly?: WorkshopAssembly) {
+    if (!assembly) return false;
+    if (!assembly.hasWheels(station)) return true;
+    return airModes.get(station)?.flying ?? false;
   }
 
   function unparkPart(body: RapierRigidBody) {
@@ -567,6 +684,14 @@ export function createWorkshopPhysics(
     isCartReleased() {
       return releasedStations.has('cart');
     },
+    /** El conjunto lo gobierna el control de vuelo (sin ruedas, o con ruedas y despegado). */
+    usesFlightControl(station: WorkshopStation, assembly: WorkshopAssembly) {
+      return flightControlled(station, assembly);
+    },
+    /** Centro de masa actual de una estación (mundo), para decidir qué ruedas dirigen. */
+    stationCenterOfMass(station: WorkshopStation, root: RapierRigidBody) {
+      return centerOfMass(assemblyBodies(station, root));
+    },
     steerAssembly(
       station: WorkshopStation,
       root: RapierRigidBody | null,
@@ -583,7 +708,8 @@ export function createWorkshopPhysics(
       const fwd = driveDirection.set(0, 0, 1).applyQuaternion(driveRotation.copy(headingBody.rotation()));
       fwd.y = 0;
       const vel = root.linvel();
-      const airborne = root.translation().y > 1.2 || (assembly ? !assembly.hasWheels(station) : false);
+      const flying = flightControlled(station, assembly);
+      const airborne = root.translation().y > 1.2 || flying;
       let forwardSpeed = 0;
       if (fwd.lengthSq() > 1e-4) {
         fwd.normalize();
@@ -598,9 +724,9 @@ export function createWorkshopPhysics(
           applyImpulseAtCenterOfMass(bodies, root, { x: rightX * grip, y: 0, z: rightZ * grip });
         }
       }
-      // En vuelo libre (sin ruedas) el giro lo gobierna stabilizeAndFlyAssembly; aquí solo se redirige la velocidad.
-      const freeFlyer = assembly ? !assembly.hasWheels(station) : false;
-      if (freeFlyer) {
+      // En vuelo (sin ruedas, o con ruedas pero despegado) el giro lo gobierna stabilizeAndFlyAssembly;
+      // aquí solo se redirige la velocidad.
+      if (flying) {
         const horiz = Math.hypot(vel.x, vel.z);
         if (horiz > 0.35 && Math.abs(av.y) > 0.01) {
           const turnAngle = av.y * dt * 0.8;
@@ -612,6 +738,9 @@ export function createWorkshopPhysics(
       }
       // Ruedas de dirección reales: el giro sale del ángulo que de verdad alcanzó la mangueta
       // (modelo de bicicleta). Si la chapa le traba el recorrido, la máquina no dobla.
+      // Ancho de apoyo real a la altura del centro de masa → aceleración lateral permitida (continua).
+      const support = measureSupport(station, root, bodies);
+      const lateral = steerLateralLimit(support.width);
       const steerers: MountRecord[] = [];
       const fixedWheels: MountRecord[] = [];
       for (const record of mounts.values()) {
@@ -627,10 +756,11 @@ export function createWorkshopPhysics(
         rootFwd.normalize();
         const driverSign = fwd.lengthSq() > 1e-4 && fwd.dot(rootFwd) < 0 ? -1 : 1;
         const invRoot = steerInvRoot.copy(rootRot).invert();
-        const rootPos = root.translation();
+        // Distancias longitudinales medidas desde el centro de masa real del conjunto.
+        const com = support.com;
         const localZ = (body: RapierRigidBody) => {
           const t = body.translation();
-          return steerLocal.set(t.x - rootPos.x, t.y - rootPos.y, t.z - rootPos.z).applyQuaternion(invRoot).z;
+          return steerLocal.set(t.x - com.x, t.y - com.y, t.z - com.z).applyQuaternion(invRoot).z;
         };
         let angle = 0;
         let steerZ = 0;
@@ -654,8 +784,7 @@ export function createWorkshopPhysics(
         let wheelbase = steerZ - rearZ;
         if (Math.abs(wheelbase) < 0.3) wheelbase = wheelbase < 0 ? -0.3 : 0.3;
         const along = vel.x * rootFwd.x + vel.z * rootFwd.z;
-        const isTricycle = steerers.length === 1 && fixedWheels.length === 2;
-        const yawLimit = Math.min(3, (isTricycle ? STEER_MAX_LATERAL_TRICYCLE : STEER_MAX_LATERAL) / Math.max(0.5, Math.abs(along)));
+        const yawLimit = Math.min(3, lateral / Math.max(0.5, Math.abs(along)));
         const yawRate = Math.max(-yawLimit, Math.min(yawLimit, along * Math.tan(angle) / wheelbase));
         const nextYaw = av.y + (yawRate - av.y) * Math.min(1, dt * 14);
         yawAssembly(bodies, root, nextYaw, Math.hypot(vel.x, vel.z) > 0.35 ? nextYaw * dt * 0.85 : 0);
@@ -671,7 +800,7 @@ export function createWorkshopPhysics(
       if (upVector.set(0, 1, 0).applyQuaternion(driveRotation.copy(root.rotation())).y < 0.6) return;
       const effectiveSteer = forwardSpeed < -0.5 && !airborne ? -steer : steer;
       // El giro máximo baja con la velocidad (aceleración lateral acotada): a 13 m/s ya no hace trompos.
-      const speedYawCap = Math.max(1.5, (STEER_MAX_LATERAL * 2) / Math.max(3, Math.abs(forwardSpeed)));
+      const speedYawCap = Math.max(1.5, (lateral * 2) / Math.max(3, Math.abs(forwardSpeed)));
       const targetYaw = -effectiveSteer * Math.min(airborne ? 2.4 : 2.85, speedYawCap);
       const nextY = av.y + (targetYaw - av.y) * Math.min(1, dt * (airborne ? 10 : 14));
       root.setAngvel({ x: av.x * 0.88, y: av.y, z: av.z * 0.88 }, true);
@@ -688,6 +817,8 @@ export function createWorkshopPhysics(
       facingBody?: RapierRigidBody | null,
     ) {
       if (!releasedStations.has(station) || !root?.isValid() || Math.abs(throttle) < 0.05) return;
+      // Despegado con propulsión de vuelo: las ruedas no empujan, manda el control de vuelo.
+      if (flightControlled(station, assembly)) return;
       if (upVector.set(0, 1, 0).applyQuaternion(driveRotation.copy(root.rotation())).y < 0.42) return;
       const engine = assembly?.engineOnStation(station);
       if (assembly && engine && engineSignal?.(engine) === 0 && !assembly.hasBattery(station)) return;
@@ -737,8 +868,10 @@ export function createWorkshopPhysics(
       if (fwd.lengthSq() > 1e-4) fwd.normalize();
       else fwd.set(0, 0, 1);
 
-      if (!hasWheels) {
-        // Vuelo libre (barril, robot, silla...): controlador unificado de cuerpo rígido.
+      // Regla única tierra ↔ aire (vale igual para un barril, un helicóptero con ruedas o un auto-avión).
+      const flightMode = updateAirMode(station, assembly, bodies, input.ascend, dt);
+      if (flightMode) {
+        // Vuelo (barril, robot, silla, o un vehículo con ruedas despegado): controlador unificado de cuerpo rígido.
         // Aplica rotación objetivo + velocidad lineal distribuida por igual a todas las piezas para evitar tironeos.
         flightClock += dt;
         const steerInput = Math.max(-1, Math.min(1, input.steer));
@@ -761,7 +894,7 @@ export function createWorkshopPhysics(
         }
         flightHeading.set(station, heading);
 
-        const airborneNow = pos.y > 0.95 || input.ascend;
+        const airborneNow = pos.y > 0.95 || input.ascend || (hasWheels && (airModes.get(station)?.airTime ?? 0) > 0.1);
         const pitch = airborneNow ? throttleInput * 0.13 : 0;
         const bank = airborneNow ? steerInput * 0.18 : 0;
         flightTargetQuat.setFromEuler(flightEuler.set(pitch, heading.yaw, bank, 'YXZ'));
@@ -888,9 +1021,14 @@ export function createWorkshopPhysics(
       }
       // Cuanto más inclinado, más fuerte el enderezado (rescata vuelcos sin tocar la conducción normal).
       const rescue = 1 + Math.max(0, 0.8 - tiltUp) * 3;
-      const kP = (hasGyro ? 14 : 6.5) * rescue;
-      const kD = hasGyro ? 4.2 : 2.4;
-      const maxAccel = 40 * rescue;
+      // Estabilizador de balanceo para vehículos angostos (bici de ruedas en fila, triciclo): más fuerte
+      // cuanto más angosto el apoyo y más rápido va, para poder andar en una sola fila sin caerse de costado.
+      const supportWidth = supportWidths.get(station) ?? STEER_REFERENCE_TRACK;
+      const narrow = Math.max(0, 1 - supportWidth / NARROW_TRACK);
+      const rollBoost = 1 + narrow * Math.min(3, 0.6 + Math.hypot(lv.x, lv.z) / 4);
+      const kP = (hasGyro ? 14 : 6.5) * rescue * rollBoost;
+      const kD = (hasGyro ? 4.2 : 2.4) * Math.sqrt(rollBoost);
+      const maxAccel = 40 * rescue * rollBoost;
       const ax = Math.max(-maxAccel, Math.min(maxAccel, torqueAxis.x * kP - av.x * kD));
       const az = Math.max(-maxAccel, Math.min(maxAccel, torqueAxis.z * kP - av.z * kD));
       root.setAngvel({ x: av.x + ax * dt, y: av.y, z: av.z + az * dt }, true);
@@ -963,6 +1101,7 @@ export function createWorkshopPhysics(
     releaseCustomRoot(station: WorkshopStation, root: RapierRigidBody) {
       releasedStations.delete(station);
       flightHeading.delete(station);
+      airModes.delete(station);
       root.setLinvel(CENTER, true);
       root.setAngvel(CENTER, true);
       root.setBodyType(rapier.RigidBodyType.Dynamic, true);
@@ -973,6 +1112,7 @@ export function createWorkshopPhysics(
       if (released) releasedStations.add(station);
       else releasedStations.delete(station);
       flightHeading.delete(station);
+      airModes.delete(station);
       root.setLinvel(CENTER, true);
       root.setAngvel(CENTER, true);
       root.setBodyType(released ? rapier.RigidBodyType.Dynamic : rapier.RigidBodyType.Fixed, true);

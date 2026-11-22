@@ -60,3 +60,18 @@ Prioridades: **Alta** (bloquea o rompe la experiencia), **Media** (necesario par
 - [ ] Habilitar ajustes acotados de torso, brazos, piernas y rasgos faciales. Adaptar prendas y accesorios a las medidas y mantener la apariencia separada de las expresiones.
 - [ ] Conservar altura funcional, alcance, colisión, velocidad y salto con cualquier apariencia.
 - [ ] Revisar la liberación de geometrías de contorno al desmontar y el grosor durante el aplastamiento. Investigar por separado las bandas de la cabeza con el GLB actual.
+
+## Física emergente del taller (2026-11-22, sin probar jugando)
+Las mismas reglas valen para cualquier invento; ya no hay casos especiales por tipo de vehículo.
+- [x] **Tierra ↔ aire continuo:** si las ruedas tocan el piso mandan las ruedas; si el invento tiene propulsión de vuelo (rotor, ala, globo, cohete, ventilador) y se despega (o se pide subir), pasa solo al control de vuelo aunque tenga ruedas. Al volver a apoyar las ruedas sin subir, vuelven a mandar las ruedas.
+- [x] **Dirección para N ruedas:** las distancias se miden desde el centro de masa real; dirigen las ruedas que quedan adelante del centro de masa.
+- [x] **Rueda centrada** (x ≈ 0 o en horquilla): gira sobre su propio centro, sin barrer a los costados.
+- [x] **Curva según el apoyo real:** se mide el ancho del apoyo a la altura del centro de masa (auto ≈ trocha, triciclo menos, fila de ruedas ≈ 0). Más angosto = curva más abierta (aceleración lateral entre 4.5 y 9) y estabilizador de balanceo que se endurece con la velocidad. Reemplaza el caso fijo del triciclo.
+- [x] Muesca libre en cualquier borde: ya estaba (Cortar en escena + Muesca en U / Horquilla).
+- **Combinaciones para probar jugando:**
+  1. Bici de 6 ruedas en fila sobre una chapa larga: que avance derecho, doble abierto y no se caiga de costado.
+  2. Helicóptero con ruedas (rotor + ruedas): andar por el piso, subir con Espacio, volar con control completo y aterrizar volviendo a manejar.
+  3. Auto con alas saltando una rampa: en el aire debería pasar a control de vuelo y al caer volver a las ruedas.
+  4. Triciclo (con horquilla y sin horquilla): doblar rápido sin volcar.
+  5. Presets de siempre (auto, barril volador, robot con propulsores): que se manejen igual que antes.
+- Riesgos a mirar: el paso tierra↔aire mira si hay piso a menos de ~0.56 m bajo cada rueda; ruedas puestas arriba de un invento podrían hacerlo "volar" en el piso.

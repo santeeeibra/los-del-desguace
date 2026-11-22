@@ -314,15 +314,21 @@ export function hasMaterialNear(grid: PlatformGrid, p: Pt, radius = WELD_SUPPORT
   return false;
 }
 
+/** Una rueda con el centro a menos de esto del eje medio (x = 0) de su pieza gira sobre su propio centro. */
+export const CENTERED_PIVOT_X = 0.06;
+
 /**
  * Pivote de dirección de una rueda soldada de canto: el punto de la banda de rodadura que mira
  * hacia el centro de la pieza madre (donde queda el cordón de soldadura / la horquilla).
+ * Una rueda centrada (x ≈ 0, como la delantera de un triciclo o una bici) gira sobre su propio
+ * centro, para no barrer hacia los costados.
  */
 export function steerPivotLocal(
   center: { x: number; y: number; z: number },
   axle: { x: number; y: number; z: number },
   radius = WHEEL_RADIUS,
 ) {
+  if (Math.abs(center.x) < CENTERED_PIVOT_X && Math.abs(axle.x) > 0.9) return { x: center.x, y: center.y, z: center.z };
   // Dirección de rodadura en planta = perpendicular horizontal al eje.
   let rx = -axle.z;
   let rz = axle.x;

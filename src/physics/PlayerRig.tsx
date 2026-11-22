@@ -415,7 +415,8 @@ export function PlayerRig({
     SEAT_LOGIC_KEYS.KeyS = throttle < -0.05;
     SEAT_LOGIC_KEYS.Space = Boolean(station && enabled && seatAge > 0.23 && (keys.jump || touch.jump));
     const descend = Boolean(station && enabled && (keys.run || touch.descend));
-    const isFreeFlyer = Boolean(station && !workshop.hasWheels(station));
+    // Una sola regla para todo invento: manda el control de vuelo si no tiene ruedas o si está despegado.
+    const isFreeFlyer = Boolean(station && workshopPhysics.usesFlightControl(station, workshop));
     stepContraptionLogic(
       dt,
       SEAT_LOGIC_KEYS,
@@ -1889,7 +1890,15 @@ export function PlayerRig({
       const p0 = parentBody.translation();
       const localPoint = scratchSnapVec.current.set(position.x - p0.x, position.y - p0.y, position.z - p0.z).applyQuaternion(parentInv);
       const localAxis = scratchSnapNormal.current.set(axis.x, axis.y, axis.z).applyQuaternion(parentInv);
-      steer = qualifiesForSteering(localPoint, localAxis);
+      // Dirigen las ruedas de adelante del centro de masa real del invento (no del centro de la chapa).
+      const stationRootId = customRootId(mount.station);
+      const stationRoot = stationRootId ? grabbableRegistry.getById(stationRootId)?.getBody() : null;
+      let comZ = 0;
+      if (stationRoot?.isValid()) {
+        const com = workshopPhysics.stationCenterOfMass(mount.station, stationRoot);
+        comZ = new THREE.Vector3(com.x - p0.x, com.y - p0.y, com.z - p0.z).applyQuaternion(parentInv).z;
+      }
+      steer = qualifiesForSteering(localPoint, localAxis, comZ);
     }
     workshopPhysics.attachOnPart(id, mount, body, parentBody, position, rotation, axis, { steer });
     if (steer) {
