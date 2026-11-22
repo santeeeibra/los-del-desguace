@@ -355,7 +355,9 @@ export function dispatchGameKeyDown(e: KeyDownLike) {
       if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) gameStore.selectPreviousInventory();
       break;
     case 'KeyN':
-      if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) playerInput.winchRelease = true;
+      if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && gameStore.getState().winchHooked) {
+        playerInput.winchRelease = true;
+      }
       break;
     case 'KeyF':
       if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && gameStore.getState().seated) {
@@ -399,7 +401,7 @@ export function dispatchGameKeyDown(e: KeyDownLike) {
       }
       break;
     case 'KeyB':
-      if (!e.ctrlKey && !e.metaKey && gameStore.getState().wrenchEquipped) {
+      if (!e.ctrlKey && !e.metaKey && gameStore.getState().cartMode === 'fixed') {
         playerInput.triggerCartAction(e.shiftKey ? 'rotate-base-back' : 'rotate-base');
       }
       break;

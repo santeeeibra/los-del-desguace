@@ -118,3 +118,10 @@ Las mismas reglas valen para cualquier invento; ya no hay casos especiales por t
 - [ ] El retrato 2D del Vestidor todavía no muestra los accesorios nuevos (solo el avatar 3D).
 - [ ] Mejorar el aspecto de la grasa en la ropa (hoy solo oscurece la ropa y agrega manchas en la cara).
 - Por defecto, el avatar no lleva accesorios nuevos (se ve igual que antes).
+
+## Consistencia HUD e input (2026-11-22)
+- [x] `HudOverlay.tsx`: `Tab` abre/cierra el panel de Taller (`KeyY` queda solo para equipar el Aerosol).
+- [x] `playerInput.ts` + `HudOverlay.tsx`: `KeyN` suelta el cabrestante si `winchHooked` está activo sin abrir el Dispensador; si no hay gancho enganchado, abre/cierra el Dispensador en `sandbox`.
+- [x] `playerInput.ts`: `KeyB` / `Shift+B` gira la base siempre que `cartMode === 'fixed'`, sin exigir `wrenchEquipped`.
+- [x] `HudOverlay.tsx`: alineados `showTargetControls` (`O` en temporizador `0.6s / 1.4s / 3.0s`), `hud-tool-strip` (sin `Ctrl +` en Sierra/Amoladora/Soldadora, ramas específicas para `spray` y `hand`) y `KEY_GUIDE_ROWS` (`R`, `Z`, `0`, `Ruedita`, `Clic der.`, `Esc`).
+- Pendiente: validar jugando en navegador los atajos y carteles actualizados (incluido `Ctrl + clic` vs clic sostenido en Sierra/Amoladora/Soldadora en `GameCameraRig.tsx`).

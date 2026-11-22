@@ -107,14 +107,15 @@ function HexBolt({ className }: { className: string }) {
 const KEY_GUIDE_STORAGE = 'desguace.keyGuideSeen';
 const KEY_GUIDE_AUTO_SHOWS = 1;
 const KEY_GUIDE_ROWS: ReadonlyArray<readonly [string, string]> = [
-  ['1–5', 'Equipar herramientas 3D (Llave, Soldar, Amoladora, Sierra, Cables)'],
-  ['6 · 7–9', 'Plano guía · Bolsillos de piezas (I para guardar)'],
+  ['1–5 · Y', 'Equipar herramientas (Llave, Soldar, Amoladora, Sierra, Cables, Aerosol)'],
+  ['0 · 6 · 7–9', 'Volver a la mano · Plano guía · Bolsillos de piezas (I para guardar)'],
   ['Clic izq. / E', 'Usar herramienta · Agarrar · Montar · Subir'],
-  ['Ruedita / R', 'Girar pieza (en mano o en mira) · Cambiar herramienta'],
-  ['Clic der. / Z', 'Cambiar eje de giro · Cancelar / Guardar herramienta'],
-  ['N · Tab', 'Dispensador de piezas · Banco del taller'],
+  ['Ruedita', 'Cambiar herramienta · Girar pieza en mano o mira (Alt: zoom)'],
+  ['R', 'Girar pieza/base · Cambiar modo de Aerosol · Ángulo de carrocería'],
+  ['Z · Clic der.', 'Cambiar eje de giro (Z) · Apuntar / Guardar llave o cancelar (Clic der.)'],
+  ['N · Tab', 'Dispensador de piezas (o soltar gancho) · Banco del taller'],
   ['Ctrl+Z · H', 'Deshacer último montaje · Reparar en 1 clic'],
-  ['G · Esc', 'Gestos · Menú principal'],
+  ['G · Esc', 'Gestos · Cancelar / Menú principal'],
 ];
 
 const HOTBAR_TOOL_META: Record<HotbarToolId, { key: string; short: string; name: string; tip: string }> = {
@@ -927,8 +928,8 @@ export function HudOverlay() {
         playWoodClick();
         setEmotesOpen((prev) => !prev);
       } else if (
-        (e.code === 'KeyY' || (e.code === 'Tab' && !e.shiftKey &&
-          (target === document.body || target instanceof HTMLCanvasElement || document.pointerLockElement))) &&
+        e.code === 'Tab' && !e.shiftKey &&
+        (target === document.body || target instanceof HTMLCanvasElement || document.pointerLockElement) &&
         !e.repeat && !isInputFocused &&
         !e.ctrlKey && !e.altKey && !e.metaKey &&
         !seated && !menuOpen && !emotesOpen && !showWelcome && !showFinish && !showContractFinish
@@ -945,7 +946,8 @@ export function HudOverlay() {
         !e.metaKey &&
         !showWelcome &&
         !showFinish &&
-        !showContractFinish
+        !showContractFinish &&
+        !gameStore.getState().winchHooked
       ) {
         if (menuOpen && menuTab === 'spawner') {
           playWoodClick();
@@ -2541,14 +2543,18 @@ export function HudOverlay() {
                     ? 'Soltá para cortar'
                     : sawPhase === 'cut'
                       ? 'Cortando…'
-                      : <><kbd>Ctrl + Clic sostenido</kbd> Arrastrá y cortá</>}
+                      : <><kbd>Clic sostenido</kbd> Mantené clic izq. y arrastrá</>}
                 </span>
               ) : activeTool === 'grinder' ? (
-                <span><kbd>Ctrl + Clic sostenido</kbd> Cortar unión</span>
+                <span><kbd>Clic sostenido</kbd> Cortar unión</span>
               ) : activeTool === 'welder' ? (
-                <span><kbd>Ctrl + Clic sostenido</kbd> Soldar</span>
+                <span><kbd>Clic sostenido</kbd> Soldar</span>
               ) : activeTool === 'wire' ? (
                 <span><kbd>Clic izq.</kbd> {pendingWireFrom ? 'Destino' : 'Origen'} · <kbd>Clic der.</kbd> Cancelar</span>
+              ) : activeTool === 'spray' ? (
+                <span><kbd>Clic izq.</kbd> Pintar · <kbd>R</kbd> Cambiar modo</span>
+              ) : activeTool === 'hand' ? (
+                <span><kbd>Clic izq. / E</kbd> Agarrar o subir</span>
               ) : (
                 <span><kbd>Ruedita</kbd> Girar · <kbd>Clic der.</kbd> {wrenchTarget === 'piece' ? `Eje ${AXIS_LABELS[wrenchAxis]}` : 'Guardar'}</span>
               )}
@@ -2855,6 +2861,7 @@ export function HudOverlay() {
                     <button type="button" className="hud-ctx-btn" onClick={() => playerInput.triggerPartAction('timer-fast')}>0.6s</button>
                     <button type="button" className="hud-ctx-btn" onClick={() => playerInput.triggerPartAction('timer-med')}>1.4s</button>
                     <button type="button" className="hud-ctx-btn" onClick={() => playerInput.triggerPartAction('timer-slow')}>3.0s</button>
+                    {!showTouch && <kbd>O</kbd>}
                   </>
                 )}
                 {canTestTarget && (
