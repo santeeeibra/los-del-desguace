@@ -7,13 +7,13 @@ import {
   windGustFactor,
 } from '../src/modes/expeditionLevels';
 
-describe('Niveles de Expedición (1–3)', () => {
+describe('Niveles de Expedición (1–4)', () => {
   beforeEach(() => {
     expeditionStore.resetForTests();
   });
 
-  it('define 3 niveles extensos en sectores aislados sin superponerse con el taller', () => {
-    expect(EXPEDITION_LEVELS).toHaveLength(3);
+  it('define 4 niveles extensos en sectores aislados sin superponerse con el taller', () => {
+    expect(EXPEDITION_LEVELS).toHaveLength(4);
     for (const lvl of EXPEDITION_LEVELS) {
       expect(lvl.origin[0]).toBeGreaterThanOrEqual(140);
       expect(lvl.checkpointsLocal.length).toBeGreaterThanOrEqual(2);

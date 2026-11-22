@@ -363,7 +363,9 @@ export function createWorkshopPhysics(
 
   function flightControlled(station: WorkshopStation, assembly?: WorkshopAssembly) {
     if (!assembly) return false;
-    if (!assembly.hasWheels(station)) return true;
+    if (!assembly.hasWheels(station)) {
+      return assembly.hasFlightPropulsion(station) || assembly.hasGyro(station);
+    }
     return airModes.get(station)?.flying ?? false;
   }
 
@@ -415,9 +417,13 @@ export function createWorkshopPhysics(
       if (speed !== 0) {
         joint.configureMotorVelocity(speed, 2.8);
       } else if (shouldBrake) {
-        joint.configureMotorVelocity(0, 4.5);
+        joint.configureMotorVelocity(0, 6);
+      } else if (!engine) {
+        // Sin motor acoplado: en Rapier hay que recrear la junta para que el eje gire libre sin motor previo.
+        world.removeImpulseJoint(joint, true);
+        mount.joint = mount.createJoint();
       } else {
-        // Rueda libre: apagamos el motor sin destruir ni recrear la unión (no reinicia el solver de Rapier).
+        // Rueda libre con motor apagado: no destruimos ni recreamos la junta.
         joint.configureMotor(0, 0, 0, 0);
       }
       body.wakeUp();

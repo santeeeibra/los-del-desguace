@@ -203,14 +203,14 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
     };
 
     let mouseHoldActive = false;
-    // Soldadora, amoladora y sierra solo trabajan con Ctrl + clic sostenido; el clic solo es agarre con el láser.
-    const needsHold = (ctrl: boolean) => {
+    // Soldadora, amoladora y sierra trabajan con clic izquierdo sostenido; el aerosol pinta con clic solo.
+    const needsHold = () => {
       const s = gameStore.getState();
-      // El aerosol pinta con el clic solo (sin Ctrl): no agarra piezas.
-      return s.assemblyInteraction === 'push' || (s.sprayEquipped && !s.carriedKind) || (ctrl && (s.welderEquipped || s.grinderEquipped || s.sawEquipped));
+      // El aerosol pinta con el clic solo: no agarra piezas.
+      return s.assemblyInteraction === 'push' || (s.sprayEquipped && !s.carriedKind) || s.welderEquipped || s.grinderEquipped || s.sawEquipped;
     };
-    const usePrimaryAction = (request?: InteractRequest, ctrl = false) => {
-      if (needsHold(ctrl)) {
+    const usePrimaryAction = (request?: InteractRequest) => {
+      if (needsHold()) {
         mouseHoldActive = true;
         playerInput.interactHeld = true;
         // Amoladora y sierra solo usan el clic sostenido: no deben agarrar ni mover la pieza.
@@ -259,7 +259,7 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
       dom.focus({ preventScroll: true });
       if (e.pointerType === 'mouse' && document.pointerLockElement === dom) {
         if (e.button === 0 && !playerInput.menuOpen) {
-          usePrimaryAction(undefined, e.ctrlKey);
+          usePrimaryAction();
           return;
         }
         if (e.button === 2 && !playerInput.menuOpen) {
@@ -275,8 +275,8 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
         }
       }
       if (e.pointerType === 'mouse' && e.button === 0 && !playerInput.menuOpen) {
-        if (needsHold(e.ctrlKey)) {
-          usePrimaryAction(undefined, e.ctrlKey);
+        if (needsHold()) {
+          usePrimaryAction();
         } else {
           leftTap = {
             id: e.pointerId,
@@ -404,7 +404,7 @@ export function GameCameraRig({ targetSourceRef, resetSignal }: GameCameraRigPro
       // Pointerdown no se repite al agregar otro botón mientras se sostiene el derecho.
       if (e.button === 0 && (e.buttons & 2) !== 0 && aimPointerId !== null && !playerInput.menuOpen) {
         e.preventDefault();
-        usePrimaryAction(undefined, e.ctrlKey);
+        usePrimaryAction();
       }
     };
     const onMouseUp = (e: MouseEvent) => {

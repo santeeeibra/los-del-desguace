@@ -482,7 +482,7 @@ export function forkGap(grid: PlatformGrid, x: number, z: number, halfWidth = WH
 
 /** Muesca de horquilla desde un borde: ancho para que la rueda gire y largo para alojarla entera. */
 export function forkNotchAt(grid: PlatformGrid, edge: 'front' | 'back' | 'left' | 'right' = 'front', halfWidth = WHEEL_HALF_WIDTH): Pt[] {
-  return notchAt(grid, edge, forkGapWidth(halfWidth), 2 * WHEEL_RADIUS * 0.7);
+  return notchAt(grid, edge, forkGapWidth(halfWidth), 2 * WHEEL_RADIUS * 0.85);
 }
 
 /** Cortes predefinidos editables con puntos: muesca en U desde un borde. */

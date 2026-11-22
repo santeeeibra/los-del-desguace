@@ -4,10 +4,10 @@ Prioridades: **Alta** (bloquea o rompe la experiencia), **Media** (necesario par
 
 ## Bugs conocidos (Prioridad Alta)
 
-- [ ] `src/invention/workshopPhysics.ts`, en `updateMotors`: evitar destruir y recrear la `RevoluteImpulseJoint` al pasar a `speed = 0` (usar `configureMotor(0, 0, 0, 0)`), suavizar las ganancias de rueda (`2.8` al acelerar / `4.5` al frenar), agregar zona muerta al `driverThrottle` y evitar que las ruedas de un vehículo con asiento giren solas sin conductor ni cableado.
-- [ ] `src/invention/workshopPhysics.ts`, en `stepRunning`: eliminar el estabilizador duplicado de `pitch`/`roll` sin `dt` (ya corre en `stabilizeAndFlyAssembly`) y sacar el impulso físico `rumble`. Si hace falta, dejar la vibración solo visual en `vehicleFeel.ts` / `WorkshopChassis.tsx`.
-- [ ] `src/invention/workshopPhysics.ts`, en `reset()`: limpiar también `knuckle` (`world.removeRigidBody(knuckle)`) para evitar la fuga de cuerpos dinámicos.
-  - *Estado de los tres puntos de arriba:* el cambio ya está escrito en el espacio de trabajo, pero **todavía no se subió ni se verificó**. Falta correr `npm test` y `npm run lint`, y probar a mano el Carrito Clásico (subir, acelerar, soltar, bajar). Ojo con `tests/workshopAssembly.test.ts` ("Motor en marcha", exige avanzar más de 0.2 m con el motor más débil) y con los tests de `tests/presetStability.test.ts`.
+- [x] `src/invention/workshopPhysics.ts`, en `updateMotors`: evitar destruir y recrear la `RevoluteImpulseJoint` al pasar a `speed = 0` con motor acoplado (`configureMotor(0, 0, 0, 0)`), recreando solo cuando no hay motor (`!engine`) para dejar la rueda libre; ganancias de rueda (`2.8` al acelerar / `6` al frenar), zona muerta al `driverThrottle` y evitar que las ruedas de un vehículo con asiento montado giren solas sin conductor ni cableado.
+- [x] `src/invention/workshopPhysics.ts`, en `stepRunning`: eliminar el estabilizador duplicado de `pitch`/`roll` sin `dt` (ya corre en `stabilizeAndFlyAssembly`) y sacar el impulso físico `rumble`. Si hace falta, dejar la vibración solo visual en `vehicleFeel.ts` / `WorkshopChassis.tsx`.
+- [x] `src/invention/workshopPhysics.ts`, en `reset()`: limpiar también `knuckle` (`world.removeRigidBody(knuckle)`) para evitar la fuga de cuerpos dinámicos.
+  - *Estado de los tres puntos de arriba:* verificados con `npx tsc --noEmit`, `npm test` (241/241) y `npm run build`. Falta probar a mano el Carrito Clásico en PC/móvil (subir, acelerar, soltar, bajar).
 - [ ] `src/ui/hud.css`, `.hud-joystick`: confirmar que el joystick táctil alcanza. La medida que se creía (`clamp(84px, 18vmin, 110px)`) ya no es la actual: hoy es `clamp(118px, 24vmin, 148px)`, y `110px` en pantallas bajas. Probar en iPhone 11 y, si sigue chico, agrandarlo.
 
 ## Pendientes de Mecánicas MVP (Prioridad Media)
@@ -124,4 +124,6 @@ Las mismas reglas valen para cualquier invento; ya no hay casos especiales por t
 - [x] `playerInput.ts` + `HudOverlay.tsx`: `KeyN` suelta el cabrestante si `winchHooked` está activo sin abrir el Dispensador; si no hay gancho enganchado, abre/cierra el Dispensador en `sandbox`.
 - [x] `playerInput.ts`: `KeyB` / `Shift+B` gira la base siempre que `cartMode === 'fixed'`, sin exigir `wrenchEquipped`.
 - [x] `HudOverlay.tsx`: alineados `showTargetControls` (`O` en temporizador `0.6s / 1.4s / 3.0s`), `hud-tool-strip` (sin `Ctrl +` en Sierra/Amoladora/Soldadora, ramas específicas para `spray` y `hand`) y `KEY_GUIDE_ROWS` (`R`, `Z`, `0`, `Ruedita`, `Clic der.`, `Esc`).
-- Pendiente: validar jugando en navegador los atajos y carteles actualizados (incluido `Ctrl + clic` vs clic sostenido en Sierra/Amoladora/Soldadora en `GameCameraRig.tsx`).
+- [x] `GameCameraRig.tsx`: `needsHold` ahora activa Soldadora, Amoladora y Sierra con clic izquierdo sostenido directo (sin exigir `Ctrl`), consistente con el HUD.
+- [x] `platformShape.ts` + `tests/expeditionLevels.test.ts`: ajustada la profundidad de `forkNotchAt` (`2 * WHEEL_RADIUS * 0.85`) para que la rueda en horquilla gire libre, y actualizado el test de niveles a 4 niveles.
+- Pendiente: validar jugando en navegador los atajos y carteles actualizados.
