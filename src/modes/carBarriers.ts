@@ -95,12 +95,20 @@ export function layoutBarrier(id: BarrierId): CarSpec[] {
 }
 
 /** Los trozos que deja un auto: desplazamientos locales respecto de su centro y tamaños (x, y, z). */
-export const CAR_CHUNKS: readonly { offset: readonly [number, number, number]; size: readonly [number, number, number] }[] = [
-  { offset: [0, 0.55, 0], size: [3.6, 0.35, 1.7] }, // techo
-  { offset: [1.4, 0.1, 0], size: [1.2, 0.5, 1.8] }, // capó
-  { offset: [-0.4, -0.1, 0.9], size: [1.6, 0.9, 0.2] }, // puerta
-  { offset: [0, -0.5, 0], size: [3.8, 0.4, 1.6] }, // chasis
+export const CAR_CHUNKS: readonly {
+  /** Nombre del nodo en `car-chunks-*.glb`. */
+  name: 'roof' | 'hood' | 'door' | 'chassis';
+  offset: readonly [number, number, number];
+  size: readonly [number, number, number];
+}[] = [
+  { name: 'roof', offset: [0, 0.55, 0], size: [3.6, 0.35, 1.7] }, // techo
+  { name: 'hood', offset: [1.4, 0.1, 0], size: [1.2, 0.5, 1.8] }, // capó
+  { name: 'door', offset: [-0.4, -0.1, 0.9], size: [1.6, 0.9, 0.2] }, // puerta
+  { name: 'chassis', offset: [0, -0.5, 0], size: [3.8, 0.4, 1.6] }, // chasis
 ];
+
+/** Carrocerías en el orden de `CarSpec.variant`: sedán, furgoneta, pickup, rural. */
+export const CAR_KINDS = ['sedan', 'van', 'pickup', 'wagon'] as const;
 
 /** Total de autos de ambas barreras (para el tope de rendimiento). */
 export function totalCars(): number {

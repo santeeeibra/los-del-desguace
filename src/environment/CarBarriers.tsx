@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Component, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { useGLTF } from '@react-three/drei';
 import { CuboidCollider, RigidBody, type RapierRigidBody } from '@react-three/rapier';
 import * as THREE from 'three';
 import { playWeldClank } from '../audio/sfxEngine';
 import {
   CAR_CHUNKS,
+  CAR_KINDS,
   CAR_SIZE,
   CHUNK_MASS_FRACTION,
   layoutBarrier,
@@ -29,14 +31,96 @@ function matFor(car: CarSpec): THREE.Material {
   return (car.barrier === 'a' ? carMats.light : carMats.heavy)[car.variant % 4];
 }
 
+const BASE = import.meta.env.BASE_URL;
+const carUrl = (car: CarSpec) => `${BASE}models/levels/cars/car-${car.weak ? 'weak-' : ''}${CAR_KINDS[car.variant % 4]}.glb`;
+const chunkUrl = (car: CarSpec) => `${BASE}models/levels/cars/car-chunks-${CAR_KINDS[car.variant % 4]}.glb`;
+
+/** La barrera pesada se ve más oscura: se oscurecen copias de los materiales (una por material). */
+const darkMats = new Map<THREE.Material, THREE.Material>();
+function darken(m: THREE.Material): THREE.Material {
+  let d = darkMats.get(m);
+  if (!d) {
+    d = m.clone();
+    const col = (d as THREE.MeshStandardMaterial).color;
+    if (col) col.multiplyScalar(0.62);
+    darkMats.set(m, d);
+  }
+  return d;
+}
+
+function prepare(root: THREE.Object3D, heavy: boolean, shadow: boolean): THREE.Object3D {
+  root.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    mesh.castShadow = shadow;
+    mesh.receiveShadow = true;
+    if (heavy) mesh.material = Array.isArray(mesh.material) ? mesh.material.map(darken) : darken(mesh.material);
+  });
+  return root;
+}
+
+/** Si el modelo falta o está corrupto se muestran las cajas de prueba. */
+class ModelBoundary extends Component<{ fallback: React.ReactNode; children: React.ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() { return this.state.failed ? this.props.fallback : this.props.children; }
+}
+
+function CarGlb({ car }: { car: CarSpec }) {
+  const { scene } = useGLTF(carUrl(car), false, false);
+  const model = useMemo(() => prepare(scene.clone(true), car.barrier === 'b', true), [scene, car.barrier]);
+  return <primitive object={model} />;
+}
+
+function ChunkGlb({ d, name }: { d: Debris; name: string }) {
+  const { scene } = useGLTF(chunkUrl(d.car), false, false);
+  const model = useMemo(() => {
+    const node = scene.getObjectByName(name);
+    return node ? prepare(node.clone(true), d.car.barrier === 'b', false) : null;
+  }, [scene, name, d.car.barrier]);
+  return model ? <primitive object={model} /> : null;
+}
+
+function CarBoxes({ car }: { car: CarSpec }) {
+  return (
+    <>
+      <mesh material={matFor(car)} castShadow receiveShadow>
+        <boxGeometry args={[CAR_SIZE[0], CAR_SIZE[1] * 0.62, CAR_SIZE[2]]} />
+      </mesh>
+      <mesh material={matFor(car)} position={[-0.2, CAR_SIZE[1] * 0.4, 0]} castShadow>
+        <boxGeometry args={[CAR_SIZE[0] * 0.5, CAR_SIZE[1] * 0.38, CAR_SIZE[2] * 0.9]} />
+      </mesh>
+      {car.weak && (
+        <group position={[-0.2, CAR_SIZE[1] * 0.6, 0]}>
+          <mesh material={YELLOW} rotation={[0, Math.PI / 4, 0]}>
+            <boxGeometry args={[1.6, 0.05, 0.22]} />
+          </mesh>
+          <mesh material={YELLOW} rotation={[0, -Math.PI / 4, 0]}>
+            <boxGeometry args={[1.6, 0.05, 0.22]} />
+          </mesh>
+        </group>
+      )}
+    </>
+  );
+}
+
 interface Debris {
   key: string;
+  name: 'roof' | 'hood' | 'door' | 'chassis';
   pos: [number, number, number];
   quat: [number, number, number, number];
   vel: [number, number, number];
   size: readonly [number, number, number];
   mass: number;
   car: CarSpec;
+}
+
+function ChunkBox({ d }: { d: Debris }) {
+  return (
+    <mesh material={matFor(d.car)} castShadow receiveShadow>
+      <boxGeometry args={[d.size[0], d.size[1], d.size[2]]} />
+    </mesh>
+  );
 }
 
 function CarChunk({ d }: { d: Debris }) {
@@ -50,9 +134,11 @@ function CarChunk({ d }: { d: Debris }) {
       angularDamping={0.3}
     >
       <CuboidCollider args={[d.size[0] / 2, d.size[1] / 2, d.size[2] / 2]} mass={d.mass} friction={0.8} restitution={0.05} />
-      <mesh material={matFor(d.car)} castShadow receiveShadow>
-        <boxGeometry args={[d.size[0], d.size[1], d.size[2]]} />
-      </mesh>
+      <ModelBoundary fallback={<ChunkBox d={d} />}>
+        <Suspense fallback={<ChunkBox d={d} />}>
+          <ChunkGlb d={d} name={d.name} />
+        </Suspense>
+      </ModelBoundary>
     </RigidBody>
   );
 }
@@ -96,22 +182,11 @@ function Car({
         friction={0.7}
         restitution={0.05}
       />
-      <mesh material={matFor(car)} castShadow receiveShadow>
-        <boxGeometry args={[CAR_SIZE[0], CAR_SIZE[1] * 0.62, CAR_SIZE[2]]} />
-      </mesh>
-      <mesh material={matFor(car)} position={[-0.2, CAR_SIZE[1] * 0.4, 0]} castShadow>
-        <boxGeometry args={[CAR_SIZE[0] * 0.5, CAR_SIZE[1] * 0.38, CAR_SIZE[2] * 0.9]} />
-      </mesh>
-      {car.weak && (
-        <group position={[-0.2, CAR_SIZE[1] * 0.6, 0]}>
-          <mesh material={YELLOW} rotation={[0, Math.PI / 4, 0]}>
-            <boxGeometry args={[1.6, 0.05, 0.22]} />
-          </mesh>
-          <mesh material={YELLOW} rotation={[0, -Math.PI / 4, 0]}>
-            <boxGeometry args={[1.6, 0.05, 0.22]} />
-          </mesh>
-        </group>
-      )}
+      <ModelBoundary fallback={<CarBoxes car={car} />}>
+        <Suspense fallback={<CarBoxes car={car} />}>
+          <CarGlb car={car} />
+        </Suspense>
+      </ModelBoundary>
     </RigidBody>
   );
 }
@@ -153,6 +228,7 @@ export function CarBarrier({
       const off = new THREE.Vector3(c.offset[0], c.offset[1], c.offset[2]).applyQuaternion(quat);
       return {
         key: `${car.id}-${runKey}-${i}`,
+        name: c.name,
         pos: [t.x + off.x, t.y + off.y, t.z + off.z],
         quat: [r.x, r.y, r.z, r.w],
         // Cada trozo sale con un empujón extra hacia afuera para que se vea el estallido
