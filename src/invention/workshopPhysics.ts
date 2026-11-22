@@ -51,6 +51,8 @@ const STEER_STIFFNESS = 24000;
 const STEER_DAMPING = 1400;
 /** Aceleración lateral máxima que pide la dirección (m/s²): a más velocidad, curva más abierta. */
 const STEER_MAX_LATERAL = 9;
+/** Triciclo (1 rueda de dirección y 2 fijas): menos aceleración lateral para no volcar al doblar rápido. */
+const STEER_MAX_LATERAL_TRICYCLE = 6.5;
 const steerScratch = new Quaternion();
 const steerScratch2 = new Quaternion();
 
@@ -95,6 +97,8 @@ export function createWorkshopPhysics(
   engineSignal?: (id: string) => number | undefined,
   motorDirection?: (id: string) => number,
   steerLimits?: (id: string, mount: WorkshopMount, pose: MountLocalPose) => { min: number; max: number } | undefined,
+  /** Pivote propio de la mangueta (p. ej. el centro de la rueda en una horquilla). Si falta, se usa el borde de la rueda. */
+  steerPivotFor?: (id: string, mount: WorkshopMount, pose: MountLocalPose) => { x: number; y: number; z: number } | null | undefined,
 ) {
   let anchor: RapierRigidBody | null = null;
   const mounts = new Map<string, MountRecord>();
@@ -376,7 +380,7 @@ export function createWorkshopPhysics(
       let knuckleOffset: Vector3 | undefined;
       if (steer && localAxis) {
         // Mangueta: pivote vertical (eje Y de la pieza madre) en el punto de soldadura de la rueda.
-        const pivot = new Vector3().copy(steerPivotLocal(localPoint, localAxis));
+        const pivot = new Vector3().copy(steerPivotFor?.(id, mount, pose) ?? steerPivotLocal(localPoint, localAxis));
         knuckleOffset = localPoint.clone().sub(pivot);
         const pivotWorld = pivot.clone().applyQuaternion(parentBody.rotation()).add(parentPos);
         knuckle = world.createRigidBody(rapier.RigidBodyDesc.dynamic()
@@ -650,7 +654,8 @@ export function createWorkshopPhysics(
         let wheelbase = steerZ - rearZ;
         if (Math.abs(wheelbase) < 0.3) wheelbase = wheelbase < 0 ? -0.3 : 0.3;
         const along = vel.x * rootFwd.x + vel.z * rootFwd.z;
-        const yawLimit = Math.min(3, STEER_MAX_LATERAL / Math.max(0.5, Math.abs(along)));
+        const isTricycle = steerers.length === 1 && fixedWheels.length === 2;
+        const yawLimit = Math.min(3, (isTricycle ? STEER_MAX_LATERAL_TRICYCLE : STEER_MAX_LATERAL) / Math.max(0.5, Math.abs(along)));
         const yawRate = Math.max(-yawLimit, Math.min(yawLimit, along * Math.tan(angle) / wheelbase));
         const nextYaw = av.y + (yawRate - av.y) * Math.min(1, dt * 14);
         yawAssembly(bodies, root, nextYaw, Math.hypot(vel.x, vel.z) > 0.35 ? nextYaw * dt * 0.85 : 0);

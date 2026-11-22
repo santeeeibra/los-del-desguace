@@ -152,7 +152,7 @@ export function SceneCutter() {
   const sweep = useMemo(() => {
     if (!sweepChild || !record || !preview) return null;
     const grid = preview.remaining;
-    const fp = wheelFootprintFromPose(sweepChild.pose);
+    const fp = wheelFootprintFromPose(sweepChild.pose, grid);
     const angles: number[] = [];
     for (let a = -STEER_DESIGN_MAX; a <= STEER_DESIGN_MAX + 1e-6; a += STEER_DESIGN_MAX / 6) angles.push(a);
     return {

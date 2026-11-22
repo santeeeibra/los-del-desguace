@@ -43,8 +43,8 @@ import {
 import { createWorkshopPhysics, getWorkshopSlotPose, LEVEL_ROTATION, qualifiesForSteering } from '../invention/workshopPhysics';
 import { platformStore, type ReleasedPart } from '../invention/platformStore';
 import { laserTableBridge, type PlatformChildInfo } from '../invention/laserTableBridge';
-import { cutFromEdge, gridBounds, rasterize, validateOutline } from '../invention/platformShape';
-import { steerLimitsOnPlatform, unsupportedAfterCut } from '../invention/platformRules';
+import { cutFromEdge, forkGap, gridBounds, rasterize, validateOutline } from '../invention/platformShape';
+import { forkPivotFor, steerLimitsOnPlatform, unsupportedAfterCut } from '../invention/platformRules';
 import { resolvePrimaryInteract } from '../invention/interactResolution';
 import {
   clearMountSettle,
@@ -225,6 +225,11 @@ export function PlayerRig({
     (_id, mount, pose) => {
       const platform = mount.parentId ? platformStore.get(mount.parentId) : undefined;
       return platform ? steerLimitsOnPlatform(platform.grid, pose) : undefined;
+    },
+    // Rueda en horquilla: la mangueta gira sobre el centro de la rueda, no sobre su borde.
+    (_id, mount, pose) => {
+      const platform = mount.parentId ? platformStore.get(mount.parentId) : undefined;
+      return platform ? forkPivotFor(platform.grid, pose) : undefined;
     }));
   const seatedIdRef = useRef<string | null>(null);
   const heldAssemblyRef = useRef<{
@@ -1799,6 +1804,35 @@ export function PlayerRig({
     clearCarriedItem();
   };
 
+  /**
+   * Montaje en horquilla: si la rueda queda entre dos brazos de la misma plataforma (muesca del borde), la
+   * centra en el hueco con el eje lateral. Devuelve la posición, la rotación y el eje corregidos, o `null`.
+   */
+  const forkSnapFor = (
+    parentId: string,
+    parentBody: RapierRigidBody,
+    position: THREE.Vector3,
+    rotation: THREE.Quaternion,
+    axis: { x: number; y: number; z: number },
+  ) => {
+    const platform = platformStore.get(parentId);
+    if (!platform) return null;
+    const parentRot = new THREE.Quaternion().copy(parentBody.rotation());
+    const inv = parentRot.clone().invert();
+    const p0 = parentBody.translation();
+    const local = new THREE.Vector3(position.x - p0.x, position.y - p0.y, position.z - p0.z).applyQuaternion(inv);
+    const localAxis = new THREE.Vector3(axis.x, axis.y, axis.z).applyQuaternion(inv).normalize();
+    if (Math.abs(localAxis.x) < 0.5) return null;
+    const gap = forkGap(platform.grid, local.x, local.z);
+    if (!gap) return null;
+    const snapped = new THREE.Vector3(gap.centerX, local.y, local.z).applyQuaternion(parentRot).add(new THREE.Vector3(p0.x, p0.y, p0.z));
+    const newAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(parentRot);
+    const oldAxis = new THREE.Vector3(axis.x, axis.y, axis.z).normalize();
+    if (oldAxis.dot(newAxis) < 0) newAxis.negate();
+    const delta = new THREE.Quaternion().setFromUnitVectors(oldAxis, newAxis);
+    return { position: snapped, rotation: delta.multiply(rotation).normalize(), axis: newAxis };
+  };
+
   const mountCarriedItemOnPart = (
     parentId: string,
     parentBody: RapierRigidBody,
@@ -1813,7 +1847,7 @@ export function PlayerRig({
     const mountType = effectivePartType(id, entry.kind);
     const parentEntry = parentId === '__cart__' ? undefined : grabbableRegistry.getById(parentId);
     const parentType = parentEntry ? workshopPartTypeForKind(parentEntry.kind) : 'fixture';
-    const axis = axle ? { x: axle.x, y: axle.y, z: axle.z } : undefined;
+    let axis = axle ? { x: axle.x, y: axle.y, z: axle.z } : undefined;
     const station = parentId === '__cart__' ? 'cart' : workshop.stationOf(parentId);
     if (station && workshopPhysics.isReleased(station)) return;
     const mount = parentId === '__cart__'
@@ -1829,8 +1863,16 @@ export function PlayerRig({
       }
     }
 
-    const position = wrenchPlacedPosition.current;
-    const rotation = wrenchPlacedRotation.current;
+    let position = wrenchPlacedPosition.current;
+    let rotation = wrenchPlacedRotation.current;
+    if (axis && mountType === 'wheel' && parentId !== '__cart__') {
+      const fork = forkSnapFor(parentId, parentBody, position, rotation, axis);
+      if (fork) {
+        position = fork.position;
+        rotation = fork.rotation;
+        axis = { x: fork.axis.x, y: fork.axis.y, z: fork.axis.z };
+      }
+    }
     const isAxleMount = Boolean(axis || mountType === 'wheel');
     dustPoolRef.current?.spawnBurst(position.x, position.y + 0.14, position.z, 'spark');
     body.setBodyType(rapier.RigidBodyType.Dynamic, true);
@@ -2829,8 +2871,10 @@ export function PlayerRig({
             ? (joinedAxle ? 'Soldar rueda libre' : 'Soldar al carrito')
             : 'Sin espacio en ese punto';
       } else {
+        const forkHint = partMountReady && partMountType === 'wheel' && joinedAxle && hitBody &&
+          forkSnapFor(freeTargetId, hitBody, wrenchPlacedPosition.current, wrenchPlacedRotation.current, joinedAxle) !== null;
         laserHint = partMountAllowed
-          ? (partMountReady ? workshop.describePartMount(freeTargetId, partMountType, aimedPartReleased, Boolean(joinedAxle)) : 'Sin espacio en ese punto')
+          ? (partMountReady ? (forkHint ? 'Montaje en horquilla · rueda centrada en el hueco' : workshop.describePartMount(freeTargetId, partMountType, aimedPartReleased, Boolean(joinedAxle))) : 'Sin espacio en ese punto')
           : workshop.describePartMount(freeTargetId, partMountType, aimedPartReleased);
       }
     } else if (aiming && carriedKind && !placementReady) {

@@ -2,6 +2,7 @@ import {
   hasMaterialNear,
   nearestMaterial,
   steerPivotLocal,
+  forkGap,
   steerClearance,
   sweepHits,
   WELD_SUPPORT_RADIUS,
@@ -15,10 +16,25 @@ export interface LocalPoseLike {
   axis?: { x: number; y: number; z: number };
 }
 
-/** Huella en planta de una rueda soldada a la plataforma (en coordenadas de la plataforma). */
-export function wheelFootprintFromPose(pose: LocalPoseLike): WheelFootprint {
+/**
+ * Rueda montada en horquilla: eje lateral y un brazo de la pieza madre a cada lado. Si es así, la mangueta
+ * gira sobre el centro exacto de la rueda (sin desplazamiento lateral) y no golpea los brazos al doblar.
+ */
+export function isForkMount(grid: PlatformGrid, pose: LocalPoseLike): boolean {
   const axis = pose.axis ?? { x: 1, y: 0, z: 0 };
-  const pivot = steerPivotLocal(pose.position, axis);
+  if (Math.abs(axis.x) < 0.9) return false;
+  return forkGap(grid, pose.position.x, pose.position.z) !== null;
+}
+
+/** Pivote de la mangueta de una rueda en horquilla (su centro), o `null` si no está en una horquilla. */
+export function forkPivotFor(grid: PlatformGrid, pose: LocalPoseLike) {
+  return isForkMount(grid, pose) ? { x: pose.position.x, y: pose.position.y, z: pose.position.z } : null;
+}
+
+/** Huella en planta de una rueda soldada a la plataforma (en coordenadas de la plataforma). */
+export function wheelFootprintFromPose(pose: LocalPoseLike, grid?: PlatformGrid): WheelFootprint {
+  const axis = pose.axis ?? { x: 1, y: 0, z: 0 };
+  const pivot = (grid ? forkPivotFor(grid, pose) : null) ?? steerPivotLocal(pose.position, axis);
   return {
     x: pose.position.x, z: pose.position.z, y: pose.position.y, px: pivot.x, pz: pivot.z,
     axleYaw: Math.atan2(-axis.z, axis.x),
@@ -26,11 +42,11 @@ export function wheelFootprintFromPose(pose: LocalPoseLike): WheelFootprint {
 }
 
 export function steerLimitsOnPlatform(grid: PlatformGrid, pose: LocalPoseLike) {
-  return steerClearance(grid, wheelFootprintFromPose(pose));
+  return steerClearance(grid, wheelFootprintFromPose(pose, grid));
 }
 
 export function steerSweepHits(grid: PlatformGrid, pose: LocalPoseLike) {
-  return sweepHits(grid, wheelFootprintFromPose(pose));
+  return sweepHits(grid, wheelFootprintFromPose(pose, grid));
 }
 
 /** Punto de soldadura: el material más cercano al centro de la pieza vecina. */

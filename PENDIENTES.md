@@ -26,7 +26,13 @@ Prioridades: **Alta** (bloquea o rompe la experiencia), **Media** (necesario par
 - [ ] Probar el carrito armado en pista. Definir cómo la masa, las ruedas y la posición del motor afectan el manejo, la tracción y las colisiones.
 - [ ] Guardar el armado cuando esté definido el ciclo de construir, probar y desarmar.
 - [x] Ergonomía móvil de herramientas de mantener: en pantalla táctil, la Sierra Láser (`4`), la Amoladora (`3`) y la Soldadora (`2`) funcionan por toque (uno enciende, otro apaga). En la Sierra: primer toque "Marcar inicio", después se gira la cámara con el pulgar libre y se toca "Cortar ahora"; hay botón "Cancelar" y el corte se cancela solo si te alejás más de 9 m de la pieza. PC no cambia (mantener clic). *(escrito, sin probar en el celular)*
-- [ ] Idea futura: recorte 3D en "U" y montaje en horquilla (por ejemplo, para armar triciclos).
+- [x] Recorte en "U" y montaje en horquilla para triciclos (implementado, sin probar jugando):
+  - "Cortar en escena" tiene botones nuevos **Muesca en U** y **Horquilla** (dibujan la muesca en el borde delantero; la chapa no se parte).
+  - Al soldar una rueda dentro del hueco entre dos brazos, se centra sola con el eje de lado a lado (cartel "Montaje en horquilla").
+  - La rueda en horquilla gira sobre su propio centro; el giro máximo sale del ancho real del hueco.
+  - Triciclo (1 rueda directriz + 2 fijas): giro lateral limitado a 6.5 (antes 9).
+  - **Validar jugando:** (1) cortar la muesca y ver que la chapa queda entera; (2) acercar la rueda delantera al hueco y ver el cartel y el centrado; (3) girar y comprobar que la rueda no roza los brazos; (4) manejar un triciclo rápido y ver que no vuelca; (5) probar un hueco más ancho/angosto que el de la Horquilla.
+  - Pendiente: la rueda fantasma de vista previa todavía no se centra (solo el montaje real).
 
 ## Pendientes de Niveles y Arte (Prioridad Media)
 

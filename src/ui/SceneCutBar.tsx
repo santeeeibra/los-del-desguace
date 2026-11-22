@@ -118,6 +118,12 @@ export function SceneCutBar({ bolts, labels, touch }: {
         <div className="scene-cut-actions">
           <button type="button" className="hud-button" disabled={cutting || !cut.points.length}
             onClick={() => sceneCutStore.removeLast()}>Borrar último</button>
+          <button type="button" className="hud-button" disabled={cutting}
+            title="Muesca en U en el borde de adelante (se puede ajustar arrastrando los puntos)"
+            onClick={() => sceneCutStore.notch('u')}>Muesca en U</button>
+          <button type="button" className="hud-button" disabled={cutting}
+            title="Hueco de horquilla para una rueda (triciclo): después soldá la rueda en el hueco"
+            onClick={() => sceneCutStore.notch('fork')}>Horquilla</button>
           {steerers.length > 0 && (
             <button type="button" className="hud-button is-wire" aria-pressed={Boolean(sweepChild)} disabled={cutting}
               onClick={() => sceneCutStore.setSweepWheel(

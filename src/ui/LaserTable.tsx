@@ -196,7 +196,7 @@ function CutTab({ platforms, labels, onMessage }: {
   const materialRects = record.rects;
   const selectedWheel = steerers.find((c) => c.id === wheel) ?? null;
   const sweep = selectedWheel ? gridToRects(cellsGrid(record.grid, steerSweepHits(record.grid, selectedWheel.pose))) : [];
-  const footprintAt = (child: PlatformChildInfo, angle: number) => wheelFootprintCorners(wheelFootprintFromPose(child.pose), angle);
+  const footprintAt = (child: PlatformChildInfo, angle: number) => wheelFootprintCorners(wheelFootprintFromPose(child.pose, record.grid), angle);
   const looseSet = new Set(preview?.loose ?? []);
   const sweepAngles: number[] = [];
   for (let a = -STEER_DESIGN_MAX; a <= STEER_DESIGN_MAX + 1e-6; a += STEER_DESIGN_MAX / 4) sweepAngles.push(a);

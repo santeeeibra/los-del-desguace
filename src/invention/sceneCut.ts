@@ -10,7 +10,9 @@ import {
   cellCenter,
   cutFromEdge,
   emptyGrid,
+  forkNotchAt,
   gridToRects,
+  notchAt,
   type PlatformGrid,
   type Pt,
   type Rect,
@@ -71,6 +73,17 @@ export const sceneCutStore = {
   },
   removeLast() { if (state.phase === 'edit') set({ points: state.points.slice(0, -1), confirmLoose: false }); },
   clear() { if (state.phase === 'edit') set({ points: [], confirmLoose: false }); },
+  /**
+   * Pone un recorte listo en el borde: muesca en U (`u`) o hueco de horquilla para una rueda (`fork`).
+   * Se puede ajustar arrastrando los puntos antes de cortar.
+   */
+  notch(kind: 'u' | 'fork', edge: 'front' | 'back' | 'left' | 'right' = 'front') {
+    const id = state.platformId;
+    const record = id ? platformStore.get(id) : undefined;
+    if (!record || state.phase !== 'edit') return;
+    const points = (kind === 'fork' ? forkNotchAt(record.grid, edge) : notchAt(record.grid, edge)).map(snap);
+    set({ points, confirmLoose: false, message: null });
+  },
   setSweepWheel(id: string | null) { set({ sweepWheel: id }); },
   /** Posiciones de las piezas soldadas a la pieza en corte (para encuadrar la cámara). */
   framingPoints(): { x: number; y: number; z: number }[] {

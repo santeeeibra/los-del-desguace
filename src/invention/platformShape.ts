@@ -424,6 +424,61 @@ export function sweepHits(grid: PlatformGrid, w: WheelFootprint, design = STEER_
   return out;
 }
 
+/** Hay material en el punto (x, z) de la plataforma. */
+export function hasCellAt(grid: PlatformGrid, x: number, z: number): boolean {
+  const i = Math.round((x - grid.x0) / grid.cell);
+  const k = Math.round((z - grid.z0) / grid.cell);
+  if (i < 0 || k < 0 || i >= grid.nx || k >= grid.nz) return false;
+  return grid.data[k * grid.nx + i] === 1;
+}
+
+/** Holgura por lado entre la rueda y cada brazo de la horquilla (m). */
+export const FORK_SIDE_CLEARANCE = 0.03;
+/** Distancia máxima a la que se busca cada brazo de la horquilla (m). */
+export const FORK_SCAN_REACH = 0.9;
+/** Ancho de hueco que deja la rueda girar unos 20° hacia cada lado sin tocar los brazos. */
+export function forkGapWidth(halfWidth = WHEEL_HALF_WIDTH) {
+  return 2 * halfWidth + 0.28;
+}
+
+export interface ForkGap {
+  /** Borde interno del brazo izquierdo (x local de la plataforma). */
+  left: number;
+  /** Borde interno del brazo derecho. */
+  right: number;
+  width: number;
+  /** Centro exacto del hueco: donde queda centrada la rueda. */
+  centerX: number;
+}
+
+/**
+ * Montaje en horquilla: desde el punto (x, z) busca material hacia -X y +X (los dos "rayos" cortos,
+ * resueltos contra la forma de la plataforma). Si ambos lados tocan la pieza y el hueco es compatible con
+ * el ancho de la rueda más la holgura, devuelve el hueco; si no, `null`.
+ */
+export function forkGap(grid: PlatformGrid, x: number, z: number, halfWidth = WHEEL_HALF_WIDTH): ForkGap | null {
+  if (hasCellAt(grid, x, z)) return null;
+  const step = grid.cell / 2;
+  let left: number | null = null;
+  let right: number | null = null;
+  for (let d = step; d <= FORK_SCAN_REACH && left === null; d += step) {
+    if (hasCellAt(grid, x - d, z)) left = grid.x0 + Math.round((x - d - grid.x0) / grid.cell) * grid.cell + grid.cell / 2;
+  }
+  for (let d = step; d <= FORK_SCAN_REACH && right === null; d += step) {
+    if (hasCellAt(grid, x + d, z)) right = grid.x0 + Math.round((x + d - grid.x0) / grid.cell) * grid.cell - grid.cell / 2;
+  }
+  if (left === null || right === null) return null;
+  const width = right - left;
+  const min = 2 * halfWidth + 2 * FORK_SIDE_CLEARANCE;
+  if (width < min || width > 2 * halfWidth + 0.8) return null;
+  return { left, right, width, centerX: (left + right) / 2 };
+}
+
+/** Muesca de horquilla desde un borde: ancho para que la rueda gire y largo para alojarla entera. */
+export function forkNotchAt(grid: PlatformGrid, edge: 'front' | 'back' | 'left' | 'right' = 'front', halfWidth = WHEEL_HALF_WIDTH): Pt[] {
+  return notchAt(grid, edge, forkGapWidth(halfWidth), 2 * WHEEL_RADIUS * 0.7);
+}
+
 /** Cortes predefinidos editables con puntos: muesca en U desde un borde. */
 export function notchAt(grid: PlatformGrid, edge: 'front' | 'back' | 'left' | 'right', width = 0.36, depth = 0.16): Pt[] {
   const b = gridBounds(grid);
