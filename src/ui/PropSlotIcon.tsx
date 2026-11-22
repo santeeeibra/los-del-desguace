@@ -218,6 +218,15 @@ export function PropSlotIcon({ kind }: { kind: InventoryKind }) {
           <circle cx="22" cy="21" r="2.5" fill="#ffe066" stroke={stroke} strokeWidth="1.4" />
         </svg>
       );
+    case 'bodywork':
+      return (
+        <svg className="hud-slot-svg" viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M4 22l6-12h18v12z" fill="#8d979d" stroke={stroke} strokeWidth="2.2" strokeLinejoin="round" />
+          <path d="M12 12h6v6h-8z" fill="#a9dcef" stroke={stroke} strokeWidth="1.6" strokeLinejoin="round" />
+          <circle cx="7" cy="20" r="1.2" fill="#c9a45a" />
+          <circle cx="25" cy="20" r="1.2" fill="#c9a45a" />
+        </svg>
+      );
     case 'crate':
     default:
       return (

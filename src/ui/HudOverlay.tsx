@@ -32,6 +32,7 @@ import {
 import { LaserTable } from './LaserTable';
 import { SceneCutBar } from './SceneCutBar';
 import { ToolIcon } from './ToolIcons';
+import { BODYWORK_KINDS, BODYWORK_SPECS, type BodyworkKind } from '../invention/bodywork';
 import { NOZZLE_LABELS, PAINT_SWATCHES, sprayUi, useSprayUi, type SprayNozzle } from '../invention/paintStore';
 import { loadToolThumbnails, type HotbarToolId } from './toolThumbnailRenderer';
 import { sceneCutStore, useSceneCut } from '../invention/sceneCut';
@@ -274,6 +275,7 @@ const ITEM_LABELS: Record<InventoryKind, string> = {
   flag: 'Bandera del taller',
   platform: 'Plataforma recortada',
   fragment: 'Trozo cortado',
+  bodywork: 'Carrocería',
   blueprint: 'Plano Guía',
 };
 
@@ -304,10 +306,11 @@ const ITEM_SHORT: Record<InventoryKind, string> = {
   flag: 'Bandera',
   platform: 'Plataforma',
   fragment: 'Trozo',
+  bodywork: 'Chapa',
   blueprint: 'Plano',
 };
 
-const SPAWNER_ITEMS: readonly { kind: GrabbableKind; label: string; hint?: string }[] = [
+const SPAWNER_ITEMS: readonly { kind: GrabbableKind; label: string; hint?: string; variant?: BodyworkKind }[] = [
   { kind: 'boxingGlove', label: 'Puño de resorte', hint: 'Apuntá el guante y elegí Probar o cablealo a un interruptor.' },
   { kind: 'droneRotor', label: 'Hélice de dron', hint: 'Empuja hacia el lado de las palas. Soldala y conectá una señal.' },
   { kind: 'flag', label: 'Bandera del taller', hint: 'Soldala para distinguir tu invento.' },
@@ -327,6 +330,12 @@ const SPAWNER_ITEMS: readonly { kind: GrabbableKind; label: string; hint?: strin
   { kind: 'seat', label: 'Asiento' },
   { kind: 'cargoRack', label: 'Soporte' },
   { kind: 'woodBarrel', label: 'Barril' },
+  ...BODYWORK_KINDS.map((variant) => ({
+    kind: 'bodywork' as const,
+    label: BODYWORK_SPECS[variant].label,
+    variant,
+    hint: `${BODYWORK_SPECS[variant].label}: acercala al borde de un chasis o de otra chapa; R cambia el ángulo (0°, ±45°, ±90°).`,
+  })),
 ];
 
 const BLOCKED_MESSAGES = {
@@ -1565,9 +1574,9 @@ export function HudOverlay() {
                 </div>
                 {wireHint && <div className="hud-workshop-status" role="status">{wireHint}</div>}
                 <div className="hud-spawner-grid" aria-label="Dispensador de chatarra">
-                  {SPAWNER_ITEMS.map(({ kind, label, hint }) => (
+                  {SPAWNER_ITEMS.map(({ kind, label, hint, variant }) => (
                     <button
-                      key={kind}
+                      key={variant ?? kind}
                       type="button"
                       className="hud-spawner-btn"
                       onClick={() => {
@@ -1581,7 +1590,7 @@ export function HudOverlay() {
                               bay[2] - 2 + Math.floor(spawnedProps.length / 5) * 2.2,
                             ])
                           : undefined;
-                        const spawned = gameStore.spawnExtraPart(kind, bayPos);
+                        const spawned = gameStore.spawnExtraPart(kind, bayPos, variant);
                         playWoodClick();
                         gameStore.setWireHint(
                           spawned ? hint ?? `Pieza agregada: ${ITEM_LABELS[kind]}` : 'Límite de piezas extra alcanzado'

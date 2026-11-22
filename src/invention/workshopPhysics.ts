@@ -3,6 +3,7 @@ import { Euler, Quaternion, Vector3 } from 'three';
 import type { WorkshopAssembly, WorkshopMount, WorkshopSlot, WorkshopStation } from './workshopAssembly';
 import { isCustomStation } from './workshopAssembly';
 import { steerPivotLocal, WHEEL_RADIUS } from './platformShape';
+import { BODYWORK_SPECS, bodyworkKindFromId } from './bodywork';
 import {
   BreakMonitor,
   hasBreakLimits,
@@ -101,6 +102,12 @@ export function supportWidthAtCenter(points: { x: number; z: number }[]): number
 }
 
 /** Aceleración lateral permitida según el ancho de apoyo: continua, sin casos especiales por tipo. */
+/** Chapas de carrocería: su soldadura se suelta al superar el umbral de su ficha (choques fuertes). */
+function bodyworkBreakLimits(id: string): BreakLimits | undefined {
+  const kind = bodyworkKindFromId(id);
+  return kind ? { breakForce: BODYWORK_SPECS[kind].breakForce } : undefined;
+}
+
 export function steerLateralLimit(supportWidth: number): number {
   return Math.max(STEER_MIN_LATERAL, Math.min(STEER_MAX_LATERAL, STEER_MAX_LATERAL * supportWidth / STEER_REFERENCE_TRACK));
 }
@@ -463,7 +470,7 @@ export function createWorkshopPhysics(
         return joint;
       };
       breakMonitor.reset(id);
-      mounts.set(id, { slot, joint: createJoint(), createJoint, body, speed: 0 });
+      mounts.set(id, { slot, joint: createJoint(), createJoint, body, speed: 0, breakLimits: bodyworkBreakLimits(id) });
     },
     attachOnPart(
       id: string,
@@ -544,6 +551,8 @@ export function createWorkshopPhysics(
         const limits = steerLimits?.(id, mount, pose);
         applySteerLimits(record, limits ?? { min: -STEER_DEFAULT, max: STEER_DEFAULT });
       }
+      const bwLimits = bodyworkBreakLimits(id);
+      if (bwLimits) record.breakLimits = bwLimits;
       breakMonitor.reset(id);
       mounts.set(id, record);
     },

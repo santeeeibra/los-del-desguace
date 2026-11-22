@@ -6,6 +6,7 @@ import { gameStore, HOTBAR_TOOLS } from '../state/gameStore';
 import { buildToolsLocked } from '../modes/gameModes';
 import { playWoodClick } from '../audio/sfxEngine';
 import { sprayUi } from '../invention/paintStore';
+import { bodyworkStore } from '../invention/bodywork';
 
 export interface PlayerInputSnapshot {
   forward: boolean;
@@ -366,6 +367,15 @@ export function dispatchGameKeyDown(e: KeyDownLike) {
         // Con el aerosol en la mano (y nada cargado), R cambia de modo: Pintar todo ↔ Mano alzada.
         if (hudR.sprayEquipped && !hudR.carriedKind) {
           if (!e.repeat) { sprayUi.toggleMode(); playWoodClick(); }
+          break;
+        }
+        // Con una chapa de carrocería en la mano, R elige el ángulo de encastre al borde (0°, ±45°, ±90°).
+        if (hudR.carriedKind === 'bodywork') {
+          if (!e.repeat) {
+            const angle = bodyworkStore.cycleSnapAngle(e.shiftKey ? -1 : 1);
+            gameStore.setWireHint(`Ángulo de encastre: ${Math.round(angle * 180 / Math.PI)}°`);
+            playWoodClick();
+          }
           break;
         }
         playerInput.triggerCartAction(e.shiftKey ? 'rotate-back' : 'rotate');

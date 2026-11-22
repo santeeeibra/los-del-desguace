@@ -27,7 +27,8 @@ export type GrabbableKind =
   | 'droneRotor'
   | 'flag'
   | 'platform'
-  | 'fragment';
+  | 'fragment'
+  | 'bodywork';
 
 export const NEW_PROP_BOUNDS = {
   boxingGlove: [0.17, 0.16, 0.3],
@@ -175,6 +176,11 @@ export const CARRY_PROFILES: Record<GrabbableKind, CarryProfile> = {
   fragment: {
     holdDistance: 0.7, holdHeight: -0.02, armSpread: 0.3, armPitch: -1.0, tiltX: 0.04,
     dropRadius: 0.3, dropHalfExtents: [0.25, 0.25, 0.25], dropHeightOffset: 0.3,
+  },
+  // Carrocería: perfil genérico (las medidas reales de cada variante salen de BODYWORK_SPECS).
+  bodywork: {
+    holdDistance: 0.95, holdHeight: 0.02, armSpread: 0.4, armPitch: -0.95, tiltX: 0.04,
+    dropRadius: 0.5, dropHalfExtents: [0.5, 0.2, 0.4], dropHeightOffset: 0.3,
   },
 };
 

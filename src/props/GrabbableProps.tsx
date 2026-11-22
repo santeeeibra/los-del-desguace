@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useMemo, useRef } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   CuboidCollider,
@@ -21,7 +21,9 @@ import { BOWLING_BARREL_IDS } from '../modes/contracts';
 import { gameStore, useGameStore } from '../state/gameStore';
 import { PropEffect } from './CrazyPropEffects';
 import { grabbableRegistry, NEW_PROP_BOUNDS, type GrabbableKind } from './grabbableRegistry';
-import { PropModel } from './PropModels';
+import { BodyworkVisual, PropModel, rollCageLayout } from './PropModels';
+import { BODYWORK_SPECS, bodyworkHalfExtents, bodyworkKindFromId, bodyworkStore, type GlassState } from '../invention/bodywork';
+import { playImpact, playWireSnap } from '../audio/sfxEngine';
 import { PROP_MODEL_URLS, USE_LEGACY_PROP_VISUALS } from './propModelConfig';
 
 interface SingleGrabbableProps {
@@ -343,6 +345,8 @@ const PHYSICS_PROPS: Record<
   flag: { mass: 0.6, linearDamping: 0.5, angularDamping: 0.9, restitution: 0.08, friction: 0.8 },
   // Trozo rebanado: la masa real sale de su volumen (ver fragmentStore).
   fragment: { mass: 2, linearDamping: 0.6, angularDamping: 1.0, restitution: 0.06, friction: 0.9 },
+  // Carrocería: la masa real (0.26–0.42 kg) sale de BODYWORK_SPECS para no lastrar el chasis.
+  bodywork: { mass: 0.3, linearDamping: 0.6, angularDamping: 1.0, restitution: 0.05, friction: 0.85 },
 };
 
 function PropVisual({ kind, fallback, scale = 1 }: {
@@ -598,6 +602,8 @@ function GrabbableItem({
   });
 
   const phys = PHYSICS_PROPS[kind];
+  const bodyworkVariant = kind === 'bodywork' ? bodyworkKindFromId(id) : null;
+  const glassState = useGlassState(bodyworkVariant === 'window_frame' ? id : null);
 
   // Primitivas originales: fallback mientras carga el GLB y modo comparación (?props=legacy)
   const legacyCrate = (
@@ -656,7 +662,19 @@ function GrabbableItem({
         type="dynamic"
         position={position}
         rotation={rotation}
-        mass={kind === 'platform' ? undefined : kind === 'fragment' ? (fragmentStore.get(id)?.mass ?? phys.mass) : phys.mass}
+        mass={kind === 'platform' ? undefined
+          : kind === 'fragment' ? (fragmentStore.get(id)?.mass ?? phys.mass)
+          : kind === 'bodywork' && bodyworkVariant ? BODYWORK_SPECS[bodyworkVariant].mass
+          : phys.mass}
+        onContactForce={bodyworkVariant === 'window_frame' ? (e) => {
+          // Vidrio: el impulso del golpe (fuerza × paso físico) lo raja o lo hace estallar antes que el marco.
+          const outcome = bodyworkStore.impact(id, e.totalForceMagnitude / 60);
+          if (outcome?.changed) {
+            if (outcome.spawnShards) playWireSnap();
+            else playImpact(0.35);
+            if (outcome.spawnShards) sparkBurstRef.current += 1;
+          }
+        } : undefined}
         linearDamping={phys.linearDamping}
         angularDamping={phys.angularDamping}
         restitution={phys.restitution}
@@ -700,6 +718,10 @@ function GrabbableItem({
         )}
         {kind === 'platform' && <PlatformColliders id={id} colliderRef={colliderRef} bodyRef={bodyRef} />}
         {kind === 'fragment' && <FragmentCollider id={id} colliderRef={colliderRef} />}
+        {bodyworkVariant && bodyworkVariant !== 'roll_cage' && (
+          <CuboidCollider ref={colliderRef} args={bodyworkHalfExtents(bodyworkVariant)} />
+        )}
+        {bodyworkVariant === 'roll_cage' && <RollCageColliders colliderRef={colliderRef} />}
       </RigidBody>
 
       {/* Decoupled visual mesh: syncs to Rapier body when free, and directly to carryAnchor when carried */}
@@ -708,6 +730,7 @@ function GrabbableItem({
         {kind === 'crate' && <PropVisual kind={kind} fallback={legacyCrate} />}
         {kind === 'platform' && <PlatformVisual id={id} />}
         {kind === 'fragment' && <FragmentVisual id={id} />}
+        {bodyworkVariant && <BodyworkVisual kind={bodyworkVariant} glass={glassState} />}
 
         {kind === 'wheel' && <PropVisual kind={kind} scale={0.98} fallback={
           <group>
@@ -1089,6 +1112,35 @@ const GRABBABLE_SPAWNS: Omit<SingleGrabbableProps, 'resetSignal'>[] = [
   { id: BOWLING_BARREL_IDS[1], kind: 'woodBarrel', position: [3.42, 0.5, 26.5] },
   { id: BOWLING_BARREL_IDS[2], kind: 'woodBarrel', position: [3.0, 1.48, 26.5] },
 ];
+
+/** Estado del vidrio de una ventana de carrocería (se re-renderiza al rajarse o estallar). */
+function useGlassState(id: string | null): GlassState | undefined {
+  return useSyncExternalStore(
+    bodyworkStore.subscribe,
+    () => (id ? bodyworkStore.glassOf(id) : undefined),
+    () => undefined,
+  );
+}
+
+/** Jaula antivuelco: 4 parantes y techo de tubos (hueca: el piloto entra adentro). */
+function RollCageColliders({ colliderRef }: { colliderRef: React.Ref<RapierCollider> }) {
+  const { x, z, y0, y1 } = rollCageLayout();
+  const postH = (y1 - y0) / 2;
+  const midY = (y0 + y1) / 2;
+  const t = 0.035;
+  return (
+    <>
+      <CuboidCollider ref={colliderRef} args={[t, postH, t]} position={[-x, midY, -z]} />
+      <CuboidCollider args={[t, postH, t]} position={[x, midY, -z]} />
+      <CuboidCollider args={[t, postH, t]} position={[-x, midY, z]} />
+      <CuboidCollider args={[t, postH, t]} position={[x, midY, z]} />
+      <CuboidCollider args={[x + t, t, t]} position={[0, y1, -z]} />
+      <CuboidCollider args={[x + t, t, t]} position={[0, y1, z]} />
+      <CuboidCollider args={[t, t, z + t]} position={[-x, y1, 0]} />
+      <CuboidCollider args={[t, t, z + t]} position={[x, y1, 0]} />
+    </>
+  );
+}
 
 export function GrabbableProps({ resetSignal }: { resetSignal: number }) {
   const spawnedProps = useGameStore((s) => s.spawnedProps);

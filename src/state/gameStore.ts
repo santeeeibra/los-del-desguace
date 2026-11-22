@@ -697,13 +697,14 @@ export const gameStore = {
     state = { ...state, resetNonce: state.resetNonce + 1, inventorySlots: starterInventory(), inventorySelection: 0, spawnedProps: [], celebration: null };
     emit();
   },
-  spawnExtraPart(kind: GrabbableKind, position?: [number, number, number]): SpawnedPropEntry | null {
+  spawnExtraPart(kind: GrabbableKind, position?: [number, number, number], variant?: string): SpawnedPropEntry | null {
     if (state.spawnedProps.length >= MAX_EXTRA_PROPS) return null;
     const occupied = new Set(state.spawnedProps.map(({ spawnIndex }) => spawnIndex));
     let idx = 0;
     while (occupied.has(idx)) idx++;
     const entry: SpawnedPropEntry = {
-      id: `extra-${kind}-${++nextExtraPartId}`,
+      // La variante (p. ej. el tipo de chapa de carrocería) viaja en el id: `extra-bodywork-panel_flat-7`.
+      id: variant ? `extra-${kind}-${variant}-${++nextExtraPartId}` : `extra-${kind}-${++nextExtraPartId}`,
       kind,
       spawnIndex: idx,
       position: position ?? extraPartPosition(idx),

@@ -44,11 +44,12 @@ import {
   type WorkshopStation,
 } from '../invention/workshopAssembly';
 import { createWorkshopPhysics, getWorkshopSlotPose, LEVEL_ROTATION, qualifiesForSteering } from '../invention/workshopPhysics';
+import { bodyworkKindFromId, bodyworkStore } from '../invention/bodywork';
 import { platformStore, type ReleasedPart } from '../invention/platformStore';
 import { laserTableBridge, type PlatformChildInfo } from '../invention/laserTableBridge';
 import { cutFromEdge, forkGap, gridBounds, rasterize, validateOutline } from '../invention/platformShape';
 import { forkPivotFor, steerLimitsOnPlatform, unsupportedAfterCut } from '../invention/platformRules';
-import { resolvePrimaryInteract } from '../invention/interactResolution';
+import { resolveBodyworkSnap, resolvePrimaryInteract } from '../invention/interactResolution';
 import {
   clearMountSettle,
   computeBenchAudioIntensity,
@@ -699,6 +700,7 @@ export function PlayerRig({
     flag: InstanceType<typeof rapier.Cuboid>;
     platform: InstanceType<typeof rapier.Cuboid>;
     fragment: InstanceType<typeof rapier.Cuboid>;
+    bodywork: InstanceType<typeof rapier.Cuboid>;
     sweepBall: InstanceType<typeof rapier.Ball>;
   } | null>(null);
 
@@ -1377,6 +1379,7 @@ export function PlayerRig({
         flag: new rapier.Cuboid(...NEW_PROP_BOUNDS.flag),
         platform: new rapier.Cuboid(0.5, 0.05, 0.6),
         fragment: new rapier.Cuboid(0.25, 0.25, 0.25),
+        bodywork: new rapier.Cuboid(0.5, 0.18, 0.4),
         sweepBall: new rapier.Ball(0.16),
       };
     }
@@ -1841,6 +1844,28 @@ export function PlayerRig({
     return { position: snapped, rotation: delta.multiply(rotation).normalize(), axis: newAxis };
   };
 
+  /** Encastre por borde de una chapa de carrocería contra el chasis, una plataforma u otra chapa. */
+  const bodyworkSnapFor = (carriedId: string, parentId: string, parentBody: RapierRigidBody, point: THREE.Vector3) => {
+    if (!bodyworkKindFromId(carriedId)) return null;
+    const hostKind = parentId === '__cart__' ? 'cart' : grabbableRegistry.getById(parentId)?.kind;
+    if (!hostKind) return null;
+    let size: [number, number, number] | undefined;
+    const platform = platformStore.get(parentId);
+    if (platform) {
+      const g = platform.grid;
+      let minX = Infinity; let maxX = -Infinity; let minZ = Infinity; let maxZ = -Infinity;
+      for (let k = 0; k < g.nz; k++) for (let i = 0; i < g.nx; i++) {
+        if (!g.data[k * g.nx + i]) continue;
+        const x = g.x0 + i * g.cell; const z = g.z0 + k * g.cell;
+        minX = Math.min(minX, x); maxX = Math.max(maxX, x); minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
+      }
+      if (maxX > minX) size = [maxX - minX + g.cell, 0.08, maxZ - minZ + g.cell];
+    }
+    return resolveBodyworkSnap(carriedId, {
+      id: parentId, kind: hostKind, position: parentBody.translation(), rotation: parentBody.rotation(), size,
+    }, point);
+  };
+
   const mountCarriedItemOnPart = (
     parentId: string,
     parentBody: RapierRigidBody,
@@ -1880,6 +1905,12 @@ export function PlayerRig({
         rotation = fork.rotation;
         axis = { x: fork.axis.x, y: fork.axis.y, z: fork.axis.z };
       }
+    }
+    // Carrocería: se encastra sola al borde más cercano del anfitrión, con el ángulo elegido (R).
+    const edgeSnap = entry.kind === 'bodywork' ? bodyworkSnapFor(id, parentId, parentBody, position) : null;
+    if (edgeSnap) {
+      position = edgeSnap.position;
+      rotation = edgeSnap.rotation;
     }
     const isAxleMount = Boolean(axis || mountType === 'wheel');
     dustPoolRef.current?.spawnBurst(position.x, position.y + 0.14, position.z, 'spark');
@@ -2265,6 +2296,8 @@ export function PlayerRig({
 
     const cartAction = enabled ? playerInput.consumeCartAction() : null;
     if (cartAction === 'repair' || cartAction === 'retry' || cartAction === 'return-workshop') {
+      // Reparar también pone vidrios nuevos en las ventanas de carrocería.
+      bodyworkStore.repairGlass();
       const endRun = cartAction === 'return-workshop';
       const resetRun = cartAction !== 'repair';
       const contractId = contractStore.getState().activeContractId;
@@ -2889,8 +2922,10 @@ export function PlayerRig({
       } else {
         const forkHint = partMountReady && partMountType === 'wheel' && joinedAxle && hitBody &&
           forkSnapFor(freeTargetId, hitBody, wrenchPlacedPosition.current, wrenchPlacedRotation.current, joinedAxle) !== null;
+        const edgeHint = partMountReady && carriedKind === 'bodywork' && carriedIdRef.current && hitBody
+          ? bodyworkSnapFor(carriedIdRef.current, freeTargetId, hitBody, wrenchPlacedPosition.current) : null;
         laserHint = partMountAllowed
-          ? (partMountReady ? (forkHint ? 'Montaje en horquilla · rueda centrada en el hueco' : workshop.describePartMount(freeTargetId, partMountType, aimedPartReleased, Boolean(joinedAxle))) : 'Sin espacio en ese punto')
+          ? (partMountReady ? (edgeHint ? `Encastre al borde · ${Math.round(edgeHint.angleRad * 180 / Math.PI)}° (R cambia el ángulo)` : forkHint ? 'Montaje en horquilla · rueda centrada en el hueco' : workshop.describePartMount(freeTargetId, partMountType, aimedPartReleased, Boolean(joinedAxle))) : 'Sin espacio en ese punto')
           : workshop.describePartMount(freeTargetId, partMountType, aimedPartReleased);
       }
     } else if (aiming && carriedKind && !placementReady) {

@@ -85,3 +85,12 @@ Las mismas reglas valen para cualquier invento; ya no hay casos especiales por t
 - **Validar jugando:** pintar piezas con modelo GLB (si el UV es raro, el trazo puede salir en otro lugar de la pieza); FPS en iPhone 11 pintando a mano alzada; que el borrador devuelva el aspecto original; que el color se conserve al reconstruir con H.
 - Pendiente: modelo 3D de lata en la mano (hoy se ve la llave), guardar la pintura en los planos compartidos por URL.
 
+## Carrocería modular (2026-11-22, sin probar jugando)
+- [x] 5 piezas nuevas en el Dispensador: **Chapa Plana, Chapa en Cuña, Ventana con Vidrio, Puerta de Chapa y Jaula Antivuelco** (livianas: 0.26–0.42 kg; la jaula es hueca, se puede ir adentro).
+- [x] **Encastre al borde:** al soldar una chapa cerca del borde de un chasis, una plataforma o de otra chapa, se pega sola al borde más cercano. Con la chapa en la mano, **R** cambia el ángulo (0°, 45°, 90°, −45°, −90°); el cartel del láser muestra el ángulo.
+- [x] **Rotura:** cada chapa tiene su umbral de soldadura (se desprende en choques fuertes, H la repara).
+- [x] **Vidrio:** la ventana se raja con un golpe medio y estalla con uno fuerte (el marco sigue soldado); H pone vidrio nuevo.
+- [x] Se puede pintar con el Aerosol (el vidrio no se pinta).
+- **Validar jugando:** que el encastre quede bien pegado al chasis (las medidas del chasis son aproximadas: 1.1 × 0.16 × 1.9); que la cuña quede con el filo hacia afuera; umbrales de rotura y de vidrio (vienen de la ficha, pueden ser muy altos o muy bajos); que piezas tan livianas no tiemblen soldadas a un chasis pesado.
+- Pendiente: el bonus aerodinámico (`computeAeroBonus`) todavía no se aplica a la velocidad; las puertas no abren con bisagra; las chapas no entran en planos compartidos por URL; la vista previa (fantasma) no muestra el encastre, solo el montaje real.
+
