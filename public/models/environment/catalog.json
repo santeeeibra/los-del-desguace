@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "count": 50,
+  "count": 56,
   "pieces": [
     {
       "id": "container_rust",
@@ -301,6 +301,42 @@
       "category": "terrain",
       "label": "Matorral seco estilizado",
       "url": "models/environment/bush_dry_scrub.glb"
+    },
+    {
+      "id": "car_sedan_classic",
+      "category": "vehicles",
+      "label": "Sedán clásico 70s",
+      "url": "models/environment/car_sedan_classic.glb"
+    },
+    {
+      "id": "car_pickup_rust",
+      "category": "vehicles",
+      "label": "Pickup de taller con barra",
+      "url": "models/environment/car_pickup_rust.glb"
+    },
+    {
+      "id": "car_van_cargo",
+      "category": "vehicles",
+      "label": "Furgoneta con portaequipajes",
+      "url": "models/environment/car_van_cargo.glb"
+    },
+    {
+      "id": "car_hatchback_compact",
+      "category": "vehicles",
+      "label": "Hatchback compacto urbano",
+      "url": "models/environment/car_hatchback_compact.glb"
+    },
+    {
+      "id": "car_jeep_offroad",
+      "category": "vehicles",
+      "label": "4x4 todo terreno abierto",
+      "url": "models/environment/car_jeep_offroad.glb"
+    },
+    {
+      "id": "car_coupe_muscle",
+      "category": "vehicles",
+      "label": "Coupé fastback con toma de aire",
+      "url": "models/environment/car_coupe_muscle.glb"
     }
   ]
 }
