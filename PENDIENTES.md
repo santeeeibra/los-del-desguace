@@ -37,7 +37,7 @@ Prioridades: **Alta** (bloquea o rompe la experiencia), **Media** (necesario par
 ## Pendientes de Niveles y Arte (Prioridad Media)
 
 - [x] Nivel nocturno *"Operación: Pilas del Control"* (ver [docs/VISION_MVP.md](./docs/VISION_MVP.md)). *(escrito, sin probar jugando)*
-  - [x] Escenario 3D nocturno (`public/models/levels/level-4-pilas.glb` + `art/levels/build_level4_pilas.py`) conectado automáticamente por `LevelArt.tsx`, más kit modular de 6 piezas reutilizables para futuros niveles en `public/models/environment/`.
+  - [x] Escenario 3D nocturno (`public/models/levels/level-4-pilas.glb` + `art/levels/build_level4_pilas.py`) conectado automáticamente por `LevelArt.tsx`, más kit modular completo de **50 piezas reutilizables** para futuros niveles en `public/models/environment/` (`catalog.json` + `art/blender/build_env_kit_50.py` + 7 láminas de estudio en `art/environment/sheets/`).
   - [x] Domo del faro registrado como pieza interactuable: la Sierra (`4`) y la Amoladora (`3`) lo cortan; el imán encendido se engancha con un resorte y un tirón fuerte (vehículo o propulsor) suelta la unión. *(sin probar; el umbral de tirón `1800 N` puede pedir ajuste)*
   - [x] 2 autos viejos soldados con el sistema del taller (chasis + 4 ruedas + motor roto + batería descargada) para desarmar con la Amoladora. *(sin probar; si el armado falla queda un aviso en la consola del navegador)*
   - [x] Escalada magnética: el imán encendido es atraído al eje de los postes `isMagnetic` y se sostiene contra la gravedad en proporción a su masa. *(sin probar; falta ajustar la fuerza escalando de verdad)*

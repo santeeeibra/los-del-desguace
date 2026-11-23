@@ -1,0 +1,306 @@
+{
+  "version": 1,
+  "count": 50,
+  "pieces": [
+    {
+      "id": "container_rust",
+      "category": "structures",
+      "label": "Contenedor corrugado oxidado",
+      "url": "models/environment/container_rust.glb"
+    },
+    {
+      "id": "scrap_ramp",
+      "category": "roads",
+      "label": "Rampa modular de chapa",
+      "url": "models/environment/scrap_ramp.glb"
+    },
+    {
+      "id": "metal_catwalk",
+      "category": "roads",
+      "label": "Pasarela metálica elevada",
+      "url": "models/environment/metal_catwalk.glb"
+    },
+    {
+      "id": "tire_barrier",
+      "category": "barriers",
+      "label": "Barrera de neumáticos",
+      "url": "models/environment/tire_barrier.glb"
+    },
+    {
+      "id": "floodlight_tower",
+      "category": "lighting",
+      "label": "Torre de reflectores",
+      "url": "models/environment/floodlight_tower.glb"
+    },
+    {
+      "id": "goal_arch",
+      "category": "lighting",
+      "label": "Pórtico de meta con tuerca",
+      "url": "models/environment/goal_arch.glb"
+    },
+    {
+      "id": "container_red_open",
+      "category": "structures",
+      "label": "Contenedor rojo abierto",
+      "url": "models/environment/container_red_open.glb"
+    },
+    {
+      "id": "container_short",
+      "category": "structures",
+      "label": "Contenedor corto amarillo",
+      "url": "models/environment/container_short.glb"
+    },
+    {
+      "id": "workshop_shed",
+      "category": "structures",
+      "label": "Tinglado de taller",
+      "url": "models/environment/workshop_shed.glb"
+    },
+    {
+      "id": "control_booth",
+      "category": "structures",
+      "label": "Caseta de control",
+      "url": "models/environment/control_booth.glb"
+    },
+    {
+      "id": "steel_gantry",
+      "category": "structures",
+      "label": "Pórtico grúa de acero",
+      "url": "models/environment/steel_gantry.glb"
+    },
+    {
+      "id": "concrete_pillar",
+      "category": "structures",
+      "label": "Pilar industrial de hormigón",
+      "url": "models/environment/concrete_pillar.glb"
+    },
+    {
+      "id": "scaffold_tower",
+      "category": "structures",
+      "label": "Torre de andamio",
+      "url": "models/environment/scaffold_tower.glb"
+    },
+    {
+      "id": "catwalk_stairs",
+      "category": "roads",
+      "label": "Escalera industrial",
+      "url": "models/environment/catwalk_stairs.glb"
+    },
+    {
+      "id": "bridge_deck_wood",
+      "category": "roads",
+      "label": "Tramo puente de madera",
+      "url": "models/environment/bridge_deck_wood.glb"
+    },
+    {
+      "id": "bridge_deck_steel",
+      "category": "roads",
+      "label": "Tramo puente de acero",
+      "url": "models/environment/bridge_deck_steel.glb"
+    },
+    {
+      "id": "ramp_wide_low",
+      "category": "roads",
+      "label": "Rampa ancha baja",
+      "url": "models/environment/ramp_wide_low.glb"
+    },
+    {
+      "id": "jump_kicker",
+      "category": "roads",
+      "label": "Rampa de salto",
+      "url": "models/environment/jump_kicker.glb"
+    },
+    {
+      "id": "platform_hex",
+      "category": "roads",
+      "label": "Plataforma hexagonal",
+      "url": "models/environment/platform_hex.glb"
+    },
+    {
+      "id": "jersey_concrete",
+      "category": "barriers",
+      "label": "Barrera New Jersey",
+      "url": "models/environment/jersey_concrete.glb"
+    },
+    {
+      "id": "fence_corrugated",
+      "category": "barriers",
+      "label": "Cerco de chapa oxidada",
+      "url": "models/environment/fence_corrugated.glb"
+    },
+    {
+      "id": "fence_chainlink",
+      "category": "barriers",
+      "label": "Cerco metálico industrial",
+      "url": "models/environment/fence_chainlink.glb"
+    },
+    {
+      "id": "guardrail_steel",
+      "category": "barriers",
+      "label": "Guardarrail de acero",
+      "url": "models/environment/guardrail_steel.glb"
+    },
+    {
+      "id": "road_barricade",
+      "category": "barriers",
+      "label": "Caballete vial con baliza",
+      "url": "models/environment/road_barricade.glb"
+    },
+    {
+      "id": "traffic_cone_group",
+      "category": "barriers",
+      "label": "Grupo de conos viales",
+      "url": "models/environment/traffic_cone_group.glb"
+    },
+    {
+      "id": "bollard_heavy",
+      "category": "barriers",
+      "label": "Bolardo pesado",
+      "url": "models/environment/bollard_heavy.glb"
+    },
+    {
+      "id": "street_lamp_rust",
+      "category": "lighting",
+      "label": "Farol cuello de cisne",
+      "url": "models/environment/street_lamp_rust.glb"
+    },
+    {
+      "id": "generator_industrial",
+      "category": "lighting",
+      "label": "Generador eléctrico industrial",
+      "url": "models/environment/generator_industrial.glb"
+    },
+    {
+      "id": "transformer_box",
+      "category": "lighting",
+      "label": "Caja transformador",
+      "url": "models/environment/transformer_box.glb"
+    },
+    {
+      "id": "arrow_sign_post",
+      "category": "lighting",
+      "label": "Poste flecha direccional",
+      "url": "models/environment/arrow_sign_post.glb"
+    },
+    {
+      "id": "billboard_workshop",
+      "category": "lighting",
+      "label": "Cartel grande de taller",
+      "url": "models/environment/billboard_workshop.glb"
+    },
+    {
+      "id": "radio_antenna_mast",
+      "category": "lighting",
+      "label": "Mástil antena con parabólica",
+      "url": "models/environment/radio_antenna_mast.glb"
+    },
+    {
+      "id": "workbench_heavy",
+      "category": "workshop",
+      "label": "Banco de trabajo con morsa",
+      "url": "models/environment/workbench_heavy.glb"
+    },
+    {
+      "id": "tool_rack_wall",
+      "category": "workshop",
+      "label": "Estantería industrial",
+      "url": "models/environment/tool_rack_wall.glb"
+    },
+    {
+      "id": "anvil_stump",
+      "category": "workshop",
+      "label": "Yunque sobre tronco",
+      "url": "models/environment/anvil_stump.glb"
+    },
+    {
+      "id": "oil_tank_stand",
+      "category": "workshop",
+      "label": "Tanque de combustible elevado",
+      "url": "models/environment/oil_tank_stand.glb"
+    },
+    {
+      "id": "compressor_cart",
+      "category": "workshop",
+      "label": "Compresor de aire rodante",
+      "url": "models/environment/compressor_cart.glb"
+    },
+    {
+      "id": "crane_hook_jib",
+      "category": "workshop",
+      "label": "Pluma grúa giratoria",
+      "url": "models/environment/crane_hook_jib.glb"
+    },
+    {
+      "id": "scrap_pile_metal",
+      "category": "scrap",
+      "label": "Montón de chatarra metálica",
+      "url": "models/environment/scrap_pile_metal.glb"
+    },
+    {
+      "id": "barrel_cluster",
+      "category": "scrap",
+      "label": "Grupo de barriles en palet",
+      "url": "models/environment/barrel_cluster.glb"
+    },
+    {
+      "id": "crate_stack_pallet",
+      "category": "scrap",
+      "label": "Palet de cajas apiladas",
+      "url": "models/environment/crate_stack_pallet.glb"
+    },
+    {
+      "id": "tire_pile_loose",
+      "category": "scrap",
+      "label": "Pila de neumáticos sueltos",
+      "url": "models/environment/tire_pile_loose.glb"
+    },
+    {
+      "id": "rusted_car_shell",
+      "category": "scrap",
+      "label": "Carcasa de auto oxidado",
+      "url": "models/environment/rusted_car_shell.glb"
+    },
+    {
+      "id": "pipe_stack_bundle",
+      "category": "scrap",
+      "label": "Atado de tubos de acero",
+      "url": "models/environment/pipe_stack_bundle.glb"
+    },
+    {
+      "id": "rock_boulder_large",
+      "category": "terrain",
+      "label": "Roca grande facetada",
+      "url": "models/environment/rock_boulder_large.glb"
+    },
+    {
+      "id": "rock_cluster_small",
+      "category": "terrain",
+      "label": "Grupo de rocas chicas",
+      "url": "models/environment/rock_cluster_small.glb"
+    },
+    {
+      "id": "cliff_slab",
+      "category": "terrain",
+      "label": "Bloque de acantilado",
+      "url": "models/environment/cliff_slab.glb"
+    },
+    {
+      "id": "mud_puddle_rim",
+      "category": "terrain",
+      "label": "Charco de barro con tablas",
+      "url": "models/environment/mud_puddle_rim.glb"
+    },
+    {
+      "id": "dead_tree_trunk",
+      "category": "terrain",
+      "label": "Tronco seco de páramo",
+      "url": "models/environment/dead_tree_trunk.glb"
+    },
+    {
+      "id": "bush_dry_scrub",
+      "category": "terrain",
+      "label": "Matorral seco estilizado",
+      "url": "models/environment/bush_dry_scrub.glb"
+    }
+  ]
+}
