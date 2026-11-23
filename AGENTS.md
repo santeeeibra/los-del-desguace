@@ -61,3 +61,12 @@
 - **Estado:** `npm run build` OK y 203/203 tests.
 
 - **Vuelo libre:** el control de vuelo de mecanismos sin ruedas está unificado en `stabilizeAndFlyAssembly` (ver `CLAUDE.md`, "Control de vuelo libre"). No volver a aplicar par o velocidad angular solo al cuerpo raíz: hace oscilar el conjunto.
+
+## 6. Regla de arte 3D (2026-11-22): todo render/modelo 3D pasa por la skill `blender-stylized-props`
+
+**Obligatorio para cualquier agente (Antigravity, Claude, ChatGPT) que cree o rehaga un modelo 3D del juego.** No usar scripts sueltos con los ayudantes viejos ni texturas de manchas procedurales a 512 px.
+- Leer `.claude/skills/blender-stylized-props/SKILL.md` y `ART_DIRECTION.md` antes de modelar. Pedido detallado: `docs/PEDIDO_ANTIGRAVITY_SKILL_BLENDER.md`.
+- Hacer una receta en `.claude/skills/blender-stylized-props/scripts/recipes/`, probar con `--dry-run`, revisar los renders `*_full` y `*_closeup`, y cerrar a `--res 1024` (512 solo para fondo lejano).
+- Criterios: silueta con biseles reales, desgaste solo en bordes, óxido abajo, suciedad en cavidades, metal y madera distintos, paleta de `src/config/visualConfig.ts`, 1 material WebP y presupuesto de triángulos para iPhone 11.
+- **Vehículos:** deben tener **ventanas/vidrios** (parabrisas, laterales y luneta) como geometría o material de vidrio; sin ventanas se leen como cajas.
+- Solo apariencia: no tocar colliders, masas ni `src/`. Cada ejecución crea una variante nueva, sin sobrescribir GLB aprobados.

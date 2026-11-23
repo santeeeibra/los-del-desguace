@@ -258,3 +258,9 @@ Referencia directa para modificar mecánicas sin tener que releer todo el proyec
    - El plano pasa por la línea trazada y es perpendicular a la superficie. `laserTableBridge.slice(id, normal, offset, preview?)` parte la pieza: `src/invention/sliceGeometry.ts` (casco convexo, volumen, tests en `tests/sliceGeometry.test.ts`), crea dos `fragment` (`src/invention/fragmentStore.ts`, `src/props/FragmentPiece.tsx`) y suelta todo lo soldado. La pieza original se oculta (`fragmentStore.consume`) y vuelve al quitar todos los trozos.
    - Visual en vivo: `src/invention/liveCut.ts` (estado) + `LiveCutVisual.tsx` (guía celeste, línea al rojo, luz). Las chapas (`platform`) se recortan aparte: Herramientas ▸ Recortar chapa (`sceneCut`).
 
+
+---
+
+## 10. Regla de arte 3D (2026-11-22)
+
+Todo modelo o render 3D nuevo o rehecho usa la skill `blender-stylized-props` (`.claude/skills/blender-stylized-props/`), con la dirección artística de su `ART_DIRECTION.md`, receta propia y bake a 1024 px. Detalle y criterios en la sección 6 de [AGENTS.md](./AGENTS.md) y en `docs/PEDIDO_ANTIGRAVITY_SKILL_BLENDER.md`. Los vehículos llevan ventanas/vidrios. Si algún agente genera arte 3D con otro flujo, pedirle que lo rehaga con la skill.
